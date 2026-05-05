@@ -1,0 +1,253 @@
+Можно ещё немного усилить “пакет” перед публикацией one-pager, но вы уже близко к точке, когда лучше не полировать бесконечно, а начинать outreach.
+
+Что ещё можно улучшить (быстро, без риска и без расползания)
+Сделать один PNG-график из tmp/demo.csv (даже самый простой):
+
+ось X: bench
+ось Y: vmrep_avg_bits_uniq_dst_per_tick / 8 (bytes/tick)
+Это резко облегчает восприятие для людей “не в теме” и повышает доверие (“вот цифры, вот график”).
+Сделать PDF one-pager (из plain text или markdown) и держать его как “attachment-ready”.
+
+Многим удобнее переслать PDF, чем ссылку “почитай файл в репо”.
+Если это делать не хотите — можно пропустить.
+
+Где публиковать one-pager (минимальный трек)
+GitHub (основное)
+
+положить one-pager в репо (у вас уже doc/startup/…)
+добавить в README.md короткую секцию “Quick demo” + ссылку на one-pager
+сделать GitHub Release “v1-demo” и приложить PDF one-pager + пример demo.csv
+GitHub Pages (очень удобно как “лендинг”)
+
+включить Pages и выложить 1 страницу: “что это + 3 команды + контакт”
+это снижает барьер: человек кликает и читает без захода в репо
+Notion / Google Docs (public link)
+
+Notion/Docs удобны для пересылки и комментов
+можно держать “живую” версию one-pager (без коммитов)
+Где публиковать публично (чтобы пришли люди)
+Hacker News
+
+“Show HN” — если у вас есть демо-скрипт + CSV + короткое объяснение
+“Ask HN” — если вы честно формулируете запрос как feasibility / feedback
+Lobsters (если у вас есть инвайт / аккаунт)
+
+там лучше заходит системная/архитектурная тема
+Reddit (точечно, без спама)
+
+r/database
+r/dataengineering
+r/bigdata
+r/hardware / r/FPGA (если акцентируете feasibility)
+Важно: пост должен быть “вот демо + вот вопрос/запрос”, а не “купите”.
+LinkedIn (короткий пост + ссылка)
+
+1–2 абзаца + картинка графика + “если у вас compaction/partition bottleneck — напишите”
+Где и как искать партнёров/заказчиков (практически, под вашу ситуацию)
+Самый реалистичный старт — платный feasibility/консалтинг, а не “продажа IP”.
+
+1) Кого искать (роли, а не компании)
+Для DB/analytics:
+
+query execution / vectorized execution engineers
+performance engineers
+people working on compaction, partitioning, materialization, selection vectors
+hardware acceleration / “systems + perf” people
+2) Где их искать
+Через open-source экосистему (часто лучший канал)
+
+ClickHouse, DuckDB, Apache Arrow / DataFusion, Velox, Spark/Photon-подобные проекты
+ищите maintainers/committers/perf issue owners
+пишите “коротко + демо + вопрос”, без продаж
+LinkedIn search
+Используйте запросы:
+
+“vectorized execution”
+“query engine performance”
+“columnar execution”
+“selection vector”
+“compaction”
+“hash partition”
+“gather scatter”
+и фильтруйте по компаниям/индустрии.
+Ваши знакомые
+
+попросить не “продать”, а “кому можно показать 1 страницу и CSV?”
+3) Как писать (чтобы это работало)
+8–12 строк (ваш ultra-short template хороший)
+1 конкретный ask: “можно 10 минут асинхронно? какие параметры workload мне взять?”
+предложение paid feasibility: “короткий платный спринт, rough estimates, explicit assumptions”
+не спорить и не переобещать; цель — получить 1–2 “тёплых” диалога
+4) Как организовать процесс (чтобы не выгореть)
+Сделайте таблицу (хоть в CSV) со столбцами:
+
+Name / Role / Company / Link
+Why relevant (1 строка)
+Date contacted / Status / Next step
+И правило: 5 сообщений в день (письменно), без созвонов пока не попросят.
+
+
+1) Пул “типов адресатов” (20–30), под DB/Analytics и data movement
+Ниже — не “конкретные люди”, а типы ролей + ключевые слова, по которым их реально находить (LinkedIn / GitHub / статьи / доклады). Этого достаточно, чтобы за 1–2 вечера набрать список из 30–50 контактов.
+
+A. DB / Query engine (основной фокус)
+Query Execution Engineer (vectorized execution)
+Keywords: vectorized execution, execution engine, pipeline, operator, SIMD, batch
+
+Columnar engine engineer
+Keywords: columnar, Arrow, record batch, columnar execution
+
+Selection vector / filter pushdown
+Keywords: selection vector, filter pushdown, predicate, compaction
+
+Hash partition / shuffle / exchange operator
+Keywords: hash partition, shuffle, exchange, repartition, scatter, gather
+
+Sort / merge / materialization
+Keywords: sort, merge, materialization, reorder
+
+Join implementation (especially hash join)
+Keywords: hash join, build/probe, partitioned hash join
+
+Storage engine / compaction (LSM) (не ваш прямой бенч, но часто “движение данных”)
+Keywords: LSM, compaction, SSTable, merge
+
+DB performance engineer
+Keywords: performance, profiling, throughput, latency, benchmark
+
+Systems architect / principal engineer in data platforms
+Keywords: query engine, data platform, runtime, distributed execution
+
+B. Data engineering / Analytics systems вокруг DB
+Apache Spark / SQL engine performance
+Keywords: Spark SQL, whole-stage, shuffle, AQE
+
+Apache Flink / streaming runtime
+Keywords: Flink, operator, network shuffle, state backend
+
+Apache Arrow / DataFusion / compute kernels
+Keywords: DataFusion, Arrow compute, kernel, Gandiva, Velox
+
+DuckDB / embedded analytics
+Keywords: DuckDB, vectorized, execution engine
+
+ClickHouse / OLAP engine
+Keywords: ClickHouse, pipeline, vectorized, mergetree, compression
+
+Presto/Trino / Velox
+Keywords: Trino, Presto, Velox, operator, spill
+
+Snowflake/Databricks-like (execution / runtime)
+Keywords: query engine, runtime, vectorized, shuffle
+
+C. Hardware / acceleration (для paid feasibility, если хотите расширить канал)
+Database acceleration / FPGA engineer
+Keywords: FPGA acceleration, database, analytics acceleration
+
+SmartNIC / DPU engineer (иногда делают compaction/dispatch)
+Keywords: DPU, SmartNIC, packet pipeline, DMA, scatter gather
+
+NoC / interconnect / memory systems engineer
+Keywords: NoC, interconnect, memory bandwidth, SRAM, HBM
+
+ASIC/FPGA design consultant / design house
+Keywords: ASIC consultant, FPGA consultant, RTL, microarchitecture
+
+D. Соседние “точки входа” (если DB адресаты молчат)
+Compression / encoding engineer
+Keywords: bit packing, encoding, compression, SIMD unpack
+
+Bitmap / indexing engineer
+Keywords: bitmap index, Roaring bitmap, bitset, compaction
+
+GPU/accelerator data movement / DMA
+Keywords: DMA engine, copy engine, transpose, gather scatter
+
+MoE routing / token dispatch (AI infra) (как запасной канал)
+Keywords: MoE routing, token dispatch, all-to-all, scatter
+
+2) Где искать этих людей (практически)
+LinkedIn (самый быстрый)
+Поиск: ("vectorized execution" OR "query engine") AND (performance OR compaction OR shuffle)
+Фильтр по компаниям/индустрии.
+Пишите 5–10 сообщений в день.
+GitHub / open-source
+Ищите:
+
+maintainers и тех, кто закрывает perf issues
+людей, которые комментируют PR’ы по execution engine / operators / shuffle
+Репозитории/ключевые слова (как ориентиры для поиска людей, не обязательно писать в сам проект):
+
+DuckDB, DataFusion, Arrow, Velox, Trino/Presto, ClickHouse
+Конференции/доклады → авторы
+“vectorized execution”, “shuffle”, “selection vectors”, “hash join optimization”
+Авторов докладов проще “зацепить” одним письмом с демо и вопросом.
+3) Два текста сообщения (copy-paste), простой английский
+3.1 DB-focused (email / LinkedIn DM)
+Subject: Quick question: compaction / reorder data movement (paid feasibility)
+
+Hi <Name>,
+
+I’m Dmitri Bortoq. I’m working on a small project called Copy-Space / DPF: a deterministic data-movement model where the core operation is a scheduled copy (copy n bits from src to dst).
+
+I think this may be relevant to DB/analytics workloads like:
+
+selection vector compaction (pack after filter)
+reorder / partition (scatter/gather)
+I have a 5-minute demo that outputs CSV:
+
+make bins
+scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
+cat tmp/demo.csv
+Repo: https://github.com/bortoq/parallel-computing
+One-pager: doc/startup/one_pager_dpf_db.txt
+
+If you can share a rough workload shape (row width, selectivity, partition count, latency target), I can do a short paid feasibility sprint:
+map → measure → estimate bandwidth + main hardware risks (rough, with explicit assumptions).
+
+Would you be open to a short email exchange? What parameters should I use?
+
+Best,
+Dmitri Bortoq
+bortoq@gmail.com / Telegram @the_arctium
+
+3.2 HW-feasibility focused (если пишете людям про acceleration/FPGA/ASIC)
+Subject: Paid feasibility: deterministic copy-based fabric for compaction / permute
+
+Hi <Name>,
+
+I’m Dmitri Bortoq. I’m exploring a deterministic data-movement fabric (DPF): the only primitive is copy(n, dst, src) scheduled in ticks with an explicit “no write conflicts” contract.
+
+I can demonstrate three workloads with measured throughput (CSV):
+
+pack (compaction-like)
+permute (reorder-like)
+bulkcopy (bulk movement)
+Demo:
+
+make bins
+scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
+cat tmp/demo.csv
+Repo: https://github.com/bortoq/parallel-computing
+
+I’m looking for a small paid feasibility engagement:
+
+validate constraints (ports/banking/scheduling)
+estimate required bandwidth for target latency
+outline a split control/data plane approach (rough PPA-style note, explicit assumptions)
+If this is in your area, who would be the right person to talk to?
+
+Best,
+Dmitri Bortoq
+bortoq@gmail.com / Telegram @the_arctium
+
+4) “Как действовать завтра” (очень практично)
+Составьте таблицу на 30 строк:
+Name / Role / Company / Link / Why relevant / Date / Status
+Отправьте 10 сообщений:
+7 DB-focused, 3 HW-feasibility
+Цель не “продать”, а получить:
+2 ответа с workload параметрами
+1 обсуждение “давайте feasibility за $X”
+
+Если хотите, в следующем шаге вы можете прислать 5–10 компаний/проектов, которые ближе вашим знакомым (например “ClickHouse”, “DuckDB”, “Arrow”, “Spark”), и я помогу сделать “персонализированные” первые 10 сообщений (по 2–3 строки, почему именно им).

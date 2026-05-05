@@ -1,0 +1,8 @@
+build/
+tmp/
+out/
+bak/
+*.bin
+*.log
+*.meta
+*.csv

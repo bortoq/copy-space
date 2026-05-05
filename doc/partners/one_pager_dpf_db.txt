@@ -1,0 +1,59 @@
+file: doc/partners/one_pager_dpf_db.txt
+date: 2026-05-05
+title: Deterministic Data Movement Fabric (DB/Analytics) — Quick Demo
+
+WHAT THIS IS
+Copy-Space / DPF is a minimal deterministic execution model focused on data movement.
+The core operation is a scheduled copy:
+  copy n bits from src to dst
+executed in cycles (“ticks”), with explicit scheduling and measurable throughput.
+
+WHY DB/ANALYTICS TEAMS MAY CARE
+Many pipelines are dominated by moving bytes, not computing:
+- compaction after filter (selection vectors)
+- reorder / partition (hash partitioning, sort preparation, materialization)
+- bulk buffer movement (DMA-like)
+
+QUICK DEMO (ONE COMMAND, PRODUCES CSV)
+Build and run:
+  make bins
+  scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
+  cat tmp/demo.csv
+
+tmp/demo.csv contains 3 rows:
+- pack     (compaction-like)
+- permute  (reorder-like)
+- bulkcopy (bulk movement)
+
+WHAT TO LOOK AT IN THE CSV
+Main metric:
+  vmrep_avg_bits_uniq_dst_per_tick
+Meaning:
+  effective unique destination bits written per tick (ignores overlapping writes)
+
+Expected contrast in default demo:
+- pack/permute: ~32768 bits/tick  = 4096 bytes/tick
+- bulkcopy:     ~524288 bits/tick = 65536 bytes/tick (64KB/tick)
+
+CURRENT STATUS
+- stable build + tests (make test, make tdd)
+- benchmarks output machine-readable CSV
+- terminal device is published as a self-describing descriptor (validated by TDD)
+
+WHAT I CAN OFFER (NEAR-TERM)
+Paid feasibility / consulting sprint:
+- map one workload shape (compaction / partition) to DPF primitives
+- measure throughput/latency in the model
+- estimate required bandwidth + main ASIC/FPGA risks (rough, with explicit assumptions)
+
+WHAT I NEED FROM YOU
+Any one of:
+- a workload sketch (sizes, record widths, selectivity / partition count)
+- a simplified trace/model (“we move X bytes per batch with these strides / reorders”)
+- rough target latency/throughput
+
+CONTACT
+Dmitri Bortoq
+Email: bortoq@gmail.com
+Telegram: @the_arctium
+GitHub: https://github.com/bortoq/parallel-computing

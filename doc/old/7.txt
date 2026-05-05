@@ -1,0 +1,71 @@
+[2026-05-05 11:30] Итерация 29 (Δt с начала дня: неизвестно)
+
+Снэпшот на продолжение (state @ 2026-05-05)
+Базовый контекст
+Проект Copy-Space / Forth0, std7_fixed baseline.
+Git не используется (проект восстановлен из архивов), изменения применяются bash/sh-скриптами с backup в bak/cleanup_*.
+Тестовый контур работает и быстрый: make test, scripts/test_all.sh, scripts/tdd/run_all.sh — PASS.
+Решения (сегодня зафиксированы)
+todo B: работаем с block pointers (указатели выровнены: bitaddr % 32 == 0, low5=0).
+Raw bit pointers (невыровненные bitaddr) отложены и внесены в TODO отдельно.
+ABI freeze дальше: “не расширяем ABI”, доделываем уже введённое.
+(Но сегодня уже добавили ART[67..69] под примитивы — это уже в baseline.)
+ADD24P/LT24P считаются “готовыми” как композиции существующих слов (без введения отдельных новых слов/страниц и без новых ART-индексов):
+ADD24P := LOAD24AP ; LOAD24BP ; ADD24 ; STORE24RP
+LT24P := LOAD24AP ; LOAD24BP ; LT24
+Pointer arithmetic добавлять как макросы/последовательности, без новых слов и без новых ART-индексов.
+Что реализовано по todo B (вертикальный срез)
+1) Добавлены 3 новых слова (block-pointer primitives)
+WORD_LOAD24AP (страница WORDS_BASE + 26*STEP)
+WORD_LOAD24BP (страница WORDS_BASE + 27*STEP)
+WORD_STORE24RP (страница WORDS_BASE + 28*STEP)
+Реализация: src/mkimage/std7_fixed/words_loadstore24p.c
+(патчим поле src/dst адресом из VAR_AP/VAR_BP/VAR_RP, затем copy 24).
+
+Подключено в legacy.c: определены адреса, добавлены вызовы builder’ов, добавлены поля в std7_addrs_t A.
+
+2) ART расширен append-only (сейчас актуально)
+ART[67] = WORD_LOAD24AP
+ART[68] = WORD_LOAD24BP
+ART[69] = WORD_STORE24RP
+ART_COUNT = 70
+Изменены файлы:
+
+src/mkimage/std7_fixed/addrs.h (добавлены поля word_load24ap/bp/store24rp)
+src/mkimage/std7_fixed/artifacts.h (добавлены enum + ART_COUNT=70)
+src/mkimage/std7_fixed/artifacts.c (writer дописан)
+дополнительно исправлено: writer теперь реально пишет ART_BUS_BASE и ART_TERM0_DESC (65..66), чего не было в присланной версии.
+3) Добавлены token-tests (оба PASS)
+Новые файлы:
+
+src/tokens/mktok_test_add24p_via_prims.c — проверяет add через pointers:
+litap/litbp/litrp
+load24ap; load24bp; add24; store24rp
+экспортирует результаты в формат как в mktok_test_add24.c (64 байта TESTG, 4 кейса).
+предупреждения unused VAR_AP/BP/RP удалены вручную (переменные были не нужны).
+src/tokens/mktok_test_lt24p_via_prims.c — проверяет lt через pointers:
+вывод 4 байта в TESTG: 0x80 если A<B иначе 0x00.
+Makefile (важное изменение)
+Вы обновили Makefile так, что:
+
+бинарники не появляются в корне;
+token-tests подхватываются автоматически по маске src/tokens/mktok_test_*.c;
+tools подхватываются автоматически по маске src/tools/*.c;
+все бинарники складываются в build/bin/;
+mkimage_std7_fixed собирается как build/bin/mkimage_std7_fixed.
+Документация ABI
+doc/abi_std7_fixed_artifacts.md обновлён до ART_COUNT=70, включает ART[0]..ART[69].
+python3 scripts/check_art_doc_sync.py — PASS.
+Текущее “Definition of done” (фактически)
+После этих изменений вы подтвердили PASS:
+
+make test PASS
+scripts/test_all.sh PASS
+(по необходимости) scripts/tdd/run_all.sh PASS
+Что дальше (следующие 1–2 шага)
+Pointer arithmetic как макросы (без новых слов/ART): задокументировать/сделать один мини-тест/демо “проход по массиву 24-bit блоков” через AP += 32 (как последовательность уже существующих операций).
+После закрытия todo B можно переходить к todo C (CSV schema/harness/графики) или todo D (device manager/валидатор), не расширяя ABI.
+Организационные правила
+В этой сессии начали нумеровать итерации и фиксировать старт дня: 2026-05-05 11:30 (точный Δt не считался, т.к. вы не присылали текущее время).
+В будущих документах заголовок: doc/<file>.md — ... — YYYY-MM-DD (вы просили это ранее).
+sh = dash, делать скрипты без pipefail.

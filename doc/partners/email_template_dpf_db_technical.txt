@@ -1,0 +1,38 @@
+file: doc/partners/email_template_dpf_db_technical.txt
+date: 2026-05-05
+title: Email template (technical) — DPF for DB/Analytics data movement
+
+Subject: Feasibility (paid): compaction / reorder data movement with deterministic copy fabric
+
+Hi <Name>,
+
+I’m Dmitri Bortoq. I’m working on Copy-Space / DPF: a deterministic data-movement model where the core operation is a scheduled copy (copy n bits from src to dst), executed in ticks with explicit scheduling.
+
+Quick demo (produces CSV):
+  make bins
+  scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
+  cat tmp/demo.csv
+
+Key metric:
+  vmrep_avg_bits_uniq_dst_per_tick
+Meaning:
+  effective unique destination bits written per tick (useful write throughput).
+
+Default demo shows contrast:
+- pack/permute: ~32768 bits/tick = 4096 bytes/tick
+- bulkcopy:     ~524288 bits/tick = 65536 bytes/tick (64KB/tick)
+
+Repo: https://github.com/bortoq/parallel-computing
+One-pager: doc/partners/one_pager_dpf_db.txt
+
+I’m looking for a small paid feasibility engagement:
+- map one workload shape to compaction/reorder primitives
+- measure throughput/latency in the model
+- estimate required bandwidth + main ASIC/FPGA risks (rough, explicit assumptions)
+
+Would you be open to a short email exchange? What workload parameters should I use?
+
+Best,
+Dmitri Bortoq
+Email: bortoq@gmail.com
+Telegram: @the_arctium

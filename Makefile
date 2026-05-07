@@ -1,7 +1,7 @@
 # file: Makefile
-# date: 2026-05-05
+# date: 2026-05-05 (updated 2026-05-07)
 #
-# Build: Copy-Space VM tools + std7_fixed mkimage + token tests (auto-discovery).
+# Build: Copy-Space VM tools + std7_fixed mkimage + (optional) legacy C token tests.
 # Binaries are emitted only into build/bin (no root-level binaries).
 
 SHELL := /bin/sh
@@ -18,6 +18,10 @@ OBJDIR := build/obj
 BINDIR := build/bin
 
 INCLUDES := -Isrc -Isrc/vm
+
+# Build legacy C token-tests? (default: no)
+# Enable via: make tok   OR   make TOK=1 bins
+TOK ?= 0
 
 # -------------------- sources --------------------
 
@@ -41,7 +45,7 @@ else
 MKIMAGE_SRCS := src/mkimage/mkimage_std7_fixed.c
 endif
 
-# token tests: auto-discover
+# token tests: auto-discover (legacy; optional build)
 TOK_SRCS := $(sort $(wildcard src/tokens/mktok_test_*.c))
 
 # -------------------- objects --------------------
@@ -62,18 +66,22 @@ TOOLS_BINS := $(patsubst src/tools/%.c,$(BINDIR)/%,$(TOOLS_SRCS))
 # mkimage binary (fixed name)
 MKIMAGE := $(BINDIR)/mkimage_std7_fixed
 
-# token test binaries
+# token test binaries (legacy; optional)
 TOK_BINS := $(patsubst src/tokens/%.c,$(BINDIR)/%,$(TOK_SRCS))
 
-BINS := $(TOOLS_BINS) $(MKIMAGE) $(TOK_BINS)
+BINS_BASE := $(TOOLS_BINS) $(MKIMAGE)
+BINS := $(BINS_BASE) $(if $(filter 1,$(TOK)),$(TOK_BINS),)
 
 # -------------------- rules --------------------
 
-.PHONY: all bins clean test tdd list-tok list-tools
+.PHONY: all bins tok clean test tdd list-tok list-tools
 
 all: bins
 
 bins: $(BINS)
+
+# Build legacy token-tests explicitly (even if TOK=0)
+tok: $(TOK_BINS)
 
 list-tok:
 	@printf "%s\n" $(TOK_SRCS)

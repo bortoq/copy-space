@@ -1,0 +1,80 @@
+# test_add8.f0 — ADD8 via BXOR/BAND/BOR and bit regs BA,BB,BC,BR plus temps T0,T1.
+#
+# Writes 8 bytes at TESTG:
+#   case0: A0,B0,SUM0,COUT0
+#   case1: A1,B1,SUM1,COUT1 (COUT stored at bit0 => 0x80)
+#
+# Expected: 00 00 00 00  ff 01 00 80  => 00000000ff010080
+
+const A0  (TESTG + 0*8)
+const B0  (TESTG + 1*8)
+const S0  (TESTG + 2*8)
+const CO0 (TESTG + 3*8)   # bit0 => 0x80
+
+const A1  (TESTG + 4*8)
+const B1  (TESTG + 5*8)
+const S1  (TESTG + 6*8)
+const CO1 (TESTG + 7*8)   # bit0 => 0x80
+
+# init memory
+setbyte A0 0x00
+setbyte B0 0x00
+setbyte S0 0x00
+setbyte CO0 0x00
+
+setbyte A1 0xFF
+setbyte B1 0x01
+setbyte S1 0x00
+setbyte CO1 0x00
+
+macro ADD8(Abyte, Bbyte, SUMbyte, CObyte)
+  # carry = 0
+  setbit BC 0
+
+  # iterate from LSB to MSB: off=7..0
+  for i 0 7
+    const off (7 - i)
+    const Abit (Abyte + off)
+    const Bbit (Bbyte + off)
+    const Sbit (SUMbyte + off)
+
+    # BA=A, BB=B
+    copybits 1 BA Abit
+    copybits 1 BB Bbit
+
+    # FULLADD_1BIT:
+    # save Cin -> T1
+    copybits 1 T1 BC
+    # t = A XOR B -> T0
+    BXOR
+    copybits 1 T0 BR
+    # ab = A AND B -> BC (Cin already saved)
+    BAND
+    copybits 1 BC BR
+    # cin_t = Cin & t  (BR)
+    copybits 1 BA T1
+    copybits 1 BB T0
+    BAND
+    # cout = ab | cin_t -> BC
+    copybits 1 BA BC
+    copybits 1 BB BR
+    BOR
+    copybits 1 BC BR
+    # sum = t XOR Cin -> BR
+    copybits 1 BA T0
+    copybits 1 BB T1
+    BXOR
+
+    # store sum bit
+    copybits 1 Sbit BR
+  endfor
+
+  # store carry into CObyte bit0 (0x80)
+  copybits 1 (CObyte + 0) BC
+endmacro
+
+# run cases
+ADD8(A0, B0, S0, CO0)
+ADD8(A1, B1, S1, CO1)
+
+HALT

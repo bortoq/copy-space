@@ -1,0 +1,59 @@
+# test_fulladder.f0 — Full-adder truth table using BXOR/BAND/BOR and bit regs BA,BB,BC,BR,T0,T1.
+#
+# Writes 8 bytes at TESTG:
+#   bit0 (0x80) = SUM
+#   bit1 (0x40) = COUT
+# Order: A,B,Cin = 000,001,010,011,100,101,110,111
+#
+# Expected hex: 00 80 80 40 80 40 40 c0  => 00808040804040c0
+
+for a 0 1
+  for b 0 1
+    for c 0 1
+      # idx = a*4 + b*2 + c
+      const idx (a*4 + b*2 + c)
+      const out (TESTG + idx*8)
+
+      # clear output byte
+      setbyte out 0x00
+
+      # BA=a, BB=b, BC=Cin
+      setbit BA a
+      setbit BB b
+      setbit BC c
+
+      # t = A XOR B -> T0
+      BXOR
+      copybits 1 T0 BR
+
+      # ab = A AND B -> T1
+      BAND
+      copybits 1 T1 BR
+
+      # sum = t XOR Cin -> BR
+      copybits 1 BA T0
+      copybits 1 BB BC
+      BXOR
+
+      # store SUM into out.bit0
+      copybits 1 (out + 0) BR
+
+      # cin_t = Cin AND t -> T0
+      copybits 1 BA BC
+      copybits 1 BB T0
+      BAND
+      copybits 1 T0 BR
+
+      # cout = ab OR cin_t -> BC
+      copybits 1 BA T1
+      copybits 1 BB T0
+      BOR
+      copybits 1 BC BR
+
+      # store COUT into out.bit1
+      copybits 1 (out + 1) BC
+    endfor
+  endfor
+endfor
+
+HALT

@@ -1,0 +1,25 @@
+# mem.f0 — convenience macros over forth0c directives.
+
+macro COPYBITS(n, dst, src)
+  copybits n dst src
+endmacro
+
+macro COPY24(dst, src)
+  copybits 24 dst src
+endmacro
+
+macro COPY32(dst, src)
+  copybits 32 dst src
+endmacro
+
+macro SETBIT(dst, v01)
+  setbit dst v01
+endmacro
+
+macro SETBYTE(dst, u8)
+  setbyte dst u8
+endmacro
+
+macro SET24(dst, u24)
+  set24 dst u24
+endmacro

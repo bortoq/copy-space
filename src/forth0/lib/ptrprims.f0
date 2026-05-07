@@ -1,0 +1,31 @@
+# ptrprims.f0 — derived 24-bit block-pointer primitives (LOAD/STORE + compositions)
+
+include "mem.f0"
+include "ptr32.f0"
+
+# Load 24 bits from *AP into VAR_A24
+macro LOAD24AP_TO_A24()
+  LOAD24AP
+endmacro
+
+# Load 24 bits from *BP into VAR_B24
+macro LOAD24BP_TO_B24()
+  LOAD24BP
+endmacro
+
+# Store VAR_SUM24 into *RP
+macro STORE_SUM24_TO_RP()
+  STORE24RP
+endmacro
+
+# One ADD24P step: load A, load B, ADD24, store RP, then inc pointers AP/BP/RP by 32
+macro ADD24P_STEP()
+  LOAD24AP_TO_A24()
+  LOAD24BP_TO_B24()
+  ADD24
+  STORE_SUM24_TO_RP()
+
+  INC_PTR32(VAR_AP)
+  INC_PTR32(VAR_BP)
+  INC_PTR32(VAR_RP)
+endmacro

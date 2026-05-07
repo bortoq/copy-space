@@ -1,0 +1,31 @@
+# test_add24.f0 — 2a ADD24 smoke/regression (Forth0)
+#
+# Output at TESTG: 4 cases * 4 bytes = 16 bytes
+# Each case: [sum24:3 bytes][cout:1 byte with MSB=VAR_COUT]
+#
+# Expected hex:
+#   case0: 00000000
+#   case1: 00000080
+#   case2: 13365900
+#   case3: 00000080
+# => 00000000000000801336590000000080
+
+macro DO_CASE(i, Aval, Bval)
+  set24 VAR_A24 Aval
+  set24 VAR_B24 Bval
+  ADD24
+
+  # sum (24 bits -> 3 bytes)
+  copybits 24 (TESTG + (i * 32) + 0) VAR_SUM24
+
+  # cout as 1 byte: clear then copy to MSB
+  setbyte (TESTG + (i * 32) + 24) 0x00
+  copybits 1 (TESTG + (i * 32) + 24) VAR_COUT
+endmacro
+
+DO_CASE(0, 0x000000, 0x000000)
+DO_CASE(1, 0xFFFFFF, 0x000001)
+DO_CASE(2, 0x123456, 0x010203)
+DO_CASE(3, 0x800000, 0x800000)
+
+HALT

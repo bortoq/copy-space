@@ -1,0 +1,20 @@
+# test_eq24.f0 — 2a EQ24 (Forth0)
+#
+# Output 4 bytes at TESTG[0..3]: 0x80 if (A==B) else 0x00
+# Expected hex: 80008000
+
+macro DO_CASE(i, Aval, Bval)
+  set24 VAR_A24 Aval
+  set24 VAR_B24 Bval
+  EQ24
+
+  setbyte (TESTG + i*8) 0x00
+  copybits 1 (TESTG + i*8) VAR_EQ
+endmacro
+
+DO_CASE(0, 0x000000, 0x000000)
+DO_CASE(1, 0x000001, 0x000000)
+DO_CASE(2, 0x123456, 0x123456)
+DO_CASE(3, 0xFFFFFF, 0x000001)
+
+HALT

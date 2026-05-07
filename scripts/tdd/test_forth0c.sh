@@ -39,10 +39,10 @@ build/bin/vmprep_forth0 --image "$compiled" >/dev/null 2>tmp/forth0c.prep.stderr
 build/bin/vmrun --image "$compiled" --life "$LIFE_RUN" --dump "$after" \
   < /dev/null >/dev/null 2>tmp/forth0c.run.stderr
 
-dd if="$after" bs=1 skip="$testg" count=1 status=none > "$got"
+dd if="$after" bs=1 skip="$testg" count=2 status=none > "$got"
 python3 - "$expected" <<'PY'
 import sys
-open(sys.argv[1], "wb").write(bytes.fromhex("80"))
+open(sys.argv[1], "wb").write(bytes.fromhex("80aa"))
 PY
 
 cmp -s "$got" "$expected"

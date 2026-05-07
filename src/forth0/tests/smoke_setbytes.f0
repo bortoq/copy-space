@@ -1,0 +1,6 @@
+# Write two bytes into TESTG, then HALT.
+# Expected at TESTG: 80 aa
+
+setbyte TESTG 0x80
+setbyte (TESTG + 8) 0xAA
+HALT

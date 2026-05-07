@@ -1,18 +1,25 @@
 // forth0c.c — host-side minimal Forth0 token compiler (.f0 -> .tok).
-// Text format (.f0):
+//
+// .f0 format:
 //   - whitespace-separated tokens
 //   - comments: '#' or '\' to end of line
-//   - directive: include "path/to/file.f0"   (quotes required if path has '/')
-//   - words: identifiers resolved via ART table from --image
+//   - directive: include "path/to/file.f0"    (path resolved relative to current file)
+//   - directive: const NAME <expr>            (compile-time constant)
+//   - directive: emit <expr>                  (emit raw token value)
+//   - directive: copybits <n> <dst> <src>     (emit LITN/LITD/LITS/COPY)
+//   - directive: setbit <dst_bitaddr> <0|1>   (copy 1 bit from CONST0/CONST1)
+//   - directive: setbyte <byte_bitaddr> <u8>  (8x setbit, MSB-first)
+//   - directive: set24 <base_bitaddr> <u24>   (3x setbyte, big-endian)
+//
+//   - words: identifiers resolved via ART table from --image (e.g. LITN, COPY, HALT)
 //   - immediates: after LIT* words, next is an expression
-//   - expressions: numbers (dec/0x...), symbols (ART names), + - * / and parentheses
+//   - expressions: numbers (dec/0x...), symbols (ART names), consts, + - * / and parentheses
 //
 // Emits addr-sized big-endian tokens.
-//
-// Prints to stderr: TESTG(byte)=<offset> (for bash harness parity with mktok_test_*).
+// Prints to stderr: TESTG(byte)=<offset> (for bash harness).
 
 #include "space.h"
-#include "mkimage/std7_fixed/artifacts.h"  // for ART_COUNT (compile-time constant)
+#include "mkimage/std7_fixed/artifacts.h" // ART_* enum + ART_COUNT
 #include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
@@ -27,88 +34,93 @@ typedef struct {
 
 static const sym_t g_syms[] = {
   /* core cells/words/vars */
-  {"HEAD_CELL", 0}, {"ART_HEAD_CELL", 0},
-  {"NEXT_IMG",  1}, {"ART_NEXT_IMG",  1},
-  {"VAR_IP",    2}, {"ART_VAR_IP",    2},
+  {"HEAD_CELL", ART_HEAD_CELL}, {"ART_HEAD_CELL", ART_HEAD_CELL},
+  {"NEXT_IMG",  ART_NEXT_IMG},  {"ART_NEXT_IMG",  ART_NEXT_IMG},
+  {"VAR_IP",    ART_VAR_IP},    {"ART_VAR_IP",    ART_VAR_IP},
 
-  {"WORD_SETUP",  4}, {"ART_WORD_SETUP",  4}, {"SETUP",  4},
-  {"WORD_INREQ",  5}, {"ART_WORD_INREQ",  5}, {"INREQ",  5},
-  {"WORD_OUTREQ", 6}, {"ART_WORD_OUTREQ", 6}, {"OUTREQ", 6},
-  {"WORD_HALT",   7}, {"ART_WORD_HALT",   7}, {"HALT",   7},
+  {"WORD_SETUP",  ART_WORD_SETUP},  {"ART_WORD_SETUP",  ART_WORD_SETUP},  {"SETUP",  ART_WORD_SETUP},
+  {"WORD_INREQ",  ART_WORD_INREQ},  {"ART_WORD_INREQ",  ART_WORD_INREQ},  {"INREQ",  ART_WORD_INREQ},
+  {"WORD_OUTREQ", ART_WORD_OUTREQ}, {"ART_WORD_OUTREQ", ART_WORD_OUTREQ}, {"OUTREQ", ART_WORD_OUTREQ},
+  {"WORD_HALT",   ART_WORD_HALT},   {"ART_WORD_HALT",   ART_WORD_HALT},   {"HALT",   ART_WORD_HALT},
 
-  {"VAR_LOOP",     20}, {"ART_VAR_LOOP",     20},
-  {"WORD_SAVEIP",  21}, {"ART_WORD_SAVEIP",  21}, {"SAVEIP", 21},
-  {"WORD_JMP",     22}, {"ART_WORD_JMP",     22}, {"JMP",    22},
-  {"WORD_SETOLEN", 23}, {"ART_WORD_SETOLEN", 23}, {"SETOLEN",23},
-  {"WORD_IFGOT0",  24}, {"ART_WORD_IFGOT0",  24}, {"IFGOT0", 24},
+  {"VAR_LOOP",     ART_VAR_LOOP},     {"ART_VAR_LOOP",     ART_VAR_LOOP},
+  {"WORD_SAVEIP",  ART_WORD_SAVEIP},  {"ART_WORD_SAVEIP",  ART_WORD_SAVEIP},  {"SAVEIP",  ART_WORD_SAVEIP},
+  {"WORD_JMP",     ART_WORD_JMP},     {"ART_WORD_JMP",     ART_WORD_JMP},     {"JMP",     ART_WORD_JMP},
+  {"WORD_SETOLEN", ART_WORD_SETOLEN}, {"ART_WORD_SETOLEN", ART_WORD_SETOLEN}, {"SETOLEN", ART_WORD_SETOLEN},
+  {"WORD_IFGOT0",  ART_WORD_IFGOT0},  {"ART_WORD_IFGOT0",  ART_WORD_IFGOT0},  {"IFGOT0",  ART_WORD_IFGOT0},
 
-  {"VAR_N",   25}, {"ART_VAR_N",   25},
-  {"VAR_DST", 26}, {"ART_VAR_DST", 26},
-  {"VAR_SRC", 27}, {"ART_VAR_SRC", 27},
+  {"VAR_N",   ART_VAR_N},   {"ART_VAR_N",   ART_VAR_N},
+  {"VAR_DST", ART_VAR_DST}, {"ART_VAR_DST", ART_VAR_DST},
+  {"VAR_SRC", ART_VAR_SRC}, {"ART_VAR_SRC", ART_VAR_SRC},
 
-  {"WORD_LITN",  28}, {"ART_WORD_LITN",  28}, {"LITN",  28},
-  {"WORD_LITD",  29}, {"ART_WORD_LITD",  29}, {"LITD",  29},
-  {"WORD_LITS",  30}, {"ART_WORD_LITS",  30}, {"LITS",  30},
-  {"WORD_COPY",  31}, {"ART_WORD_COPY",  31}, {"COPY",  31},
-  {"WORD_LITIP", 32}, {"ART_WORD_LITIP", 32}, {"LITIP", 32},
+  {"WORD_LITN",  ART_WORD_LITN},  {"ART_WORD_LITN",  ART_WORD_LITN},  {"LITN",  ART_WORD_LITN},
+  {"WORD_LITD",  ART_WORD_LITD},  {"ART_WORD_LITD",  ART_WORD_LITD},  {"LITD",  ART_WORD_LITD},
+  {"WORD_LITS",  ART_WORD_LITS},  {"ART_WORD_LITS",  ART_WORD_LITS},  {"LITS",  ART_WORD_LITS},
+  {"WORD_COPY",  ART_WORD_COPY},  {"ART_WORD_COPY",  ART_WORD_COPY},  {"COPY",  ART_WORD_COPY},
+  {"WORD_LITIP", ART_WORD_LITIP}, {"ART_WORD_LITIP", ART_WORD_LITIP}, {"LITIP", ART_WORD_LITIP},
 
-  {"BA", 33}, {"ART_BA", 33},
-  {"BB", 34}, {"ART_BB", 34},
-  {"BC", 35}, {"ART_BC", 35},
-  {"BR", 36}, {"ART_BR", 36},
-  {"T0", 37}, {"ART_T0", 37},
-  {"T1", 38}, {"ART_T1", 38},
+  {"BA", ART_BA}, {"ART_BA", ART_BA},
+  {"BB", ART_BB}, {"ART_BB", ART_BB},
+  {"BC", ART_BC}, {"ART_BC", ART_BC},
+  {"BR", ART_BR}, {"ART_BR", ART_BR},
+  {"T0", ART_T0}, {"ART_T0", ART_T0},
+  {"T1", ART_T1}, {"ART_T1", ART_T1},
 
-  {"WORD_BNOT", 39}, {"ART_WORD_BNOT", 39}, {"BNOT", 39},
-  {"WORD_BAND", 40}, {"ART_WORD_BAND", 40}, {"BAND", 40},
+  {"WORD_BNOT", ART_WORD_BNOT}, {"ART_WORD_BNOT", ART_WORD_BNOT}, {"BNOT", ART_WORD_BNOT},
+  {"WORD_BAND", ART_WORD_BAND}, {"ART_WORD_BAND", ART_WORD_BAND}, {"BAND", ART_WORD_BAND},
 
-  {"CONST1", 41}, {"ART_CONST1", 41},
-  {"CONST0", 42}, {"ART_CONST0", 42},
-  {"TESTG",  43}, {"ART_TESTG",  43},
+  {"CONST1", ART_CONST1}, {"ART_CONST1", ART_CONST1},
+  {"CONST0", ART_CONST0}, {"ART_CONST0", ART_CONST0},
+  {"TESTG",  ART_TESTG},  {"ART_TESTG",  ART_TESTG},
 
-  {"WORD_BOR",  44}, {"ART_WORD_BOR",  44}, {"BOR",  44},
-  {"WORD_BXOR", 45}, {"ART_WORD_BXOR", 45}, {"BXOR", 45},
+  {"WORD_BOR",  ART_WORD_BOR},  {"ART_WORD_BOR",  ART_WORD_BOR},  {"BOR",  ART_WORD_BOR},
+  {"WORD_BXOR", ART_WORD_BXOR}, {"ART_WORD_BXOR", ART_WORD_BXOR}, {"BXOR", ART_WORD_BXOR},
 
   /* 2a */
-  {"WORD_ADD24", 46}, {"ART_WORD_ADD24", 46}, {"ADD24", 46},
-  {"VAR_A24",    47}, {"ART_VAR_A24",    47},
-  {"VAR_B24",    48}, {"ART_VAR_B24",    48},
-  {"VAR_SUM24",  49}, {"ART_VAR_SUM24",  49},
-  {"VAR_COUT",   50}, {"ART_VAR_COUT",   50},
-  {"WORD_EQ24",  51}, {"ART_WORD_EQ24",  51}, {"EQ24",  51},
-  {"VAR_EQ",     52}, {"ART_VAR_EQ",     52},
-  {"WORD_LT24",  53}, {"ART_WORD_LT24",  53}, {"LT24",  53},
-  {"VAR_LT",     54}, {"ART_VAR_LT",     54},
+  {"WORD_ADD24", ART_WORD_ADD24}, {"ART_WORD_ADD24", ART_WORD_ADD24}, {"ADD24", ART_WORD_ADD24},
+  {"VAR_A24",    ART_VAR_A24},    {"ART_VAR_A24",    ART_VAR_A24},
+  {"VAR_B24",    ART_VAR_B24},    {"ART_VAR_B24",    ART_VAR_B24},
+  {"VAR_SUM24",  ART_VAR_SUM24},  {"ART_VAR_SUM24",  ART_VAR_SUM24},
+  {"VAR_COUT",   ART_VAR_COUT},   {"ART_VAR_COUT",   ART_VAR_COUT},
+  {"WORD_EQ24",  ART_WORD_EQ24},  {"ART_WORD_EQ24",  ART_WORD_EQ24},  {"EQ24", ART_WORD_EQ24},
+  {"VAR_EQ",     ART_VAR_EQ},     {"ART_VAR_EQ",     ART_VAR_EQ},
+  {"WORD_LT24",  ART_WORD_LT24},  {"ART_WORD_LT24",  ART_WORD_LT24},  {"LT24", ART_WORD_LT24},
+  {"VAR_LT",     ART_VAR_LT},     {"ART_VAR_LT",     ART_VAR_LT},
 
   /* 2b pointers */
-  {"WORD_LITAP", 55}, {"ART_WORD_LITAP", 55}, {"LITAP", 55},
-  {"WORD_LITBP", 56}, {"ART_WORD_LITBP", 56}, {"LITBP", 56},
-  {"WORD_LITRP", 57}, {"ART_WORD_LITRP", 57}, {"LITRP", 57},
-  {"VAR_AP",     58}, {"ART_VAR_AP",     58},
-  {"VAR_BP",     59}, {"ART_VAR_BP",     59},
-  {"VAR_RP",     60}, {"ART_VAR_RP",     60},
-  {"OFFTAB",     61}, {"ART_OFFTAB",     61},
-  {"WORD_EQ24P", 62}, {"ART_WORD_EQ24P", 62}, {"EQ24P", 62},
+  {"WORD_LITAP", ART_WORD_LITAP}, {"ART_WORD_LITAP", ART_WORD_LITAP}, {"LITAP", ART_WORD_LITAP},
+  {"WORD_LITBP", ART_WORD_LITBP}, {"ART_WORD_LITBP", ART_WORD_LITBP}, {"LITBP", ART_WORD_LITBP},
+  {"WORD_LITRP", ART_WORD_LITRP}, {"ART_WORD_LITRP", ART_WORD_LITRP}, {"LITRP", ART_WORD_LITRP},
+  {"VAR_AP",     ART_VAR_AP},     {"ART_VAR_AP",     ART_VAR_AP},
+  {"VAR_BP",     ART_VAR_BP},     {"ART_VAR_BP",     ART_VAR_BP},
+  {"VAR_RP",     ART_VAR_RP},     {"ART_VAR_RP",     ART_VAR_RP},
+  {"OFFTAB",     ART_OFFTAB},     {"ART_OFFTAB",     ART_OFFTAB},
+  {"WORD_EQ24P", ART_WORD_EQ24P}, {"ART_WORD_EQ24P", ART_WORD_EQ24P}, {"EQ24P", ART_WORD_EQ24P},
 
   /* scratch/devices */
-  {"TESTSCR_BASE", 63}, {"ART_TESTSCR_BASE", 63},
-  {"TESTSCR_END",  64}, {"ART_TESTSCR_END",  64},
-  {"BUS_BASE",     65}, {"ART_BUS_BASE",     65},
-  {"TERM0_DESC",   66}, {"ART_TERM0_DESC",   66},
+  {"TESTSCR_BASE", ART_TESTSCR_BASE}, {"ART_TESTSCR_BASE", ART_TESTSCR_BASE},
+  {"TESTSCR_END",  ART_TESTSCR_END},  {"ART_TESTSCR_END",  ART_TESTSCR_END},
+  {"BUS_BASE",     ART_BUS_BASE},     {"ART_BUS_BASE",     ART_BUS_BASE},
+  {"TERM0_DESC",   ART_TERM0_DESC},   {"ART_TERM0_DESC",   ART_TERM0_DESC},
 
   /* ptrprims */
-  {"WORD_LOAD24AP",  67}, {"ART_WORD_LOAD24AP",  67}, {"LOAD24AP", 67},
-  {"WORD_LOAD24BP",  68}, {"ART_WORD_LOAD24BP",  68}, {"LOAD24BP", 68},
-  {"WORD_STORE24RP", 69}, {"ART_WORD_STORE24RP", 69}, {"STORE24RP",69},
+  {"WORD_LOAD24AP",  ART_WORD_LOAD24AP},  {"ART_WORD_LOAD24AP",  ART_WORD_LOAD24AP},  {"LOAD24AP",  ART_WORD_LOAD24AP},
+  {"WORD_LOAD24BP",  ART_WORD_LOAD24BP},  {"ART_WORD_LOAD24BP",  ART_WORD_LOAD24BP},  {"LOAD24BP",  ART_WORD_LOAD24BP},
+  {"WORD_STORE24RP", ART_WORD_STORE24RP}, {"ART_WORD_STORE24RP", ART_WORD_STORE24RP}, {"STORE24RP", ART_WORD_STORE24RP},
 };
 
+typedef struct {
+  char *name;
+  uint64_t val;
+} const_ent_t;
+
+typedef struct {
+  const_ent_t *v;
+  size_t n, cap;
+} consttab_t;
+
 static void usage(const char *a0) {
-  fprintf(stderr,
-          "usage: %s --image std7.bin --in prog.f0 --out prog.tok\n"
-          "notes:\n"
-          "  - emits addr-sized big-endian tokens\n"
-          "  - prints TESTG(byte)=... to stderr\n",
-          a0);
+  fprintf(stderr, "usage: %s --image std7.bin --in prog.f0 --out prog.tok\n", a0);
 }
 
 static int load_image(vm_t *vm, const char *path) {
@@ -139,18 +151,57 @@ static int str_ieq(const char *a, const char *b) {
   return *a == 0 && *b == 0;
 }
 
+static void *xrealloc(void *p, size_t n) {
+  void *q = realloc(p, n);
+  if (!q) { fprintf(stderr, "forth0c: OOM\n"); exit(1); }
+  return q;
+}
+
+static char *xstrdup(const char *s) {
+  size_t n = strlen(s);
+  char *p = (char*)malloc(n + 1u);
+  if (!p) { fprintf(stderr, "forth0c: OOM\n"); exit(1); }
+  memcpy(p, s, n + 1u);
+  return p;
+}
+
+static void const_set(consttab_t *ct, const char *name, uint64_t val) {
+  for (size_t i = 0; i < ct->n; i++) {
+    if (strcmp(ct->v[i].name, name) == 0) {
+      ct->v[i].val = val;
+      return;
+    }
+  }
+  if (ct->n == ct->cap) {
+    size_t nc = ct->cap ? ct->cap * 2u : 16u;
+    ct->v = (const_ent_t*)xrealloc(ct->v, nc * sizeof(ct->v[0]));
+    ct->cap = nc;
+  }
+  ct->v[ct->n].name = xstrdup(name);
+  ct->v[ct->n].val = val;
+  ct->n++;
+}
+
+static int const_get(consttab_t *ct, const char *name, uint64_t *out) {
+  for (size_t i = 0; i < ct->n; i++) {
+    if (strcmp(ct->v[i].name, name) == 0) {
+      *out = ct->v[i].val;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static int sym_lookup_art_idx(const char *name, unsigned *out_idx) {
   /* allow ART[NN] */
-  if (name[0]=='A' || name[0]=='a') {
-    if ((name[1]=='R'||name[1]=='r') && (name[2]=='T'||name[2]=='t') && name[3]=='[') {
-      const char *p = name + 4;
-      char *e = NULL;
-      errno = 0;
-      unsigned long v = strtoul(p, &e, 10);
-      if (errno == 0 && e && *e == ']') {
-        *out_idx = (unsigned)v;
-        return 1;
-      }
+  if ((name[0]=='A'||name[0]=='a') && (name[1]=='R'||name[1]=='r') && (name[2]=='T'||name[2]=='t') && name[3]=='[') {
+    const char *p = name + 4;
+    char *e = NULL;
+    errno = 0;
+    unsigned long v = strtoul(p, &e, 10);
+    if (errno == 0 && e && *e == ']') {
+      *out_idx = (unsigned)v;
+      return 1;
     }
   }
 
@@ -172,6 +223,19 @@ static void write_be(FILE *f, uint64_t v, unsigned nbytes) {
     unsigned shift = 8u*(nbytes-1u-i);
     fputc((int)((v >> shift) & 0xFFu), f);
   }
+}
+
+static void emit_u(vm_t *vm, FILE *out, uint64_t v) {
+  unsigned nbytes = vm->addr_bits / 8u;
+  if (nbytes == 0 || (vm->addr_bits % 8u) != 0) {
+    fprintf(stderr, "forth0c: unsupported addr_bits=%u\n", vm->addr_bits);
+    exit(1);
+  }
+  if (vm->addr_bits < 64u) {
+    uint64_t mask = (1ull << vm->addr_bits) - 1ull;
+    v &= mask;
+  }
+  write_be(out, v, nbytes);
 }
 
 /* -------------------- lexer -------------------- */
@@ -304,7 +368,7 @@ static token_t lex_next(lex_t *lx) {
   return t;
 }
 
-/* -------------------- expression parser -------------------- */
+/* -------------------- parser state -------------------- */
 
 typedef struct {
   lex_t *lx;
@@ -313,6 +377,7 @@ typedef struct {
   vm_t *vm;
   bitaddr_t ART;
   unsigned art_count;
+  consttab_t consts;
 } pstate_t;
 
 static token_t p_peek(pstate_t *ps) {
@@ -348,6 +413,10 @@ static uint64_t parse_factor(pstate_t *ps) {
 
   if (t.k == TK_ID) {
     p_take(ps);
+
+    uint64_t cv = 0;
+    if (const_get(&ps->consts, t.s, &cv)) return cv;
+
     unsigned idx = 0;
     if (!sym_lookup_art_idx(t.s, &idx)) {
       fprintf(stderr, "forth0c: %s:%u: unknown symbol: %s\n", ps->lx->path, ps->lx->line, t.s);
@@ -426,10 +495,8 @@ static void path_dirname(const char *path, char *out, size_t out_sz) {
   const char *p = slash;
   if (!p || (bslash && bslash > p)) p = bslash;
 
-  if (!p) {
-    snprintf(out, out_sz, ".");
-    return;
-  }
+  if (!p) { snprintf(out, out_sz, "."); return; }
+
   size_t n = (size_t)(p - path);
   if (n == 0) n = 1; /* "/" */
   if (n + 1 > out_sz) n = out_sz - 1;
@@ -438,11 +505,34 @@ static void path_dirname(const char *path, char *out, size_t out_sz) {
 }
 
 static void path_join(const char *dir, const char *rel, char *out, size_t out_sz) {
-  if (!dir || !*dir || strcmp(dir, ".") == 0) {
-    snprintf(out, out_sz, "%s", rel);
-    return;
-  }
+  if (!dir || !*dir || strcmp(dir, ".") == 0) { snprintf(out, out_sz, "%s", rel); return; }
   snprintf(out, out_sz, "%s/%s", dir, rel);
+}
+
+static void compile_one_file(pstate_t *ps, const char *path, FILE *out);
+
+/* -------------------- emit helpers -------------------- */
+
+static uint64_t artv(pstate_t *ps, unsigned idx) {
+  if (idx >= ps->art_count) {
+    fprintf(stderr, "forth0c: internal: ART idx out of range: %u\n", idx);
+    exit(1);
+  }
+  return art_read(ps->vm, ps->ART, idx);
+}
+
+static void emit_word_by_artidx(pstate_t *ps, FILE *out, unsigned word_art_idx) {
+  uint64_t w = artv(ps, word_art_idx);
+  if (!w) {
+    fprintf(stderr, "forth0c: %s:%u: ART[%u] is 0 (word missing)\n", ps->lx->path, ps->lx->line, word_art_idx);
+    exit(1);
+  }
+  emit_u(ps->vm, out, w);
+}
+
+static void emit_lit_word_imm(pstate_t *ps, FILE *out, unsigned lit_word_art_idx, uint64_t imm) {
+  emit_word_by_artidx(ps, out, lit_word_art_idx);
+  emit_u(ps->vm, out, imm);
 }
 
 /* -------------------- compiler -------------------- */
@@ -457,30 +547,45 @@ static int word_needs_imm(const char *name) {
          str_ieq(name, "LITRP") || str_ieq(name, "WORD_LITRP") || str_ieq(name, "ART_WORD_LITRP");
 }
 
-static void emit_u(vm_t *vm, FILE *out, uint64_t v) {
-  unsigned nbytes = vm->addr_bits / 8u;
-  if (nbytes == 0 || (vm->addr_bits % 8u) != 0) {
-    fprintf(stderr, "forth0c: unsupported addr_bits=%u (expected multiple of 8)\n", vm->addr_bits);
-    exit(1);
-  }
-  if (vm->addr_bits < 64u) {
-    uint64_t mask = (1ull << vm->addr_bits) - 1ull;
-    v &= mask;
-  }
-  write_be(out, v, nbytes);
+static void do_copybits(pstate_t *ps, FILE *out, uint64_t n, uint64_t dst, uint64_t src) {
+  emit_lit_word_imm(ps, out, ART_WORD_LITN, n);
+  emit_lit_word_imm(ps, out, ART_WORD_LITD, dst);
+  emit_lit_word_imm(ps, out, ART_WORD_LITS, src);
+  emit_word_by_artidx(ps, out, ART_WORD_COPY);
 }
 
-static void compile_one_file(pstate_t *ps, const char *path, FILE *out);
+static void do_setbit(pstate_t *ps, FILE *out, uint64_t dst_bitaddr, int val01) {
+  uint64_t src = artv(ps, val01 ? ART_CONST1 : ART_CONST0);
+  do_copybits(ps, out, 1u, dst_bitaddr, src);
+}
+
+static void do_setbyte(pstate_t *ps, FILE *out, uint64_t byte_bitaddr, uint64_t u8) {
+  u8 &= 0xFFu;
+  for (unsigned off = 0; off < 8u; off++) {
+    unsigned bit = (unsigned)((u8 >> (7u - off)) & 1u);
+    do_setbit(ps, out, byte_bitaddr + (uint64_t)off, (int)bit);
+  }
+}
+
+static void do_set24(pstate_t *ps, FILE *out, uint64_t base_bitaddr, uint64_t u24) {
+  u24 &= 0xFFFFFFu;
+  uint64_t b0 = (u24 >> 16) & 0xFFu;
+  uint64_t b1 = (u24 >>  8) & 0xFFu;
+  uint64_t b2 = (u24 >>  0) & 0xFFu;
+  do_setbyte(ps, out, base_bitaddr + 0u*8u, b0);
+  do_setbyte(ps, out, base_bitaddr + 1u*8u, b1);
+  do_setbyte(ps, out, base_bitaddr + 2u*8u, b2);
+}
 
 static void compile_stream(pstate_t *ps, FILE *out) {
   for (;;) {
     token_t t = p_peek(ps);
     if (t.k == TK_EOF) return;
-
     if (t.k != TK_ID) lex_die(ps->lx, "expected word/directive");
 
     t = p_take(ps);
 
+    /* directives */
     if (str_ieq(t.s, "include")) {
       token_t p = p_take(ps);
       if (!(p.k == TK_STR || p.k == TK_ID)) lex_die(ps->lx, "include expects a string or bare token");
@@ -491,7 +596,50 @@ static void compile_stream(pstate_t *ps, FILE *out) {
       continue;
     }
 
-    /* emit word token */
+    if (str_ieq(t.s, "const")) {
+      token_t n = p_take(ps);
+      if (n.k != TK_ID) lex_die(ps->lx, "const expects NAME");
+      uint64_t v = parse_expr(ps);
+      const_set(&ps->consts, n.s, v);
+      continue;
+    }
+
+    if (str_ieq(t.s, "emit")) {
+      uint64_t v = parse_expr(ps);
+      emit_u(ps->vm, out, v);
+      continue;
+    }
+
+    if (str_ieq(t.s, "copybits")) {
+      uint64_t n = parse_expr(ps);
+      uint64_t dst = parse_expr(ps);
+      uint64_t src = parse_expr(ps);
+      do_copybits(ps, out, n, dst, src);
+      continue;
+    }
+
+    if (str_ieq(t.s, "setbit")) {
+      uint64_t dst = parse_expr(ps);
+      uint64_t v = parse_expr(ps);
+      do_setbit(ps, out, dst, (v != 0));
+      continue;
+    }
+
+    if (str_ieq(t.s, "setbyte")) {
+      uint64_t dst = parse_expr(ps);
+      uint64_t v = parse_expr(ps);
+      do_setbyte(ps, out, dst, v);
+      continue;
+    }
+
+    if (str_ieq(t.s, "set24")) {
+      uint64_t dst = parse_expr(ps);
+      uint64_t v = parse_expr(ps);
+      do_set24(ps, out, dst, v);
+      continue;
+    }
+
+    /* normal word emission by ART */
     unsigned idx = 0;
     if (!sym_lookup_art_idx(t.s, &idx)) {
       fprintf(stderr, "forth0c: %s:%u: unknown word: %s\n", ps->lx->path, ps->lx->line, t.s);
@@ -510,7 +658,6 @@ static void compile_stream(pstate_t *ps, FILE *out) {
     }
     emit_u(ps->vm, out, word_addr);
 
-    /* optional immediate */
     if (word_needs_imm(t.s)) {
       uint64_t imm = parse_expr(ps);
       emit_u(ps->vm, out, imm);
@@ -574,16 +721,13 @@ int main(int argc, char **argv) {
   bitaddr_t W = vm.workspace_base;
   bitaddr_t ART = (W + 512u + 7u) & ~(bitaddr_t)7u;
 
-  unsigned art_count = (unsigned)ART_COUNT;
-
-  /* report TESTG(byte) like mktok_test_* tools */
-  uint64_t testg = art_read(&vm, ART, 43u);
+  /* report TESTG(byte) like other mktok_test_* tools */
+  uint64_t testg = art_read(&vm, ART, (unsigned)ART_TESTG);
   fprintf(stderr, "TESTG(byte)=%u\n", (unsigned)(testg / 8u));
 
   FILE *out = fopen(outpath, "wb");
   if (!out) { perror("fopen"); vm_free(&vm); return 1; }
 
-  /* main input file lexer */
   size_t len = 0;
   char *buf = read_file_all(in, &len);
   if (!buf) {
@@ -605,9 +749,17 @@ int main(int argc, char **argv) {
   ps.lx = &lx;
   ps.vm = &vm;
   ps.ART = ART;
-  ps.art_count = art_count;
+  ps.art_count = (unsigned)ART_COUNT;
+
+  /* handy built-in consts */
+  const_set(&ps.consts, "ADDR_BITS", (uint64_t)vm.addr_bits);
+  const_set(&ps.consts, "ADDR_BYTES", (uint64_t)(vm.addr_bits/8u));
+  const_set(&ps.consts, "WORKSPACE_BASE", (uint64_t)vm.workspace_base);
 
   compile_stream(&ps, out);
+
+  for (size_t i = 0; i < ps.consts.n; i++) free(ps.consts.v[i].name);
+  free(ps.consts.v);
 
   free(buf);
   fclose(out);

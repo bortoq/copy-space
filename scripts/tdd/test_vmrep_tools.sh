@@ -2,7 +2,6 @@
 set -eu
 
 # file: scripts/tdd/test_vmrep_tools.sh
-# date: 2026-05-05
 # purpose: verify vmrep parsing tool (vmrep_to_csv.py) on a synthetic vmrep log
 
 [ -f scripts/vmrep_to_csv.py ] || { echo "FAIL: missing scripts/vmrep_to_csv.py" >&2; exit 1; }
@@ -10,7 +9,7 @@ set -eu
 mkdir -p tmp
 
 LOG="tmp/tdd_vmrep_synth.log"
-cat > "$LOG" <<'LOGEOF'
+cat >"$LOG" <<'VMREP'
 [vmrep] REPORT latency
 [vmrep] ticks_total=2
 [vmrep] bits_sum_total=16
@@ -22,15 +21,63 @@ cat > "$LOG" <<'LOGEOF'
 [vmrep] thr_avg_bits_sum_per_tick=8.000
 [vmrep] thr_avg_bits_uniq_dst_per_tick=6.000
 [vmrep] VMREP_END
-LOGEOF
+VMREP
 
 OUT="$(python3 scripts/vmrep_to_csv.py --bench tdd --log "$LOG" --row-only)"
 
-# Expect:
-# schema_version=1, bench=tdd, ticks_total=2, bits_sum_total=16, bits_uniq_dst_total=12,
-# avg uniq dst per tick = 6.000
-echo "$OUT" | grep -q '^1,tdd,' || { echo "FAIL: bad CSV prefix: $OUT" >&2; exit 1; }
-echo "$OUT" | grep -q ',2,,'  || { echo "FAIL: expected ticks_total=2 somewhere: $OUT" >&2; exit 1; }
-echo "$OUT" | grep -q ',16,12,8.000,6.000,' || { echo "FAIL: expected vmrep numbers missing: $OUT" >&2; exit 1; }
+python3 - "$OUT" <<'PY'
+import sys
 
-echo "OK vmrep_to_csv selftest"
+line = sys.argv[1].strip()
+cols = line.split(",")
+
+# schema v0 columns (must match scripts/vmrep_to_csv.py COLS)
+COLS = [
+    "schema_version",
+    "bench",
+    "mode",
+    "seed",
+    "space_bytes",
+    "slots",
+    "addr_bits",
+    "ticks_total",
+    "moved_bits_total",
+    "vmrep_bits_sum_total",
+    "vmrep_bits_uniq_dst_total",
+    "vmrep_avg_bits_sum_per_tick",
+    "vmrep_avg_bits_uniq_dst_per_tick",
+    "thr_from",
+    "thr_len",
+    "thr_avg_bits_sum_per_tick",
+    "thr_avg_bits_uniq_dst_per_tick",
+    "notes",
+    "git_rev",
+]
+
+def need(cond, msg):
+    if not cond:
+        raise SystemExit("FAIL: " + msg + f"\nOUT={line}")
+
+need(len(cols) == len(COLS), f"wrong column count: got={len(cols)} expected={len(COLS)}")
+
+m = dict(zip(COLS, cols))
+
+need(m["schema_version"] == "csv.v0", "schema_version != csv.v0")
+need(m["bench"] == "tdd", "bench != tdd")
+
+need(m["ticks_total"] == "2", "ticks_total != 2")
+need(m["moved_bits_total"] == "16", "moved_bits_total != 16")
+need(m["vmrep_bits_sum_total"] == "16", "vmrep_bits_sum_total != 16")
+need(m["vmrep_bits_uniq_dst_total"] == "12", "vmrep_bits_uniq_dst_total != 12")
+
+need(m["vmrep_avg_bits_sum_per_tick"] == "8.000", "avg_bits_sum_per_tick != 8.000")
+need(m["vmrep_avg_bits_uniq_dst_per_tick"] == "6.000", "avg_bits_uniq_dst_per_tick != 6.000")
+
+need(m["thr_from"] == "0", "thr_from != 0")
+need(m["thr_len"] == "2", "thr_len != 2")
+need(m["thr_avg_bits_sum_per_tick"] == "8.000", "thr_avg_bits_sum_per_tick != 8.000")
+need(m["thr_avg_bits_uniq_dst_per_tick"] == "6.000", "thr_avg_bits_uniq_dst_per_tick != 6.000")
+
+need(m["git_rev"] != "", "git_rev is empty (expected git rev or env override)")
+print("OK vmrep_to_csv selftest")
+PY

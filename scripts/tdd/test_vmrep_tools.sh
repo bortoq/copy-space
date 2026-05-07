@@ -31,7 +31,6 @@ import sys
 line = sys.argv[1].strip()
 cols = line.split(",")
 
-# schema v0 columns (must match scripts/vmrep_to_csv.py COLS)
 COLS = [
     "schema_version",
     "bench",
@@ -52,6 +51,8 @@ COLS = [
     "thr_avg_bits_uniq_dst_per_tick",
     "notes",
     "git_rev",
+    "copies_total",
+    "expected_bits_per_tick",
 ]
 
 def need(cond, msg):
@@ -79,5 +80,10 @@ need(m["thr_avg_bits_sum_per_tick"] == "8.000", "thr_avg_bits_sum_per_tick != 8.
 need(m["thr_avg_bits_uniq_dst_per_tick"] == "6.000", "thr_avg_bits_uniq_dst_per_tick != 6.000")
 
 need(m["git_rev"] != "", "git_rev is empty (expected git rev or env override)")
+
+# appended metrics: absent for this synthetic test => empty
+need(m["copies_total"] == "", "copies_total expected empty in synthetic test")
+need(m["expected_bits_per_tick"] == "", "expected_bits_per_tick expected empty in synthetic test")
+
 print("OK vmrep_to_csv selftest")
 PY

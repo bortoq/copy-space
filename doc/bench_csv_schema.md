@@ -1,14 +1,15 @@
-# Benchmark CSV schema (v0 target)
+# Benchmark CSV schema (v0)
 
 _file: doc/bench_csv_schema.md_
 
-This document defines the **target** CSV schema for benchmark outputs.
+This document defines the **current v0** CSV schema emitted by benchmark wrappers and the demo.
 
-Goal: all benchmark wrappers should converge to a stable schema so parsing/plotting is unified.
+Header source of truth:
+- `python3 scripts/vmrep_to_csv.py --header`
 
 ---
 
-## Versioning
+## Versioning rules
 
 - The schema is versioned (starting with **v0**).
 - A breaking change must bump the version (v1, v2, ...).
@@ -16,44 +17,27 @@ Goal: all benchmark wrappers should converge to a stable schema so parsing/plott
 
 ---
 
-## Current state (today)
+## Columns (exact order)
 
-- Individual benchmark scripts may emit **one CSV row without a header**.
-- The demo script may emit **a header + rows**.
-
-See `doc/benchmarks.md` for the current scripts.
-
----
-
-## Target format (v0)
-
-- CSV, UTF-8
-- One header line (column names)
-- One row per benchmark run
-
-### Minimal columns (v0)
-Recommended columns:
-
-- `bench` (e.g. `pack`, `permute`, `bulkcopy`)
-- `name` (human-readable variant name)
-- `mode` (optional string)
-- `seed` (integer, optional)
-
-- `space_bytes`
-- `processor_n`
-- `addr_bits`
-
-- `ticks_total`
-- `moved_bits_total` (or `moved_bytes_total`, but pick one consistently)
-
-- `vmrep_avg_bits_uniq_dst_per_tick` (if available)
-- `notes` (optional)
-
----
-
-## Enforcement plan
-
-Once the benchmark scripts are migrated to v0, we should add a small CI/TDD check that:
-- the header matches exactly,
-- all rows have the same number of fields.
+1) `schema_version` (currently `csv.v0`)
+2) `bench`
+3) `mode`
+4) `seed`
+5) `space_bytes`
+6) `slots` (number of copy slots per tick; historically called `processor_n` in code/tools)
+7) `addr_bits`
+8) `ticks_total`
+9) `moved_bits_total` (fallback: uses `vmrep_bits_sum_total` if not explicitly available)
+10) `vmrep_bits_sum_total`
+11) `vmrep_bits_uniq_dst_total`
+12) `vmrep_avg_bits_sum_per_tick`
+13) `vmrep_avg_bits_uniq_dst_per_tick`
+14) `thr_from`
+15) `thr_len`
+16) `thr_avg_bits_sum_per_tick`
+17) `thr_avg_bits_uniq_dst_per_tick`
+18) `notes`
+19) `git_rev`
+20) `copies_total` (optional; set by wrappers if known)
+21) `expected_bits_per_tick` (optional; set by wrappers if known)
 

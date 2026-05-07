@@ -3,9 +3,16 @@ set -eu
 
 # file: scripts/bench_bulkcopy_csv.sh
 # date: 2026-05-05
-# purpose: run bulkcopy bench and output ONE CSV ROW (no header)
+# purpose: run bulkcopy bench and output CSV (header+row by default)
 #
+#   --row  : print row only
 # VERBOSE=1 -> show bench console output on stderr
+
+ROW_ONLY=0
+if [ "${1:-}" = "--row" ]; then
+  ROW_ONLY=1
+  shift
+fi
 
 : "${COPYSPACE_REPORT:=1}"
 : "${COPYSPACE_REPORT_FROM:=1000}"
@@ -31,7 +38,6 @@ if [ "${VERBOSE:-0}" = "1" ]; then
   cat "$CONSOLE_LOG" >&2
 fi
 
-# bulkcopy bench logs vary; pick newest tmp/*.log containing VMREP_END
 BENCH_LOG="${BENCH_LOG:-}"
 if [ -n "$BENCH_LOG" ] && [ -f "$BENCH_LOG" ]; then
   :
@@ -60,10 +66,19 @@ if [ -z "$BENCH_LOG" ] || [ ! -f "$BENCH_LOG" ]; then
   exit 1
 fi
 
+COPIES_TOTAL="1"
+EXPECTED_BITS_PER_TICK=$((LEN_BYTES * 8))
+
+if [ "$ROW_ONLY" -eq 0 ]; then
+  python3 scripts/vmrep_to_csv.py --header
+fi
+
 python3 scripts/vmrep_to_csv.py \
   --bench bulkcopy \
   --mode "" \
   --seed "" \
   --log "$BENCH_LOG" \
   --row-only \
+  --copies-total "$COPIES_TOTAL" \
+  --expected-bits-per-tick "$EXPECTED_BITS_PER_TICK" \
   --notes "LEN_BYTES=${LEN_BYTES} LIFE=${LIFE}"

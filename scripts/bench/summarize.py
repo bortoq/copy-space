@@ -9,7 +9,7 @@ import csv
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
 
 
 def die(msg: str) -> None:
@@ -43,11 +43,13 @@ class Row:
     moved_bits_total: int
     vmrep_avg_bits_sum_per_tick: float
     vmrep_avg_bits_uniq_dst_per_tick: float
+    copies_total: int
+    expected_bits_per_tick: int
     notes: str
     git_rev: str
 
 
-CSV_V0_COLS = [
+CSV_V0_REQUIRED = [
     "schema_version",
     "bench",
     "mode",
@@ -57,14 +59,8 @@ CSV_V0_COLS = [
     "addr_bits",
     "ticks_total",
     "moved_bits_total",
-    "vmrep_bits_sum_total",
-    "vmrep_bits_uniq_dst_total",
     "vmrep_avg_bits_sum_per_tick",
     "vmrep_avg_bits_uniq_dst_per_tick",
-    "thr_from",
-    "thr_len",
-    "thr_avg_bits_sum_per_tick",
-    "thr_avg_bits_uniq_dst_per_tick",
     "notes",
     "git_rev",
 ]
@@ -75,10 +71,9 @@ def read_rows(path: Path) -> List[Row]:
         r = csv.DictReader(f)
         if not r.fieldnames:
             die("CSV has no header")
-        # Accept supersets, but require v0 columns exist
-        missing = [c for c in CSV_V0_COLS if c not in r.fieldnames]
+        missing = [c for c in CSV_V0_REQUIRED if c not in r.fieldnames]
         if missing:
-            die(f"CSV missing columns: {missing}")
+            die(f"CSV missing required columns: {missing}")
 
         out: List[Row] = []
         for d in r:
@@ -95,6 +90,8 @@ def read_rows(path: Path) -> List[Row]:
                     moved_bits_total=inum(d.get("moved_bits_total") or ""),
                     vmrep_avg_bits_sum_per_tick=fnum(d.get("vmrep_avg_bits_sum_per_tick") or ""),
                     vmrep_avg_bits_uniq_dst_per_tick=fnum(d.get("vmrep_avg_bits_uniq_dst_per_tick") or ""),
+                    copies_total=inum(d.get("copies_total") or ""),
+                    expected_bits_per_tick=inum(d.get("expected_bits_per_tick") or ""),
                     notes=(d.get("notes") or "").strip(),
                     git_rev=(d.get("git_rev") or "").strip(),
                 )
@@ -109,11 +106,18 @@ def key_basic(x: Row) -> Tuple:
 def fmt_bits_per_tick(v: float) -> str:
     if v != v:  # nan
         return "-"
-    # also show bytes/tick
     bpt = v / 8.0
     if bpt >= 1024:
         return f"{v:,.0f} bits/tick ({bpt/1024.0:,.2f} KiB/tick)"
     return f"{v:,.0f} bits/tick ({bpt:,.1f} B/tick)"
+
+
+def fmt_util(uniq: float, exp_bits: int) -> str:
+    if exp_bits <= 0:
+        return "-"
+    if uniq != uniq:  # nan
+        return "-"
+    return f"{(uniq / float(exp_bits))*100.0:,.1f}%"
 
 
 def main() -> int:
@@ -127,7 +131,6 @@ def main() -> int:
     if not rows:
         die("no data rows")
 
-    # group
     groups: Dict[Tuple, List[Row]] = defaultdict(list)
     for x in rows:
         groups[key_basic(x)].append(x)
@@ -136,31 +139,37 @@ def main() -> int:
     print(f"# rows={len(rows)} groups={len(groups)}")
     print()
 
-    # stable order by bench name
     for k in sorted(groups.keys()):
         g = groups[k]
         bench, mode, space_bytes, slots, addr_bits = k
 
-        # sort by uniq dst desc
-        g_sorted = sorted(g, key=lambda r: (r.vmrep_avg_bits_uniq_dst_per_tick if r.vmrep_avg_bits_uniq_dst_per_tick == r.vmrep_avg_bits_uniq_dst_per_tick else -1.0), reverse=True)
+        g_sorted = sorted(
+            g,
+            key=lambda r: (r.vmrep_avg_bits_uniq_dst_per_tick if r.vmrep_avg_bits_uniq_dst_per_tick == r.vmrep_avg_bits_uniq_dst_per_tick else -1.0),
+            reverse=True,
+        )
 
         best = g_sorted[0]
         print(f"## {bench} mode={mode} space_bytes={space_bytes} slots={slots} addr_bits={addr_bits}")
         print(f"- best uniq_dst: {fmt_bits_per_tick(best.vmrep_avg_bits_uniq_dst_per_tick)}")
         print(f"- best sum:      {fmt_bits_per_tick(best.vmrep_avg_bits_sum_per_tick)}")
+        if best.expected_bits_per_tick > 0:
+            print(f"- expected:      {best.expected_bits_per_tick} bits/tick  (util={fmt_util(best.vmrep_avg_bits_uniq_dst_per_tick, best.expected_bits_per_tick)})")
         if best.git_rev:
             print(f"- git_rev: {best.git_rev}")
         print()
 
         n = min(args.top, len(g_sorted))
-        print("| rank | uniq_dst avg | sum avg | ticks_total | moved_bits_total | seed | notes | git_rev |")
-        print("|---:|---:|---:|---:|---:|---:|---|---|")
+        print("| rank | uniq_dst avg | util vs expected | expected_bits/tick | copies_total | ticks_total | seed | notes | git_rev |")
+        print("|---:|---:|---:|---:|---:|---:|---:|---|---|")
         for i in range(n):
             r = g_sorted[i]
             uniq_s = "-" if r.vmrep_avg_bits_uniq_dst_per_tick != r.vmrep_avg_bits_uniq_dst_per_tick else f"{r.vmrep_avg_bits_uniq_dst_per_tick:,.3f}"
-            sum_s  = "-" if r.vmrep_avg_bits_sum_per_tick != r.vmrep_avg_bits_sum_per_tick else f"{r.vmrep_avg_bits_sum_per_tick:,.3f}"
+            util_s = fmt_util(r.vmrep_avg_bits_uniq_dst_per_tick, r.expected_bits_per_tick)
+            exp_s = "-" if r.expected_bits_per_tick <= 0 else str(r.expected_bits_per_tick)
+            copies_s = "-" if r.copies_total <= 0 else str(r.copies_total)
             print(
-                f"| {i+1} | {uniq_s} | {sum_s} | {r.ticks_total} | {r.moved_bits_total} | {r.seed or '-'} | {r.notes or '-'} | {r.git_rev or '-'} |"
+                f"| {i+1} | {uniq_s} | {util_s} | {exp_s} | {copies_s} | {r.ticks_total} | {r.seed or '-'} | {r.notes or '-'} | {r.git_rev or '-'} |"
             )
         print()
 

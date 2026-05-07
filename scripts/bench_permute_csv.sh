@@ -3,9 +3,16 @@ set -eu
 
 # file: scripts/bench_permute_csv.sh
 # date: 2026-05-05
-# purpose: run permute bench and output ONE CSV ROW (no header)
+# purpose: run permute bench and output CSV (header+row by default)
 #
+#   --row  : print row only
 # VERBOSE=1 -> show bench console output on stderr
+
+ROW_ONLY=0
+if [ "${1:-}" = "--row" ]; then
+  ROW_ONLY=1
+  shift
+fi
 
 : "${COPYSPACE_REPORT:=1}"
 : "${COPYSPACE_REPORT_FROM:=1000}"
@@ -33,7 +40,6 @@ if [ "${VERBOSE:-0}" = "1" ]; then
   cat "$CONSOLE_LOG" >&2
 fi
 
-# prefer bench-specific logs, fallback to newest tmp/*.log containing VMREP_END
 BENCH_LOG="${BENCH_LOG:-tmp/bench_permute.log}"
 if [ ! -f "$BENCH_LOG" ]; then
   if [ -f tmp/bench_permute.log ]; then BENCH_LOG=tmp/bench_permute.log
@@ -64,10 +70,19 @@ if [ -z "$BENCH_LOG" ] || [ ! -f "$BENCH_LOG" ]; then
   exit 1
 fi
 
+COPIES_TOTAL="$COPIES"
+EXPECTED_BITS_PER_TICK=$((COPIES * CHUNK_BYTES * 8))
+
+if [ "$ROW_ONLY" -eq 0 ]; then
+  python3 scripts/vmrep_to_csv.py --header
+fi
+
 python3 scripts/vmrep_to_csv.py \
   --bench permute \
   --mode "${MODE}" \
   --seed "${SEED}" \
   --log "$BENCH_LOG" \
   --row-only \
+  --copies-total "$COPIES_TOTAL" \
+  --expected-bits-per-tick "$EXPECTED_BITS_PER_TICK" \
   --notes "COPIES=${COPIES} CHUNK_BYTES=${CHUNK_BYTES} MODE=${MODE} SEED=${SEED}"

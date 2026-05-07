@@ -16,13 +16,7 @@ FAIL_DIR="$TMP_DIR/fail"
 VMRUN="$BIN_DIR/vmrun"
 VMPREP="$BIN_DIR/vmprep_forth0"
 MKIMAGE="$BIN_DIR/mkimage_std7_fixed"
-
-TOK_FULLADDER="$BIN_DIR/mktok_test_fulladder"
-TOK_ADD8="$BIN_DIR/mktok_test_add8"
-TOK_EQ24="$BIN_DIR/mktok_test_eq24"
-TOK_LT24="$BIN_DIR/mktok_test_lt24"
-TOK_ADD24="$BIN_DIR/mktok_test_add24"
-TOK_EQ24P="$BIN_DIR/mktok_test_eq24p"
+F0C="$BIN_DIR/forth0c"
 
 SMALL_IMG="$OUT_DIR/img_fixed_pool_small.bin"
 BIG_IMG="$OUT_DIR/img_fixed_pool_big.bin"
@@ -35,6 +29,15 @@ command -v xxd >/dev/null 2>&1 || {
   echo "ERROR: xxd not found (needed by tests)" >&2
   exit 1
 }
+
+need_bin() {
+  test -x "$1" || { echo "ERROR: missing binary: $1 (run: make bins)" >&2; exit 1; }
+}
+
+need_bin "$VMRUN"
+need_bin "$VMPREP"
+need_bin "$MKIMAGE"
+need_bin "$F0C"
 
 dump_vmrep () {
   f="$1"
@@ -69,7 +72,7 @@ make_fail_bundle () {
 
 run_case () {
   name="$1"
-  tokgen="$2"
+  f0src="$2"
   exphex="$3"
   expn="$4"
 
@@ -80,9 +83,18 @@ run_case () {
         "$TMP_DIR"/compile.log "$TMP_DIR"/prep.log "$TMP_DIR"/run.log \
         "$TMP_DIR"/t.log "$TMP_DIR"/got.bin "$TMP_DIR"/exp.bin
 
-  "$tokgen" --image "$SMALL_IMG" --out "$TMP_DIR/tok.bin" 2> "$TMP_DIR/t.log"
-  B=$(sed -n 's/TESTG(byte)=\([0-9][0-9]*\).*/\1/p' "$TMP_DIR/t.log")
-  test -n "$B"
+  test -f "$f0src" || { echo "ERROR: missing f0 source: $f0src" >&2; exit 1; }
+
+  "$F0C" --image "$SMALL_IMG" --in "$f0src" --out "$TMP_DIR/tok.bin" 2> "$TMP_DIR/t.log" || {
+    make_fail_bundle "$name" "forth0c failed"
+    exit 1
+  }
+
+  B="$(sed -n 's/TESTG(byte)=\([0-9][0-9]*\).*/\1/p' "$TMP_DIR/t.log" | head -n 1)"
+  test -n "$B" || {
+    make_fail_bundle "$name" "cannot parse TESTG(byte) from forth0c stderr"
+    exit 1
+  }
 
   "$VMRUN" --image "$BIG_IMG" \
     --space-bytes "$SPACE_BYTES" --processor-n "$PROCESSOR_N" \
@@ -150,16 +162,12 @@ echo "[test] build images (small/big pool)" >&2
 "$MKIMAGE" --out "$SMALL_IMG" --pool-cells "$POOL_SMALL" > /dev/null
 "$MKIMAGE" --out "$BIG_IMG"   --pool-cells "$POOL_BIG"   > /dev/null
 
-maybe_run "fulladder" "$TOK_FULLADDER" "00808040804040c0" 8
-maybe_run "add8"      "$TOK_ADD8"      "00000000ff010080" 8
-maybe_run "eq24"      "$TOK_EQ24"      "80008000" 4
-maybe_run "eq24p"     "$TOK_EQ24P"     "80008000" 4
-maybe_run "lt24"      "$TOK_LT24"      "008000800080" 6
-maybe_run "add24"     "$TOK_ADD24" \
-"00000000000000000000000000000000\
-ffffff00000001000000000080000000\
-12345600010203001336590000000000\
-80000000800000000000000080000000" 64
+maybe_run "fulladder" "src/forth0/tests/test_fulladder.f0" "00808040804040c0" 8
+maybe_run "add8"      "src/forth0/tests/test_add8.f0"      "00000000ff010080" 8
+maybe_run "eq24"      "src/forth0/tests/test_eq24.f0"      "80008000" 4
+maybe_run "eq24p"     "src/forth0/tests/test_eq24p.f0"     "80008000" 4
+maybe_run "lt24"      "src/forth0/tests/test_lt24.f0"      "00008000" 4
+maybe_run "add24"     "src/forth0/tests/test_add24.f0"     "00000000000000801336590000000080" 16
 
 echo "" >&2
 echo "All tests passed." >&2

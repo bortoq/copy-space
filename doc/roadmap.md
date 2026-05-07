@@ -1,11 +1,20 @@
 # Roadmap / TODO
 
-Текущее состояние (что уже сделано и чем проверяется):
+_file: doc/roadmap.md_
 
-- `doc/status.md`
+For current done items and test coverage: see `doc/status.md`.
 
-Исторический/черновой roadmap (старый файл, пока не нормализован):
+## Next (high priority)
 
-- `doc/old/20_todo.md`
+1) Bench CSV schema + harness  
+Unify benchmark output into a stable CSV schema + tooling (parse/plot/summarize).
 
-План: привести roadmap к актуальному виду (с приоритетами и без дублирования со status) отдельным шагом.
+2) Layer scheduler / replication trees  
+Scheduling under vertex-disjoint constraints; broadcast via replication trees (reduce depth to ~log2(K)).
+
+## Later
+
+- Devices/channels evolution (see `doc/devices.md`)
+- More control-flow / branching primitives (if needed)
+- Raw bit pointers (deferred; block pointers are baseline now)
+

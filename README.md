@@ -1,12 +1,14 @@
 # Copy-Space / Deterministic Data Movement Fabric (DPF)
 
-Copy-Space is a minimal deterministic execution model focused on data movement.
+**Pitch (short):** Copy-Space is a tiny deterministic VM for *measuring and reasoning about data movement*.
+It treats computation as scheduled bit-copies executed in fixed ticks, making throughput and scheduling constraints explicit.
+This is useful for workloads dominated by memory movement (compaction, reorder/permute, partition/materialization).
 
-The core operation is a scheduled memory copy:
+The core operation is:
 
     copy(n, dst, src)
 
-All higher-level behavior (compaction, reorder, gather/scatter, arithmetic) is built on top of this primitive.
+All higher-level behavior is built by composing this primitive (plus a small baseline image: `std7_fixed`).
 
 ---
 
@@ -25,7 +27,7 @@ Key metric in CSV:
 
     vmrep_avg_bits_uniq_dst_per_tick
 
-This shows effective unique destination bits written per tick (useful write throughput).
+This is effective unique destination bits written per tick (useful write throughput).
 
 ---
 
@@ -67,11 +69,14 @@ Legacy C token-generators (`build/bin/mktok_test_*`) are **optional**:
 
 ## Documentation
 
-See:
+Start here:
 
 - `doc/README.md`
-- `doc/forth0.md`
-- `doc/status.md` (status/progress)
+
+Status / roadmap:
+
+- `doc/status.md`
+- `doc/roadmap.md`
 
 ---
 

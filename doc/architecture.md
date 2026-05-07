@@ -1,20 +1,14 @@
-# Architecture (very short)
+# Architecture
 
-## Memory model
-- There is one memory array called `space`.
-- Addressing is in bits (bit-addressable).
+_file: doc/architecture.md_
 
-## Instruction model
-Each instruction slot is a copy:
+This document is intentionally short.
 
-    copy(n, dst, src)
+The current “core execution model” overview lives in:
 
-Meaning:
-- copy `n` bits from `src` to `dst` inside `space`.
+- `doc/overview.md`
 
-A VM tick executes a fixed number of instruction slots.
+For ABI references:
 
-## Determinism
-Given the same initial image and the same input, the result is deterministic.
-External I/O is modeled explicitly (MMIO handshake), so it can be tested and validated.
+- `doc/abi_artifacts.md`
 

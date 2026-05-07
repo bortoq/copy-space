@@ -1,19 +1,58 @@
 # Overview
 
+_file: doc/overview.md_
+
 Copy-Space (DPF — Deterministic Data Movement Fabric) is a small research VM where the main execution primitive is a scheduled copy:
 
     copy(n, dst, src)
 
-- Memory is **bit-addressable**.
-- A VM tick executes a fixed number of copy slots.
-- Programs are built by composing copy operations into higher-level behavior.
-
-This repository is focused on:
-- **measurable data movement** (pack/permute/bulkcopy benchmarks),
-- stable baseline images (std7_fixed),
-- reproducible results and regression tests.
-
 The goal is not to replace existing DB engines or ML accelerators.
 The goal is to provide a clear and deterministic model for data movement and scheduling,
 with a path to hardware-friendly execution (ASIC/FPGA feasibility discussions).
+
+---
+
+## Core execution model (very short)
+
+### Memory model
+- There is one memory array called `space`.
+- Addressing is **bit-based** (`bitaddr`), so memory is bit-addressable.
+
+### Instruction model
+Each instruction slot is a copy:
+
+    copy(n, dst, src)
+
+Meaning: copy `n` bits from `src` to `dst` inside `space`.
+
+A VM tick executes a fixed number of instruction slots (processor slots).
+
+### Determinism
+Given the same initial image and the same input, results are deterministic.
+External I/O is modeled explicitly (MMIO handshake), so behavior can be tested and reproduced.
+
+---
+
+## Baseline image: std7_fixed and ART (ABI)
+The baseline image publishes key addresses through an artifacts table (ART).
+ART is the ABI contract for tools and programs.
+
+See:
+- `abi_artifacts.md`
+
+---
+
+## Quickstart
+See:
+- `quickstart.md`
+
+---
+
+## Why DB/analytics may care (high-level)
+Many pipelines are dominated by moving bytes, not computing:
+- compaction after filter (selection vectors)
+- reorder / partition (hash partitioning, sort preparation, materialization)
+- bulk buffer movement (DMA-like)
+
+The repo includes benchmarks (`benchmarks.md`) that output CSV metrics.
 

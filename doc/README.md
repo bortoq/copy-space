@@ -1,22 +1,33 @@
-# Documentation
+# Documentation index
 
-## Start Here
+_file: doc/README.md_
 
-1. overview.md       — what this project is
-2. quickstart.md     — how to build and run the demo
-3. benchmarks.md     — vmrep and CSV metrics
-4. architecture.md   — core execution model
-5. abi_artifacts.md  — ART table (ABI)
-6. devices.md        — device ≠ channel concept
+All documentation is written in **simple English** (status/roadmap included).
 
-## Partner Materials
+## Start here (recommended order)
 
-See:
+1) `overview.md`  
+   What the project is and the core execution model.
 
-    doc/partners/
+2) `quickstart.md`  
+   Build, run the demo, run tests, run a `.f0` program.
 
-## Legacy Notes
+3) `forth0.md`  
+   Forth0 workflow and `.f0` syntax supported by `forth0c`.
 
-Old documentation is preserved in:
+4) `status.md`  
+   What is currently done and what is covered by tests/CI.
 
-    doc/old/
+5) `roadmap.md`  
+   What we plan to do next.
+
+## Specs / core references
+
+- `abi_artifacts.md` — ART table ABI (generated; append-only)
+- `devices.md` — device/channel model and TERM0 descriptor ABI
+- `benchmarks.md` — benchmarks, vmrep metrics, CSV output
+
+## Partner materials
+
+See `doc/partners/` (one-pager and email templates).
+

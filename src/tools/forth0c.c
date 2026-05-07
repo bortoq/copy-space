@@ -1,4 +1,4 @@
-/* Thin wrapper: keep tool entrypoint under src/tools for Makefile auto-discovery.
- * Implementation lives in src/forth0/host/ (split into smaller includes).
+/* Thin wrapper (kept under src/tools for Makefile auto-discovery).
+ * Implementation lives under src/forth0/host/ (see the .inc files there).
  */
-#include "forth0/host/forth0c_main.inc"
+#include "forth0/host/main.inc"

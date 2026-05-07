@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Build (bins)
+        run: make bins
+
+      - name: ART ABI doc sync
+        run: python3 scripts/check_art_doc_sync.py --doc doc/abi_artifacts.md
+
+      - name: Test (non-TDD)
+        run: make test
+
+      - name: TDD
+        run: make tdd

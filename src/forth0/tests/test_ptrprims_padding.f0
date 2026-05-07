@@ -1,0 +1,36 @@
+# test_ptrprims_padding.f0 — ptrprims padding semantics (Forth0 form)
+#
+# Checks:
+#  - LOAD24AP reads only 24 bits, ignores padding byte [24..31]
+#  - STORE24RP writes only 24 bits, preserves padding byte [24..31]
+#
+# Expected bytes at TESTG (7 bytes):
+#   12 34 56  ab cd ef aa
+
+const A_base   (TESTG + 256*8)
+const RES_base (TESTG + 320*8)
+
+# Setup *AP block: 12 34 56 BB (padding=BB)
+setbyte (A_base + 0*8) 0x12
+setbyte (A_base + 1*8) 0x34
+setbyte (A_base + 2*8) 0x56
+setbyte (A_base + 3*8) 0xBB
+
+# VAR_AP = A_base; LOAD24AP -> VAR_A24; dump 24 bits => TESTG[0..2]
+LITAP A_base
+LOAD24AP
+copybits 24 TESTG VAR_A24
+
+# Setup *RP block: 00 00 00 AA (padding=AA)
+setbyte (RES_base + 0*8) 0x00
+setbyte (RES_base + 1*8) 0x00
+setbyte (RES_base + 2*8) 0x00
+setbyte (RES_base + 3*8) 0xAA
+
+# VAR_SUM24 = AB CD EF; VAR_RP = RES_base; STORE24RP; dump 32 bits => TESTG[3..6]
+set24 VAR_SUM24 0xABCDEF
+LITRP RES_base
+STORE24RP
+copybits 32 (TESTG + 24) RES_base
+
+HALT

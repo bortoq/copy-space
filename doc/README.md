@@ -2,7 +2,7 @@
 
 _file: doc/README.md_
 
-All documentation is written in **simple English** (status/roadmap included).
+All documentation is written in **simple English**.
 
 ## Start here (recommended order)
 
@@ -12,13 +12,16 @@ All documentation is written in **simple English** (status/roadmap included).
 2) `quickstart.md`  
    Build, run the demo, run tests, run a `.f0` program.
 
-3) `forth0.md`  
+3) `testing.md`  
+   How tests work, how to run one test, fail bundles, debugging tips.
+
+4) `forth0.md`  
    Forth0 workflow and `.f0` syntax supported by `forth0c`.
 
-4) `status.md`  
+5) `status.md`  
    What is currently done and what is covered by tests/CI.
 
-5) `roadmap.md`  
+6) `roadmap.md`  
    What we plan to do next.
 
 ## Specs / core references
@@ -26,6 +29,7 @@ All documentation is written in **simple English** (status/roadmap included).
 - `abi_artifacts.md` — ART table ABI (generated; append-only)
 - `devices.md` — device/channel model and TERM0 descriptor ABI
 - `benchmarks.md` — benchmarks, vmrep metrics, CSV output
+- `architecture.md` — pointer to `overview.md`
 
 ## Partner materials
 

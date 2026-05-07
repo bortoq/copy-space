@@ -12,6 +12,7 @@ scripts/tdd/test_term0_desc_abi.sh
 scripts/tdd/test_fail_bundle.sh
 scripts/tdd/test_ptrprims.sh
 scripts/tdd/test_art_doc_sync.sh
+scripts/tdd/test_forth0c.sh
 "
 
 for t in $tests; do

@@ -1,0 +1,8 @@
+# Minimal forth0 smoke:
+# set TESTG[0] MSB = 1 via COPY(1 bit from CONST1), then HALT.
+
+LITN 1
+LITD TESTG
+LITS CONST1
+COPY
+HALT

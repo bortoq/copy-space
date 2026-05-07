@@ -1,0 +1,2 @@
+# Smoke: test include (relative to current file dir).
+include "smoke_setbit.f0"

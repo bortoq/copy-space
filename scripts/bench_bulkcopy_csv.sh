@@ -81,4 +81,4 @@ python3 scripts/vmrep_to_csv.py \
   --row-only \
   --copies-total "$COPIES_TOTAL" \
   --expected-bits-per-tick "$EXPECTED_BITS_PER_TICK" \
-  --notes "LEN_BYTES=${LEN_BYTES} LIFE=${LIFE}"
+  --notes "LEN_BYTES=${LEN_BYTES} LIFE=${LIFE} COPIES_TOTAL=${COPIES_TOTAL} EXPECTED_BITS_PER_TICK=${EXPECTED_BITS_PER_TICK}"

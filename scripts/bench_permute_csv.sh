@@ -85,4 +85,4 @@ python3 scripts/vmrep_to_csv.py \
   --row-only \
   --copies-total "$COPIES_TOTAL" \
   --expected-bits-per-tick "$EXPECTED_BITS_PER_TICK" \
-  --notes "COPIES=${COPIES} CHUNK_BYTES=${CHUNK_BYTES} MODE=${MODE} SEED=${SEED}"
+  --notes "COPIES=${COPIES} CHUNK_BYTES=${CHUNK_BYTES} MODE=${MODE} SEED=${SEED} COPIES_TOTAL=${COPIES_TOTAL} EXPECTED_BITS_PER_TICK=${EXPECTED_BITS_PER_TICK}"

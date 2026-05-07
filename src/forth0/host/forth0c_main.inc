@@ -50,6 +50,9 @@ static int const_get(consttab_t *ct, const char *name, uint64_t *out) {
 #include "forth0c_syms.inc"
 #include "forth0c_lex.inc"
 
+/* macros */
+#include "forth0c_macros.inc"
+
 /* parser state */
 typedef struct {
   lex_t *lx;
@@ -59,6 +62,7 @@ typedef struct {
   bitaddr_t ART;
   unsigned art_count;
   consttab_t consts;
+  macrotab_t macros;
 } pstate_t;
 
 static token_t p_peek(pstate_t *ps) {
@@ -137,6 +141,8 @@ int main(int argc, char **argv) {
   const_set(&ps.consts, "WORKSPACE_BASE", (uint64_t)vm.workspace_base);
 
   compile_stream(&ps, out);
+
+  macro_free_all(&ps.macros);
 
   for (size_t i = 0; i < ps.consts.n; i++) free(ps.consts.v[i].name);
   free(ps.consts.v);

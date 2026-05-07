@@ -1,6 +1,12 @@
 # Write two bytes into TESTG, then HALT.
 # Expected at TESTG: 80 aa
+#
+# This smoke also validates macro expansion.
 
-setbyte TESTG 0x80
-setbyte (TESTG + 8) 0xAA
+macro msetbyte(dst, v)
+  setbyte dst v
+endmacro
+
+msetbyte(TESTG, 0x80)
+msetbyte((TESTG + 8), 0xAA)
 HALT

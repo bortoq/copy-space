@@ -22,15 +22,22 @@ All documentation is written in **simple English**.
 5) `forth0.md`  
    Forth0 workflow and `.f0` syntax supported by `forth0c`.
 
+6) `forth0_howto.md`  
+   Recipes / templates for writing `.f0` programs and tests.
+
+7) `glossary.md`  
+   Minimal terminology index.
+
 ### Project tracking
-6) `status.md`  
+8) `status.md`  
    What is currently done and what is covered by tests/CI.
 
-7) `roadmap.md`  
+9) `roadmap.md`  
    What we plan to do next.
 
 ## Specs / core references
 
+- `stability.md` — what is stable vs implementation-defined
 - `abi_artifacts.md` — ART table ABI (generated; append-only)
 - `memory_layout.md` — space regions and what programs/tests may touch
 - `devices.md` — device/channel model and TERM0 descriptor ABI
@@ -40,3 +47,4 @@ All documentation is written in **simple English**.
 ## Partner materials (non-technical)
 
 See `doc/partners/` (one-pager and email templates).
+

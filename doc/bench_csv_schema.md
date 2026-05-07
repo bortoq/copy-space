@@ -8,6 +8,14 @@ Goal: all benchmark wrappers should converge to a stable schema so parsing/plott
 
 ---
 
+## Versioning
+
+- The schema is versioned (starting with **v0**).
+- A breaking change must bump the version (v1, v2, ...).
+- Non-breaking additions should append new columns at the end.
+
+---
+
 ## Current state (today)
 
 - Individual benchmark scripts may emit **one CSV row without a header**.

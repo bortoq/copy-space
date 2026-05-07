@@ -45,6 +45,37 @@ See:
 
 ---
 
+## Forth0-first workflow (recommended)
+Most tests and higher-level logic in this repo are written as `.f0` programs compiled by `forth0c`.
+
+See:
+- `forth0.md`
+- `forth0_howto.md`
+- `testing.md`
+
+---
+
+## Current gap: flow control / scheduling layer partitioner
+Today, Forth0 is used mainly as a *host-compiled DSL* to build specific schedules and tests.
+
+What is still missing (design work):
+- A “copy-flow manager” / control layer that owns higher-level copy plans.
+- Automatic partitioning of copies into tick-layers under a constraint such as:
+  “within one tick/layer, each space index participates at most once”
+  (vertex-disjoint / no-overlap dst, and usually no overlap src).
+- Replication trees for broadcast (one source → many destinations) under fanout constraints.
+
+This is a major upcoming design step and should be implemented *using Forth0* (not by expanding ART),
+but it needs a clear interface and a stable layer model.
+
+---
+
+## Stability / guarantees
+See:
+- `stability.md`
+
+---
+
 ## Quickstart
 See:
 - `quickstart.md`

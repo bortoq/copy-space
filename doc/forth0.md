@@ -39,7 +39,9 @@ Debug helper:
 
 ---
 
-## `.f0` syntax (`forth0c`)
+## `.f0` syntax (`forth0c`) — v0
+
+We treat this `.f0` surface as a stable “v0” interface (see also `doc/stability.md`).
 
 - comments: `# ...` or `\ ...` to end of line
 - include: `include "path.f0"` (relative to current file)

@@ -115,6 +115,12 @@ static int word_needs_imm(const char *name) {
          str_ieq(name, "LITRP") || str_ieq(name, "WORD_LITRP") || str_ieq(name, "ART_WORD_LITRP");
 }
 
+static int is_ptr_lit_word(const char *name) {
+  return str_ieq(name, "LITAP") || str_ieq(name, "WORD_LITAP") || str_ieq(name, "ART_WORD_LITAP") ||
+         str_ieq(name, "LITBP") || str_ieq(name, "WORD_LITBP") || str_ieq(name, "ART_WORD_LITBP") ||
+         str_ieq(name, "LITRP") || str_ieq(name, "WORD_LITRP") || str_ieq(name, "ART_WORD_LITRP");
+}
+
 static void do_copybits(pstate_t *ps, FILE *out, uint64_t n, uint64_t dst, uint64_t src) {
   emit_lit_word_imm(ps, out, ART_WORD_LITN, n);
   emit_lit_word_imm(ps, out, ART_WORD_LITD, dst);
@@ -398,6 +404,13 @@ static void compile_stream(pstate_t *ps, FILE *out) {
 
     if (word_needs_imm(t.s)) {
       uint64_t imm = parse_expr(ps);
+
+      if (is_ptr_lit_word(t.s) && ((imm % 32u) != 0u)) {
+        fprintf(stderr,
+                "forth0c: %s:%u: WARN: %s immediate=0x%llx is not 32-bit aligned (bitaddr%%32!=0)\n",
+                ps->lx->path, ps->lx->line, t.s, (unsigned long long)imm);
+      }
+
       emit_u(ps->vm, out, imm);
     }
   }

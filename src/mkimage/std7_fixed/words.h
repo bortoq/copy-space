@@ -7,6 +7,14 @@
 
 #include "space.h"
 
+void write_word_load24ap(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                         bitaddr_t VAR_A24, bitaddr_t VAR_AP);
+
+void write_word_load24bp(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                         bitaddr_t VAR_B24, bitaddr_t VAR_BP);
+
+void write_word_store24rp(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                          bitaddr_t VAR_RP, bitaddr_t VAR_SUM24);
 void nop_fill_processor(vm_t *vm);
 void write_next_page(vm_t *vm, bitaddr_t next_img,
                             bitaddr_t var_ip, bitaddr_t var_code, bitaddr_t var_next,

@@ -192,6 +192,10 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   bitaddr_t WORD_LITAP   = WORDS_BASE + 23*STEP;
   bitaddr_t WORD_LITBP   = WORDS_BASE + 24*STEP;
   bitaddr_t WORD_LITRP   = WORDS_BASE + 25*STEP;
+  /* 2b block-pointer primitives (appended ABI) */
+  bitaddr_t WORD_LOAD24AP  = WORDS_BASE + 26*STEP;
+  bitaddr_t WORD_LOAD24BP  = WORDS_BASE + 27*STEP;
+  bitaddr_t WORD_STORE24RP = WORDS_BASE + 28*STEP;
 
   // 2a library words pages (stable)
   bitaddr_t WORD_ADD24   = WORDS_BASE + 32*STEP; // 24 pages: 32..55
@@ -225,6 +229,9 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   write_word_lit_generic(&vm, WORD_LITAP, NEXT_IMG, VAR_IP, VAR_AP, CONST1);
   write_word_lit_generic(&vm, WORD_LITBP, NEXT_IMG, VAR_IP, VAR_BP, CONST1);
   write_word_lit_generic(&vm, WORD_LITRP, NEXT_IMG, VAR_IP, VAR_RP, CONST1);
+  write_word_load24ap(&vm, WORD_LOAD24AP, NEXT_IMG, VAR_A24, VAR_AP);
+  write_word_load24bp(&vm, WORD_LOAD24BP, NEXT_IMG, VAR_B24, VAR_BP);
+  write_word_store24rp(&vm, WORD_STORE24RP, NEXT_IMG, VAR_RP, VAR_SUM24);
 
   write_word_bnot(&vm, WORD_BNOT, NEXT_IMG, BA, BR, CONST1, CONST0);
   write_word_band(&vm, WORD_BAND, NEXT_IMG, BA, BB, BR, CONST0);
@@ -393,6 +400,9 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   /* devices/bus */
   A.bus_base   = BUS_BASE;
   A.term0_desc = DEV.term0_desc;
+  A.word_load24ap  = WORD_LOAD24AP;
+  A.word_load24bp  = WORD_LOAD24BP;
+  A.word_store24rp = WORD_STORE24RP;
 
   std7_fixed_write_artifacts(&vm, ART, &A); // }}
 

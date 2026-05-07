@@ -19,11 +19,18 @@ for t in \
   scripts/tdd/test_scratch_abi.sh \
   scripts/tdd/test_scratch_artifacts.sh \
   scripts/tdd/test_term0_desc_abi.sh \
-  scripts/tdd/test_fail_bundle.sh
+  scripts/tdd/test_fail_bundle.sh \
+  scripts/tdd/test_ptrprims.sh
 do
   printf "\n" >&2
   printf "%s[tdd] RUN %s%s\n" "$C_YEL" "$t" "$C_RST" >&2
-  if sh "$t"; then
+
+  runner="sh"
+  if [ "$t" = "scripts/tdd/test_ptrprims.sh" ]; then
+    runner="bash"
+  fi
+
+  if "$runner" "$t"; then
     printf "%s[tdd] OK  %s%s\n" "$C_GRN" "$t" "$C_RST" >&2
   else
     printf "%s[tdd] FAIL %s%s\n" "$C_RED" "$t" "$C_RST" >&2

@@ -1,12 +1,19 @@
 # Write two bytes into TESTG, then HALT.
 # Expected at TESTG: 80 aa
 #
-# This smoke also validates macro expansion.
+# Validates:
+# - macro expansion
+# - for/endfor compile-time loop
+# - using loop var in expressions
 
 macro msetbyte(dst, v)
   setbyte dst v
 endmacro
 
-msetbyte(TESTG, 0x80)
-msetbyte((TESTG + 8), 0xAA)
+# i=0 => 0x80
+# i=1 => 0x80 + 0x2A = 0xAA
+for i 0 1
+  msetbyte((TESTG + i*8), (0x80 + i*0x2A))
+endfor
+
 HALT

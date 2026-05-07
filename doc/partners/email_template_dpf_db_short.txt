@@ -17,11 +17,11 @@ Quick demo (outputs CSV):
   scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
   cat tmp/demo.csv
 
-Repo: https://github.com/bortoq/parallel-computing
+Repo: https://github.com/bortoq/copy-space
 One-pager: doc/partners/one_pager_dpf_db.txt
 
 If you can share a rough workload shape (record width, selectivity, partition count, latency target), I can do a short paid feasibility sprint:
-map → measure → estimate required bandwidth + main hardware risks (rough, with explicit assumptions).
+map → measure → estimate required bandwidth + main hardware risks (rough, explicit assumptions).
 
 Would you be open to a short email exchange? What parameters should I use?
 

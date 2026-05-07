@@ -13,7 +13,7 @@ Quick demo (CSV):
   scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
   cat tmp/demo.csv
 
-Repo: https://github.com/bortoq/parallel-computing
+Repo: https://github.com/bortoq/copy-space
 One-pager: doc/partners/one_pager_dpf_db.txt
 
 If you share basic workload parameters (record width, selectivity, partition count, latency target), I can do a short paid feasibility sprint.

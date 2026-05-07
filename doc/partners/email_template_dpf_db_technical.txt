@@ -22,7 +22,7 @@ Default demo shows contrast:
 - pack/permute: ~32768 bits/tick = 4096 bytes/tick
 - bulkcopy:     ~524288 bits/tick = 65536 bytes/tick (64KB/tick)
 
-Repo: https://github.com/bortoq/parallel-computing
+Repo: https://github.com/bortoq/copy-space
 One-pager: doc/partners/one_pager_dpf_db.txt
 
 I’m looking for a small paid feasibility engagement:

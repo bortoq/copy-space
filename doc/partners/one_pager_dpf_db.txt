@@ -56,4 +56,4 @@ CONTACT
 Dmitri Bortoq
 Email: bortoq@gmail.com
 Telegram: @the_arctium
-GitHub: https://github.com/bortoq/parallel-computing
+GitHub: https://github.com/bortoq/copy-space

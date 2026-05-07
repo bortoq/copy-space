@@ -12,6 +12,15 @@ Legend:
 
 ---
 
+## Where tests live
+
+- Forth0 libs: `src/forth0/lib/`
+- Forth0 tests: `src/forth0/tests/`
+- TDD harness scripts: `scripts/tdd/test_forth0*.sh`
+- Main regression harness: `scripts/test_all.sh`
+
+---
+
 ## A) Engineering baseline
 
 - [x] `VM_ERR` diagnostics covered by TDD (`scripts/tdd/test_vmerr_diag.sh`)

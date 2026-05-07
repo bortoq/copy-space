@@ -6,22 +6,27 @@ All documentation is written in **simple English**.
 
 ## Start here (recommended order)
 
+### Guides
 1) `overview.md`  
    What the project is and the core execution model.
 
-2) `quickstart.md`  
+2) `semantics.md`  
+   Tick/slot semantics, conflicts, and recommended scheduling constraints.
+
+3) `quickstart.md`  
    Build, run the demo, run tests, run a `.f0` program.
 
-3) `testing.md`  
+4) `testing.md`  
    How tests work, how to run one test, fail bundles, debugging tips.
 
-4) `forth0.md`  
+5) `forth0.md`  
    Forth0 workflow and `.f0` syntax supported by `forth0c`.
 
-5) `status.md`  
+### Project tracking
+6) `status.md`  
    What is currently done and what is covered by tests/CI.
 
-6) `roadmap.md`  
+7) `roadmap.md`  
    What we plan to do next.
 
 ## Specs / core references
@@ -29,9 +34,9 @@ All documentation is written in **simple English**.
 - `abi_artifacts.md` — ART table ABI (generated; append-only)
 - `devices.md` — device/channel model and TERM0 descriptor ABI
 - `benchmarks.md` — benchmarks, vmrep metrics, CSV output
-- `architecture.md` — pointer to `overview.md`
+- `bench_csv_schema.md` — stable CSV schema (v0)
 
-## Partner materials
+## Partner materials (non-technical)
 
 See `doc/partners/` (one-pager and email templates).
 

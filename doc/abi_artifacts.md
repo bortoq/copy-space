@@ -2,10 +2,25 @@
 
 This document is generated from `src/mkimage/std7_fixed/artifacts.h`.
 
+## How to regenerate
+Search for the generator script:
+
+- `scripts/gen_abi_artifacts_doc.py`
+
+(We intentionally keep this doc stable and also enforce consistency via TDD:
+`scripts/tdd/test_art_doc_sync.sh` runs `scripts/check_art_doc_sync.py`.)
+
 ## Rules
 - ABI is **append-only**: new entries are added only at the end (ART_COUNT increases).
 - ART values are **bitaddrs** (bit addresses in `space`).
 - Convert to byte offset: `byte = bitaddr / 8`.
+
+## ART base location (std7_fixed)
+In std7_fixed tools/tests we treat ART base as:
+
+- `ART = align8(workspace_base + 512)`
+
+I.e. `ART = (workspace_base + 512 + 7) & ~7` (bit address), and ART entries are stored as `ADDR_BITS`-wide values.
 
 ## ART table
 `ART_COUNT = 70` (valid indices: 0..69)

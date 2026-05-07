@@ -1,6 +1,11 @@
 # Benchmarks and Metrics
 
+_file: doc/benchmarks.md_
+
 This repo includes throughput benchmarks and a small reporting toolchain.
+
+CSV schema reference:
+- `bench_csv_schema.md`
 
 ## Benchmarks
 

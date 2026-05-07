@@ -27,9 +27,12 @@ Meaning: copy `n` bits from `src` to `dst` inside `space`.
 
 A VM tick executes a fixed number of instruction slots (processor slots).
 
-### Determinism
+### Determinism and conflicts
 Given the same initial image and the same input, results are deterministic.
-External I/O is modeled explicitly (MMIO handshake), so behavior can be tested and reproduced.
+However, deterministic does not mean “safe”: same-tick write conflicts can hide bugs.
+
+See:
+- `semantics.md`
 
 ---
 

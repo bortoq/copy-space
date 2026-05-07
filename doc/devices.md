@@ -1,5 +1,7 @@
 # Devices and Channels (device ≠ channel)
 
+_file: doc/devices.md_
+
 ## Principle
 A **device** is a single object with identity and a set of ports.
 A **channel** is a port endpoint with a protocol.
@@ -21,8 +23,7 @@ The terminal is published as a self-describing structure inside `space` and refe
 The descriptor uses magic "CDEV".
 Channel headers use magic "CHN1".
 
-## Test
-TERM0 descriptor ABI is validated by:
-
-- `scripts/tdd/test_term0_desc_abi.sh`
+## Tests / references
+- TERM0 descriptor ABI is validated by: `scripts/tdd/test_term0_desc_abi.sh`
+- ART table ABI reference: `doc/abi_artifacts.md`
 

@@ -10,6 +10,14 @@ The core operation is:
 
 All higher-level behavior is built by composing this primitive (plus a small baseline image: `std7_fixed`).
 
+## What’s inside (high-level)
+
+- A minimal bit-addressable VM (`space`, ticks, copy slots)
+- A baseline image builder: `mkimage_std7_fixed`
+- A host-side `.f0` compiler: `forth0c` (Forth0-first workflow)
+- A deterministic testing pipeline (`make test`, `make tdd`, CI)
+- Benchmarks and vmrep-based throughput metrics (CSV)
+
 ---
 
 ## Quick Demo (DB / Analytics Focus)
@@ -92,4 +100,4 @@ Third-party notes — see THIRD_PARTY.md
 Dmitri Bortoq  
 Email: bortoq@gmail.com  
 Telegram: @the_arctium  
-GitHub: https://github.com/bortoq/parallel-computing
+GitHub repo: https://github.com/bortoq/copy-space

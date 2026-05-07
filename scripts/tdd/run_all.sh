@@ -8,6 +8,7 @@ scripts/tdd/test_vmrep_tools.sh
 scripts/tdd/test_vmerr_diag.sh
 scripts/tdd/test_scratch_abi.sh
 scripts/tdd/test_scratch_artifacts.sh
+scripts/tdd/test_memory_layout_guarantees.sh
 scripts/tdd/test_term0_desc_abi.sh
 scripts/tdd/test_fail_bundle.sh
 scripts/tdd/test_art_doc_sync.sh

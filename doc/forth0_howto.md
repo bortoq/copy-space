@@ -15,6 +15,7 @@ See also:
 Use standardized scratch:
 
 - `TESTG` is the conventional output base (policy: `TESTG == TESTSCR_BASE`).
+- `std7_fixed` guarantees scratch size is at least **8 KiB** (see `doc/memory_layout.md`).
 - Place temporary buffers at fixed offsets from `TESTG`, e.g.:
 
     const A_base   (TESTG + 256*8)

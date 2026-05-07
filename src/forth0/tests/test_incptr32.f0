@@ -1,0 +1,16 @@
+# test_incptr32.f0 — port of mktok_test_incptr32 (Forth0 text form)
+# Output 9 bytes at TESTG:
+#   0000e0 000100 000120
+
+include "../lib/ptr32.f0"
+
+LITAP 0x0000E0
+copybits 24 TESTG VAR_AP
+
+INC_PTR32(VAR_AP)
+copybits 24 (TESTG + 24) VAR_AP
+
+INC_PTR32(VAR_AP)
+copybits 24 (TESTG + 48) VAR_AP
+
+HALT

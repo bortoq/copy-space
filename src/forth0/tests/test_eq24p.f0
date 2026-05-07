@@ -1,0 +1,38 @@
+# test_eq24p.f0 — port of mktok_test_eq24p.c (pointer-based equality WORD_EQ24P)
+#
+# Output 4 bytes at TESTG[0..3]: 0x80 if (A==B) else 0x00
+# Cases:
+#  0: 0 == 0                  => 80
+#  1: 1 == 0                  => 00
+#  2: 0x123456 == 0x123456    => 80
+#  3: 0xFFFFFF == 0x000001    => 00
+#
+# Expected hex: 80008000
+
+const A_base (TESTG + 256*8)
+const B_base (TESTG + 320*8)
+
+macro DO_CASE(i, Aval, Bval)
+  # write A and B blocks (padding=00)
+  set24 A_base Aval
+  setbyte (A_base + 3*8) 0x00
+
+  set24 B_base Bval
+  setbyte (B_base + 3*8) 0x00
+
+  # set pointers, compare
+  LITAP A_base
+  LITBP B_base
+  EQ24P
+
+  # output one byte: clear then copy VAR_EQ into MSB
+  setbyte (TESTG + i*8) 0x00
+  copybits 1 (TESTG + i*8) VAR_EQ
+endmacro
+
+DO_CASE(0, 0x000000, 0x000000)
+DO_CASE(1, 0x000001, 0x000000)
+DO_CASE(2, 0x123456, 0x123456)
+DO_CASE(3, 0xFFFFFF, 0x000001)
+
+HALT

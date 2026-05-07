@@ -1,0 +1,16 @@
+# test_addptr_const32.f0 — port of mktok_test_addptr_const32 (Forth0 text form)
+# Output 9 bytes at TESTG:
+#   00ffe0 010000 0100e0
+
+include "../lib/ptr32.f0"
+
+LITAP 0x00FFE0
+copybits 24 TESTG VAR_AP
+
+ADD_PTR_CONST32(VAR_AP, 1)
+copybits 24 (TESTG + 24) VAR_AP
+
+ADD_PTR_CONST32(VAR_AP, 7)
+copybits 24 (TESTG + 48) VAR_AP
+
+HALT

@@ -1,6 +1,6 @@
 # ptr32.f0 — derived pointer arithmetic for block pointers (bitaddr += k*32)
-# Requires baseline std7_fixed artifacts:
-#   VAR_A24, VAR_B24, VAR_SUM24, ADD24, and COPY word via directives.
+#
+# Uses forth0c directives directly (copybits/set24) to avoid nested macro calls.
 
 macro ADD_PTR_CONST32(ptrvar, k)
   # A24 = ptrvar

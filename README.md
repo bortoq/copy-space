@@ -71,7 +71,7 @@ See:
 
 - `doc/README.md`
 - `doc/forth0.md`
-- `doc/21_todo_status.md` (status/progress)
+- `doc/status.md` (status/progress)
 
 ---
 

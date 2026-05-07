@@ -75,3 +75,6 @@ Block pointers must be 32-bit aligned:
 - host compiler implementation (included into the tool): `src/forth0/host/`
 - tool wrapper: `src/tools/forth0c.c`
 
+Memory regions / what tests should touch:
+- `doc/memory_layout.md`
+

@@ -32,11 +32,11 @@ All documentation is written in **simple English**.
 ## Specs / core references
 
 - `abi_artifacts.md` — ART table ABI (generated; append-only)
+- `memory_layout.md` — space regions and what programs/tests may touch
 - `devices.md` — device/channel model and TERM0 descriptor ABI
 - `benchmarks.md` — benchmarks, vmrep metrics, CSV output
-- `bench_csv_schema.md` — stable CSV schema (v0)
+- `bench_csv_schema.md` — stable CSV schema (v0 target)
 
 ## Partner materials (non-technical)
 
 See `doc/partners/` (one-pager and email templates).
-

@@ -15,6 +15,8 @@ scripts/tdd/test_art_doc_sync.sh
 scripts/tdd/test_forth0c.sh
 scripts/tdd/test_forth0_ptr32.sh
 scripts/tdd/test_forth0_ptrprims.sh
+scripts/tdd/test_forth0_add24p.sh
+scripts/tdd/test_forth0_lt24p.sh
 "
 
 for t in $tests; do

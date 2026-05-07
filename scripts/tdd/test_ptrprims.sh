@@ -103,3 +103,9 @@ run_one \
   mktok_test_incptr32 \
   "0000e0000100000120" \
   9
+
+# Derived ADD_PTR_CONST32 test: start, +1 block, +7 blocks (cumulative)
+run_one \
+  mktok_test_addptr_const32 \
+  "00ffe00100000100e0" \
+  9

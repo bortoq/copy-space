@@ -2,6 +2,8 @@ file: doc/partners/email_template_dpf_db_short.txt
 date: 2026-05-05
 title: Email template (short) — DPF for DB/Analytics data movement
 
+NOTE: partner-facing / non-technical template. For technical docs see `doc/README.md`.
+
 Subject: Paid feasibility: deterministic data movement for compaction / reorder
 
 Hi <Name>,

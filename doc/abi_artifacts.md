@@ -3,12 +3,14 @@
 This document is generated from `src/mkimage/std7_fixed/artifacts.h`.
 
 ## How to regenerate
-Search for the generator script:
+The generator script is:
 
 - `scripts/gen_abi_artifacts_doc.py`
 
-(We intentionally keep this doc stable and also enforce consistency via TDD:
-`scripts/tdd/test_art_doc_sync.sh` runs `scripts/check_art_doc_sync.py`.)
+Run `python3 scripts/gen_abi_artifacts_doc.py -h` to see the exact invocation for regeneration.
+
+Consistency is enforced in CI/TDD:
+- `scripts/tdd/test_art_doc_sync.sh` runs `scripts/check_art_doc_sync.py --doc doc/abi_artifacts.md`.
 
 ## Rules
 - ABI is **append-only**: new entries are added only at the end (ART_COUNT increases).

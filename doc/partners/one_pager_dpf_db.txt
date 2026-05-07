@@ -2,6 +2,9 @@ file: doc/partners/one_pager_dpf_db.txt
 date: 2026-05-05
 title: Deterministic Data Movement Fabric (DB/Analytics) — Quick Demo
 
+NOTE
+This is partner-facing / non-technical text. For technical docs see `doc/README.md`.
+
 WHAT THIS IS
 Copy-Space / DPF is a minimal deterministic execution model focused on data movement.
 The core operation is a scheduled copy:

@@ -2,6 +2,8 @@ file: doc/partners/email_template_dpf_db_ultrashort.txt
 date: 2026-05-05
 title: Email template (ultra-short) — DPF for compaction / reorder
 
+NOTE: partner-facing / non-technical template. For technical docs see `doc/README.md`.
+
 Subject: Paid feasibility: deterministic data movement for compaction / partition
 
 Hi <Name>,

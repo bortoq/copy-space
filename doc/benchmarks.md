@@ -38,6 +38,30 @@ Run just one:
 
     scripts/bench/run.sh --bench pack --out tmp/pack.csv
 
+### Simple sweeps
+
+Sweep copies and chunk size (pack):
+
+    scripts/bench/run.sh --bench pack --out tmp/pack_sweep.csv \
+      --copies-list 32,64,128 \
+      --chunk-bytes-list 32,64 \
+      --src-stride-bytes-list 4096 \
+      --repeat 1
+
+Sweep modes and seeds (permute):
+
+    scripts/bench/run.sh --bench permute --out tmp/permute_sweep.csv \
+      --mode-list random \
+      --seed-list 1,2,3 \
+      --repeat 1
+
+Sweep len/life (bulkcopy):
+
+    scripts/bench/run.sh --bench bulkcopy --out tmp/bulk_sweep.csv \
+      --len-bytes-list 16384,65536 \
+      --life-list 20000 \
+      --repeat 1
+
 ### Individual wrappers
 
 Current behavior:

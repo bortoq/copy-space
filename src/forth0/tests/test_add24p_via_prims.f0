@@ -1,0 +1,71 @@
+# test_add24p_via_prims.f0 — port of mktok_test_add24p_via_prims.c (pointer-based ADD24)
+#
+# Expected output at TESTG (64 bytes = 4 cases * 16 bytes):
+# case0: 00000000 00000000 00000000 00000000
+# case1: ffffff00 00000100 00000000 80000000
+# case2: 12345600 01020300 13365900 00000000
+# case3: 80000000 80000000 00000000 80000000
+#
+# Each case outputs 4x32-bit words:
+#   [0] A block (24-bit data + 8-bit padding)
+#   [1] B block
+#   [2] SUM block (stored via STORE24RP)
+#   [3] COUT word: bit0 (MSB) set if VAR_COUT==1 (=> 0x80000000)
+
+const A_base   (TESTG + 256*8)
+const B_base   (TESTG + 320*8)
+const RES_base (TESTG + 384*8)
+
+macro RUN_CASE(i, a0, a1, a2, b0, b1, b2)
+  # Write A (padding=00)
+  setbyte (A_base + 0*8) a0
+  setbyte (A_base + 1*8) a1
+  setbyte (A_base + 2*8) a2
+  setbyte (A_base + 3*8) 0x00
+
+  # Write B (padding=00)
+  setbyte (B_base + 0*8) b0
+  setbyte (B_base + 1*8) b1
+  setbyte (B_base + 2*8) b2
+  setbyte (B_base + 3*8) 0x00
+
+  # Clear RES (incl padding=00). STORE24RP must preserve padding, so set it first.
+  setbyte (RES_base + 0*8) 0x00
+  setbyte (RES_base + 1*8) 0x00
+  setbyte (RES_base + 2*8) 0x00
+  setbyte (RES_base + 3*8) 0x00
+
+  # Set pointers
+  LITAP A_base
+  LITBP B_base
+  LITRP RES_base
+
+  # Load A,B -> add -> store SUM
+  LOAD24AP
+  LOAD24BP
+  ADD24
+  STORE24RP
+
+  # Dump A, B, SUM to TESTG
+  copybits 32 (TESTG + (i * 128) + 0)  A_base
+  copybits 32 (TESTG + (i * 128) + 32) B_base
+  copybits 32 (TESTG + (i * 128) + 64) RES_base
+
+  # Dump COUT as 32-bit word with MSB set if VAR_COUT==1
+  copybits 32 (TESTG + (i * 128) + 96) CONST0
+  copybits 1  (TESTG + (i * 128) + 96) VAR_COUT
+endmacro
+
+# case0: 0 + 0
+RUN_CASE(0, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00)
+
+# case1: 0xFFFFFF + 0x000001
+RUN_CASE(1, 0xFF, 0xFF, 0xFF,  0x00, 0x00, 0x01)
+
+# case2: 0x123456 + 0x010203 = 0x133659
+RUN_CASE(2, 0x12, 0x34, 0x56,  0x01, 0x02, 0x03)
+
+# case3: 0x800000 + 0x800000 = 0x000000 with carry
+RUN_CASE(3, 0x80, 0x00, 0x00,  0x80, 0x00, 0x00)
+
+HALT

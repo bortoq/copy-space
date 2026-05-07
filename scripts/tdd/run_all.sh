@@ -1,39 +1,34 @@
 #!/bin/sh
 set -eu
 
-# colors (only when stderr is a terminal and NO_COLOR not set)
-if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
-  C_RED="$(printf '\033[31m')"
-  C_GRN="$(printf '\033[32m')"
-  C_YEL="$(printf '\033[33m')"
-  C_RST="$(printf '\033[0m')"
-else
-  C_RED=""; C_GRN=""; C_YEL=""; C_RST=""
-fi
-
 fail=0
 
-for t in \
-  scripts/tdd/test_vmrep_tools.sh \
-  scripts/tdd/test_vmerr_diag.sh \
-  scripts/tdd/test_scratch_abi.sh \
-  scripts/tdd/test_scratch_artifacts.sh \
-  scripts/tdd/test_term0_desc_abi.sh \
-  scripts/tdd/test_fail_bundle.sh \
-  scripts/tdd/test_ptrprims.sh
-do
-  printf "\n" >&2
-  printf "%s[tdd] RUN %s%s\n" "$C_YEL" "$t" "$C_RST" >&2
+tests="
+scripts/tdd/test_vmrep_tools.sh
+scripts/tdd/test_vmerr_diag.sh
+scripts/tdd/test_scratch_abi.sh
+scripts/tdd/test_scratch_artifacts.sh
+scripts/tdd/test_term0_desc_abi.sh
+scripts/tdd/test_fail_bundle.sh
+scripts/tdd/test_ptrprims.sh
+scripts/tdd/test_art_doc_sync.sh
+"
 
-  runner="sh"
+for t in $tests; do
+  echo
+  echo "[tdd] RUN $t"
+
+  rc=0
   if [ "$t" = "scripts/tdd/test_ptrprims.sh" ]; then
-    runner="bash"
+    if bash "$t"; then rc=0; else rc=$?; fi
+  else
+    if sh "$t"; then rc=0; else rc=$?; fi
   fi
 
-  if "$runner" "$t"; then
-    printf "%s[tdd] OK  %s%s\n" "$C_GRN" "$t" "$C_RST" >&2
+  if [ "$rc" -eq 0 ]; then
+    echo "[tdd] OK  $t"
   else
-    printf "%s[tdd] FAIL %s%s\n" "$C_RED" "$t" "$C_RST" >&2
+    echo "[tdd] FAIL $t"
     fail=1
   fi
 done

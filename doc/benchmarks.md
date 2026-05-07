@@ -62,23 +62,14 @@ Sweep len/life (bulkcopy):
       --life-list 20000 \
       --repeat 1
 
-### Individual wrappers
+---
 
-Current behavior:
-- each benchmark wrapper prints **header + one row** by default,
-- `--row` prints **row only**.
+## Summarize results (human-readable)
 
-Wrappers:
-- `scripts/bench_pack_csv.sh`
-- `scripts/bench_permute_csv.sh`
-- `scripts/bench_bulkcopy_csv.sh`
+Create a summary report (markdown-like tables):
 
-### Demo script
-
-The partner-facing demo prints header + rows and saves to `tmp/demo.csv`:
-
-    scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
-    cat tmp/demo.csv
+    python3 scripts/bench/summarize.py --in tmp/bench.csv > tmp/bench_summary.md
+    sed -n '1,120p' tmp/bench_summary.md
 
 ---
 

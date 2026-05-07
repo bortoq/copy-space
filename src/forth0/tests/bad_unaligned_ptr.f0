@@ -1,0 +1,3 @@
+# Should fail under F0C_STRICT_ALIGN32=1:
+LITAP 1
+HALT

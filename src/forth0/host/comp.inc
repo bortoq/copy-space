@@ -1,5 +1,10 @@
 /* comp.inc — compilation core (stream/include/buf) */
 
+static int strict_align32_enabled(void) {
+  const char *s = getenv("F0C_STRICT_ALIGN32");
+  return (s && *s && strcmp(s, "0") != 0);
+}
+
 static void compile_from_buf(pstate_t *ps, const char *path, char *buf, size_t len, FILE *out) {
   lex_t lx;
   lx.path = path;
@@ -122,9 +127,16 @@ static void compile_stream(pstate_t *ps, FILE *out) {
       uint64_t imm = parse_expr(ps);
 
       if (is_ptr_lit_word(t.s) && ((imm % 32u) != 0u)) {
-        fprintf(stderr,
-                "forth0c: %s:%u: WARN: %s immediate=0x%llx is not 32-bit aligned (bitaddr%%32!=0)\n",
-                ps->lx->path, ps->lx->line, t.s, (unsigned long long)imm);
+        if (strict_align32_enabled()) {
+          fprintf(stderr,
+                  "forth0c: %s:%u: ERROR: %s immediate=0x%llx is not 32-bit aligned (bitaddr%%32!=0)\n",
+                  ps->lx->path, ps->lx->line, t.s, (unsigned long long)imm);
+          exit(1);
+        } else {
+          fprintf(stderr,
+                  "forth0c: %s:%u: WARN: %s immediate=0x%llx is not 32-bit aligned (bitaddr%%32!=0)\n",
+                  ps->lx->path, ps->lx->line, t.s, (unsigned long long)imm);
+        }
       }
 
       emit_u(ps->vm, out, imm);

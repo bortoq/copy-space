@@ -1,4 +1,4 @@
-/* f0c_cli.inc — CLI helpers */
+/* f0c_cli.inc — CLI + image loading */
 
 static void usage(const char *a0) {
   fprintf(stderr, "usage: %s --image std7.bin --in prog.f0 --out prog.tok\n", a0);

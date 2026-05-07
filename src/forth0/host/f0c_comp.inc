@@ -1,4 +1,4 @@
-/* f0c_comp.inc — compilation core (include/stream) */
+/* f0c_comp.inc — compilation core */
 
 static void compile_from_buf(pstate_t *ps, const char *path, char *buf, size_t len, FILE *out) {
   lex_t lx;
@@ -41,13 +41,9 @@ static void compile_stream(pstate_t *ps, FILE *out) {
 
     t = p_take(ps);
 
-    /* macro def */
     if (str_ieq(t.s, "macro")) { parse_macro_def(ps); continue; }
+    if (str_ieq(t.s, "for"))   { parse_for_block(ps, out); continue; }
 
-    /* for loop */
-    if (str_ieq(t.s, "for")) { parse_for_block(ps, out); continue; }
-
-    /* directives */
     if (str_ieq(t.s, "include")) {
       token_t p = p_take(ps);
       if (!(p.k == TK_STR || p.k == TK_ID)) lex_die(ps->lx, "include expects a string or bare token");
@@ -101,11 +97,9 @@ static void compile_stream(pstate_t *ps, FILE *out) {
       continue;
     }
 
-    /* macro call */
     macro_t *m = macro_find(&ps->macros, t.s);
     if (m) { parse_macro_call(ps, out, m); continue; }
 
-    /* normal word emission by ART */
     unsigned idx = 0;
     if (!sym_lookup_art_idx(t.s, &idx)) {
       fprintf(stderr, "forth0c: %s:%u: unknown word: %s\n", ps->lx->path, ps->lx->line, t.s);

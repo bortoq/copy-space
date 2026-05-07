@@ -1,5 +1,5 @@
 /* forth0c_compile.inc — aggregation include.
- * Kept for compatibility with existing include graph in forth0c_main.inc.
+ * Keep as a stable include name; actual logic is split into f0c_* modules.
  */
 
 #include "f0c_cli.inc"

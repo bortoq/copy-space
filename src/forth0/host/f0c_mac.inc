@@ -1,4 +1,4 @@
-/* f0c_mac.inc — parsing macro def/call (macro storage/expansion lives in forth0c_macros.inc) */
+/* f0c_mac.inc — parse macro def/call (macro db/expand is in forth0c_macros.inc) */
 
 static void compile_stream(pstate_t *ps, FILE *out);
 static void compile_one_file(pstate_t *ps, const char *path, FILE *out);
@@ -10,13 +10,12 @@ static void parse_macro_def(pstate_t *ps) {
 
   macro_t *m = macro_put(&ps->macros, name.s);
 
-  /* params */
   token_t t = p_peek(ps);
   if (t.k == TK_OP && t.op == '(') {
-    p_take(ps); /* '(' */
+    p_take(ps);
     token_t p = p_peek(ps);
     if (p.k == TK_OP && p.op == ')') {
-      p_take(ps); /* ')' */
+      p_take(ps);
     } else {
       for (;;) {
         token_t pid = p_take(ps);
@@ -32,7 +31,6 @@ static void parse_macro_def(pstate_t *ps) {
     }
   }
 
-  /* body until endmacro */
   for (;;) {
     token_t bt = p_take(ps);
     if (bt.k == TK_EOF) lex_die(ps->lx, "EOF inside macro (missing endmacro)");
@@ -47,10 +45,10 @@ static void parse_macro_call(pstate_t *ps, FILE *out, const macro_t *m) {
 
   token_t t = p_peek(ps);
   if (t.k == TK_OP && t.op == '(') {
-    p_take(ps); /* '(' */
+    p_take(ps);
     token_t p = p_peek(ps);
     if (p.k == TK_OP && p.op == ')') {
-      p_take(ps); /* ')' */
+      p_take(ps);
     } else {
       for (;;) {
         uint64_t av = parse_expr(ps);
@@ -62,8 +60,6 @@ static void parse_macro_call(pstate_t *ps, FILE *out, const macro_t *m) {
         if (!(sep.k == TK_OP && sep.op == ',')) lex_die(ps->lx, "expected ',' or ')' in macro call");
       }
     }
-  } else {
-    /* no parentheses -> zero args */
   }
 
   if (args_n != m->params_n) {

@@ -1,4 +1,4 @@
-/* f0c_code.inc — high-level codegen helpers + small semantic checks */
+/* f0c_code.inc — codegen helpers + small semantic checks */
 
 static int word_needs_imm(const char *name) {
   return str_ieq(name, "LITN")  || str_ieq(name, "WORD_LITN")  || str_ieq(name, "ART_WORD_LITN") ||

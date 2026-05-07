@@ -97,3 +97,9 @@ run_one \
   mktok_test_eq24p \
   "80008000" \
   4
+
+# Explicit pointer arithmetic test: AP, AP+32, AP+64 (each 24-bit big-endian)
+run_one \
+  mktok_test_incptr32 \
+  "0000e0000100000120" \
+  9

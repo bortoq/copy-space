@@ -25,7 +25,7 @@ expected="tmp/forth0c_smoke.expected.bin"
 build/bin/mkimage_std7_fixed --out "$std7" >/dev/null 2>tmp/forth0c.mkimage.stderr
 
 testg="$(
-  build/bin/forth0c --image "$std7" --in forth0/tests/smoke_setbit.f0 --out "$tok" \
+  build/bin/forth0c --image "$std7" --in src/forth0/tests/smoke_include.f0 --out "$tok" \
     1>/dev/null 2>tmp/forth0c.stderr
   awk -F= '/^TESTG\(byte\)=/{print $2}' tmp/forth0c.stderr
 )"

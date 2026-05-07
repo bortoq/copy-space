@@ -1,24 +1,18 @@
 // forth0c.c — host-side minimal Forth0 token compiler (.f0 -> .tok).
-// Goal: stop writing token-generators in C; write programs/tests as text.
-//
-// Format (.f0):
+// Text format (.f0):
 //   - whitespace-separated tokens
-//   - comments: '#' or '\' to end of line; also '( ... )' comments
-//   - directive:  include path/to/file.f0
+//   - comments: '#' or '\' to end of line
+//   - directive: include "path/to/file.f0"   (quotes required if path has '/')
 //   - words: identifiers resolved via ART table from --image
-//   - immediates: for LIT* words, the next expression is emitted as immediate
-//   - expressions: numbers (dec/0x...), symbols, + - * / and parentheses
+//   - immediates: after LIT* words, next is an expression
+//   - expressions: numbers (dec/0x...), symbols (ART names), + - * / and parentheses
 //
-// Example:
-//   LITN 1
-//   LITD TESTG
-//   LITS CONST1
-//   COPY
-//   HALT
+// Emits addr-sized big-endian tokens.
 //
 // Prints to stderr: TESTG(byte)=<offset> (for bash harness parity with mktok_test_*).
 
 #include "space.h"
+#include "mkimage/std7_fixed/artifacts.h"  // for ART_COUNT (compile-time constant)
 #include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
@@ -147,14 +141,16 @@ static int str_ieq(const char *a, const char *b) {
 
 static int sym_lookup_art_idx(const char *name, unsigned *out_idx) {
   /* allow ART[NN] */
-  if (!strncasecmp(name, "ART[", 4)) {
-    const char *p = name + 4;
-    char *e = NULL;
-    errno = 0;
-    unsigned long v = strtoul(p, &e, 10);
-    if (errno == 0 && e && *e == ']') {
-      *out_idx = (unsigned)v;
-      return 1;
+  if (name[0]=='A' || name[0]=='a') {
+    if ((name[1]=='R'||name[1]=='r') && (name[2]=='T'||name[2]=='t') && name[3]=='[') {
+      const char *p = name + 4;
+      char *e = NULL;
+      errno = 0;
+      unsigned long v = strtoul(p, &e, 10);
+      if (errno == 0 && e && *e == ']') {
+        *out_idx = (unsigned)v;
+        return 1;
+      }
     }
   }
 
@@ -180,11 +176,11 @@ static void write_be(FILE *f, uint64_t v, unsigned nbytes) {
 
 /* -------------------- lexer -------------------- */
 
-typedef enum { TK_EOF=0, TK_ID, TK_NUM, TK_OP } tk_kind_t;
+typedef enum { TK_EOF=0, TK_ID, TK_NUM, TK_OP, TK_STR } tk_kind_t;
 
 typedef struct {
   tk_kind_t k;
-  char s[256];     /* for ID */
+  char s[512];     /* for ID/STR */
   uint64_t num;    /* for NUM */
   char op;         /* for OP */
 } token_t;
@@ -220,20 +216,9 @@ static void lex_skip_ws_and_comments(lex_t *lx) {
 
     char c = lx->buf[lx->i];
 
-    /* line comment: # ... */
+    /* line comment: # ... or \ ... */
     if (c == '#' || c == '\\') {
       while (lx->i < lx->len && lx->buf[lx->i] != '\n') lx->i++;
-      continue;
-    }
-
-    /* paren comment: ( ... ) */
-    if (c == '(') {
-      lx->i++;
-      while (lx->i < lx->len && lx->buf[lx->i] != ')') {
-        if (lx->buf[lx->i] == '\n') lx->line++;
-        lx->i++;
-      }
-      if (lx->i < lx->len && lx->buf[lx->i] == ')') lx->i++;
       continue;
     }
 
@@ -251,6 +236,29 @@ static token_t lex_next(lex_t *lx) {
 
   char c = lx->buf[lx->i];
 
+  /* string */
+  if (c == '"') {
+    lx->i++;
+    size_t j = 0;
+    while (lx->i < lx->len) {
+      char d = lx->buf[lx->i++];
+      if (d == '"') break;
+      if (d == '\\') {
+        if (lx->i >= lx->len) lex_die(lx, "unterminated string escape");
+        char e = lx->buf[lx->i++];
+        if (e == 'n') d = '\n';
+        else if (e == 't') d = '\t';
+        else if (e == '"' || e == '\\') d = e;
+        else lex_die(lx, "unsupported string escape");
+      }
+      if (j + 1 >= sizeof(t.s)) lex_die(lx, "string too long");
+      t.s[j++] = d;
+    }
+    t.s[j] = 0;
+    t.k = TK_STR;
+    return t;
+  }
+
   /* operators */
   if (c=='+' || c=='-' || c=='*' || c=='/' || c=='(' || c==')') {
     t.k = TK_OP;
@@ -261,8 +269,8 @@ static token_t lex_next(lex_t *lx) {
 
   /* number */
   if (isdigit((unsigned char)c)) {
-    size_t j = 0;
     char tmp[256];
+    size_t j = 0;
     while (lx->i < lx->len && j+1 < sizeof(tmp)) {
       char d = lx->buf[lx->i];
       if (!(isalnum((unsigned char)d) || d=='x' || d=='X')) break;
@@ -413,20 +421,20 @@ static char *read_file_all(const char *path, size_t *out_len) {
 }
 
 static void path_dirname(const char *path, char *out, size_t out_sz) {
-  size_t n = strlen(path);
-  size_t cut = n;
-  while (cut > 0 && path[cut-1] != '/' && path[cut-1] != '\\') cut--;
-  if (cut == 0) {
+  const char *slash = strrchr(path, '/');
+  const char *bslash = strrchr(path, '\\');
+  const char *p = slash;
+  if (!p || (bslash && bslash > p)) p = bslash;
+
+  if (!p) {
     snprintf(out, out_sz, ".");
-  } else {
-    if (cut >= out_sz) cut = out_sz-1;
-    memcpy(out, path, cut);
-    out[cut ? cut-1 : 0] = (cut ? out[cut-1] : 0); /* no-op to silence -Wmaybe-uninitialized */
-    out[cut] = 0;
-    /* trim trailing slash */
-    while (cut > 0 && (out[cut-1] == '/' || out[cut-1] == '\\')) out[--cut] = 0;
-    if (cut == 0) snprintf(out, out_sz, ".");
+    return;
   }
+  size_t n = (size_t)(p - path);
+  if (n == 0) n = 1; /* "/" */
+  if (n + 1 > out_sz) n = out_sz - 1;
+  memcpy(out, path, n);
+  out[n] = 0;
 }
 
 static void path_join(const char *dir, const char *rel, char *out, size_t out_sz) {
@@ -475,7 +483,7 @@ static void compile_stream(pstate_t *ps, FILE *out) {
 
     if (str_ieq(t.s, "include")) {
       token_t p = p_take(ps);
-      if (p.k != TK_ID) lex_die(ps->lx, "include expects a path token");
+      if (!(p.k == TK_STR || p.k == TK_ID)) lex_die(ps->lx, "include expects a string or bare token");
       char dir[512], full[1024];
       path_dirname(ps->lx->path, dir, sizeof(dir));
       path_join(dir, p.s, full, sizeof(full));
@@ -525,7 +533,7 @@ static void compile_one_file(pstate_t *ps, const char *path, FILE *out) {
   lx.i = 0;
   lx.line = 1;
 
-  /* swap lexer state */
+  /* save/replace lexer state */
   lex_t *saved_lx = ps->lx;
   int saved_have = ps->have;
   token_t saved_cur = ps->cur;
@@ -566,12 +574,9 @@ int main(int argc, char **argv) {
   bitaddr_t W = vm.workspace_base;
   bitaddr_t ART = (W + 512u + 7u) & ~(bitaddr_t)7u;
 
-  unsigned art_count = 0;
-  /* ART_COUNT isn't itself stored in ART; use artifacts.h constant knowledge indirectly:
-     We assume doc/tooling keeps ART_COUNT stable; for safety set a generous upper bound. */
-  art_count = 256;
+  unsigned art_count = (unsigned)ART_COUNT;
 
-  /* report TESTG(byte) like other mktok_* tools */
+  /* report TESTG(byte) like mktok_test_* tools */
   uint64_t testg = art_read(&vm, ART, 43u);
   fprintf(stderr, "TESTG(byte)=%u\n", (unsigned)(testg / 8u));
 

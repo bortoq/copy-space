@@ -109,3 +109,9 @@ run_one \
   mktok_test_addptr_const32 \
   "00ffe00100000100e0" \
   9
+
+# Padding semantics: LOAD ignores padding; STORE preserves padding
+run_one \
+  mktok_test_ptrprims_padding \
+  "123456abcdefaa" \
+  7

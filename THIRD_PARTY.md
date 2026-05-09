@@ -2,7 +2,7 @@
 
 _file: THIRD_PARTY.md_
 
-This repository is intended to be MIT-licensed (see `LICENSE`).
+This repository is intended to be Apache-2.0-licensed (see `LICENSE`).
 
 ## Third-party code
 At the time of writing (2026-05-05), the project aims to contain **no copied third-party source code**.

@@ -4,11 +4,13 @@ This document shows a CI gating pattern Copy-Space targets (Pain A) using **real
 
 Model assumptions: STRICT1, volume-based I/O v0.
 
+Tip: use `--quiet` to suppress PASS/FAIL prints in CI logs (reports still get written).
+
 ## Gate 1: correctness (validator must pass)
 
 If you already have a schedule artifact (validate-only workflow):
 
-    python3 scripts/scheduler/validate_v0.py INSTANCE.json SCHEDULE.json --report report.json
+    python3 scripts/scheduler/validate_v0.py INSTANCE.json SCHEDULE.json --report report.json --quiet
     echo $?
 
 Exit codes:
@@ -55,10 +57,10 @@ Example gate (ticks_total +2% max, utilization floor optional):
 If you want Copy-Space to generate candidate schedules:
 
     python3 scripts/scheduler/solve_v0.py INSTANCE.json --out schedule_baseline.json --solver baseline
-    python3 scripts/scheduler/validate_v0.py INSTANCE.json schedule_baseline.json --report report_baseline.json
+    python3 scripts/scheduler/validate_v0.py INSTANCE.json schedule_baseline.json --report report_baseline.json --quiet
 
     python3 scripts/scheduler/solve_v0.py INSTANCE.json --out schedule_greedy.json --solver greedy
-    python3 scripts/scheduler/validate_v0.py INSTANCE.json schedule_greedy.json --report report_greedy.json
+    python3 scripts/scheduler/validate_v0.py INSTANCE.json schedule_greedy.json --report report_greedy.json --quiet
 
 Then compare the reports (ticks_total/utilization) and choose a policy:
 - gate on baseline only (regression tracking)

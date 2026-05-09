@@ -1,0 +1,11 @@
+{
+  "version": 0,
+  "model": "STRICT1",
+  "slots": 6,
+  "copy_bw_bits_per_tick": 256,
+  "demands": [
+    {"src_slot": 0, "dst_slot": 1, "bits_total": 512},
+    {"src_slot": 2, "dst_slot": 3, "bits_total": 256}
+  ],
+  "notes": "demands instance for coverage tests"
+}

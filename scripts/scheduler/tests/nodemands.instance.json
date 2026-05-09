@@ -1,0 +1,8 @@
+{
+  "version": 0,
+  "model": "STRICT1",
+  "slots": 6,
+  "copy_bw_bits_per_tick": 256,
+  "demands": [],
+  "notes": "no-demands instance: structural+STRICT1+bw only"
+}

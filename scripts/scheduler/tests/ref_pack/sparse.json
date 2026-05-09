@@ -1,0 +1,23 @@
+{
+  "version": 0,
+  "model": "STRICT1",
+  "slots": 8,
+  "copy_bw_bits_per_tick": 256,
+  "demands": [
+    {
+      "src_slot": 0,
+      "dst_slot": 1,
+      "bits_total": 1024
+    },
+    {
+      "src_slot": 2,
+      "dst_slot": 3,
+      "bits_total": 512
+    },
+    {
+      "src_slot": 4,
+      "dst_slot": 5,
+      "bits_total": 768
+    }
+  ]
+}

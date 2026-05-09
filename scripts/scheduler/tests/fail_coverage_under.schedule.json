@@ -1,0 +1,10 @@
+{
+  "version": 0,
+  "model": "STRICT1",
+  "ticks": [
+    [
+      {"src_slot": 0, "dst_slot": 1, "len_bits": 256},
+      {"src_slot": 2, "dst_slot": 3, "len_bits": 256}
+    ]
+  ]
+}

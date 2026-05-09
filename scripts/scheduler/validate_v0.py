@@ -155,6 +155,7 @@ def main():
     ap.add_argument("instance_json")
     ap.add_argument("schedule_json")
     ap.add_argument("--report", default=None)
+    ap.add_argument("--quiet", action="store_true", help="suppress PASS/FAIL prints")
     args = ap.parse_args()
 
     try:
@@ -172,10 +173,10 @@ def main():
 
     ok = (rep.get("status") == "PASS")
     if ok:
-        eprint("VALIDATION: PASS")
+        if not args.quiet: eprint("VALIDATION: PASS")
         rc = 0
     else:
-        eprint("VALIDATION: FAIL")
+        if not args.quiet: eprint("VALIDATION: FAIL")
         err = rep.get("errors", [{}])[0] if isinstance(rep.get("errors"), list) and rep.get("errors") else {}
         if err:
             eprint("reason:", err.get("kind", "?"), "-", err.get("msg", ""))

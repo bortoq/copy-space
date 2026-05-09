@@ -12,7 +12,7 @@ set -eu
 # List syntax: comma-separated and/or space-separated (e.g. "64,128" or "64 128").
 
 usage() {
-  echo "usage: $0 --bench {pack|permute|bulkcopy|all} --out file.csv [sweep options...]" >&2
+  echo "usage: $0 --bench {pack|permute|bulkcopy|scheduler|all} --out file.csv [sweep options...]" >&2
   echo "sweep options:" >&2
   echo "  --copies-list STR" >&2
   echo "  --chunk-bytes-list STR" >&2
@@ -22,6 +22,8 @@ usage() {
   echo "  --len-bytes-list STR          (bulkcopy)" >&2
   echo "  --life-list STR               (bulkcopy)" >&2
   echo "  --repeat N" >&2
+  echo "  --solver-list STR             (scheduler)" >&2
+  echo "  --inst-glob STR               (scheduler; e.g. scripts/scheduler/tests/ref_pack/*.json)" >&2
   exit 2
 }
 
@@ -37,6 +39,8 @@ SEED_LIST="${SEED_LIST:-1}"
 LEN_BYTES_LIST="${LEN_BYTES_LIST:-65536}"
 LIFE_LIST="${LIFE_LIST:-20000}"
 REPEAT="${REPEAT:-1}"
+SCHED_SOLVER_LIST="${SCHED_SOLVER_LIST:-baseline,greedy}"
+SCHED_INST_GLOB="${SCHED_INST_GLOB:-scripts/scheduler/tests/demo_instance.json}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -51,6 +55,28 @@ while [ $# -gt 0 ]; do
     --len-bytes-list) LEN_BYTES_LIST="${2:-}"; shift 2;;
     --life-list) LIFE_LIST="${2:-}"; shift 2;;
     --repeat) REPEAT="${2:-}"; shift 2;;
+
+    --solver-list)
+      shift
+      SCHED_SOLVER_LIST=""
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --*) break;;
+          *) SCHED_SOLVER_LIST="${SCHED_SOLVER_LIST}${SCHED_SOLVER_LIST:+ }$1"; shift;;
+        esac
+      done
+      ;;
+
+    --inst-glob)
+      shift
+      SCHED_INST_GLOB=""
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --*) break;;
+          *) SCHED_INST_GLOB="${SCHED_INST_GLOB}${SCHED_INST_GLOB:+ }$1"; shift;;
+        esac
+      done
+      ;;
 
     *) usage;;
   esac
@@ -128,14 +154,34 @@ run_bulkcopy() {
   done
 }
 
+run_scheduler() {
+  # NOTE: use shell globbing (SCHED_INST_GLOB may contain *.json).
+  # If the glob matches nothing, the pattern remains; we skip non-files.
+  for INST_PATH in $SCHED_INST_GLOB; do
+    [ -f "$INST_PATH" ] || continue
+    for SOLVER in $(norm_list "$SCHED_SOLVER_LIST"); do
+      i=0
+      while [ "$i" -lt "$REPEAT" ]; do
+        export INST_PATH SOLVER
+        scripts/bench_scheduler_csv.sh --row >> "$OUT"
+        i=$((i+1))
+      done
+    done
+  done
+}
+
+
+
 case "$BENCH" in
   pack) run_pack;;
   permute) run_permute;;
   bulkcopy) run_bulkcopy;;
+  scheduler) run_scheduler;;
   all)
     run_pack
     run_permute
     run_bulkcopy
+    run_scheduler
     ;;
   *) usage;;
 esac

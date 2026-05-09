@@ -28,3 +28,6 @@ jobs:
 
       - name: TDD
         run: make tdd
+
+      - name: Scheduler v0 tests
+        run: ./scripts/test_scheduler.sh

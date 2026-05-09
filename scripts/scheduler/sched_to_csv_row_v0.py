@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Dict, List
 
 PY = sys.executable
@@ -44,11 +45,19 @@ def run(instance_path: str, solver: str) -> Dict[str, str]:
         rep_path = os.path.join(td, "report.json")
 
         # solve
+        t0 = time.perf_counter()
         subprocess.check_call(SOLVE + [instance_path, "--out", sched_path, "--solver", solver])
+        t1 = time.perf_counter()
+        solve_ms = (t1 - t0) * 1000.0
+
 
         # validate + report
         # validate_v0 returns 0 on PASS; coverage is enforced by default if demands non-empty
+        t0 = time.perf_counter()
         subprocess.check_call(VALIDATE + [instance_path, sched_path, "--report", rep_path, "--quiet"])
+        t1 = time.perf_counter()
+        validate_ms = (t1 - t0) * 1000.0
+
 
         sched = load_json(sched_path)
         rep = load_json(rep_path)
@@ -84,7 +93,10 @@ def run(instance_path: str, solver: str) -> Dict[str, str]:
     row["copies_total"] = str(copies_total)
     row["expected_bits_per_tick"] = str(exp_bpt)
 
-    row["notes"] = f"solver={solver};lb={lb};bw={bw};util={util:.6f}"
+    row["notes"] = (
+        f"solver={solver};lb={lb};bw={bw};util={util:.6f};"
+        f"solve_ms={solve_ms:.3f};validate_ms={validate_ms:.3f}"
+    )
     row["git_rev"] = try_git_rev()
 
     return row

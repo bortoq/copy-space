@@ -1,45 +1,28 @@
 # Quickstart (pilot v0)
 
-This quickstart shows an end-to-end workflow for a pilot:
-CSV demands -> Instance v0 -> Solve -> Validate -> Reports.
+Goal: CSV demands -> validated schedule + metrics (STRICT1, volume-based).
 
-## 0) Inputs
-- demands.csv:
-  src_slot,dst_slot,bits_total
-  0,1,4096
-  2,3,256
+Recommended: run the pilot in one command.
+## Option A: one-command pilot
 
-- copy_bw_bits_per_tick (example): 256
+1) Prepare demands.csv with columns: src_slot,dst_slot,bits_total
+Example:
+src_slot,dst_slot,bits_total
+0,1,4096
+2,3,256
 
-## 1) Convert CSV -> Instance v0
-    python3 scripts/scheduler/csv_to_instance_v0.py demands.csv --bw 256 --out instance.json
+2) Run:
+./scripts/scheduler/pilot_run.sh --csv demands.csv --bw 256 --outdir tmp/pilot
+Outputs (tmp/pilot):
+- instance.json
+- schedule_baseline.json, schedule_greedy.json
+- report_baseline.json, report_greedy.json
 
-(Optionally set slots explicitly)
-    python3 scripts/scheduler/csv_to_instance_v0.py demands.csv --bw 256 --slots 32 --out instance.json
+The script prints a short summary: ticks/utilization/delta.
+## Validate-only (if you already have a schedule)
 
-## 2) Solve (baseline and greedy)
-    python3 scripts/scheduler/solve_v0.py instance.json --out schedule_baseline.json --solver baseline
-    python3 scripts/scheduler/solve_v0.py instance.json --out schedule_greedy.json --solver greedy
+If you can export simple lines "tick src dst len_bits", convert to Schedule v0 JSON:
+python3 scripts/scheduler/lines_to_schedule_v0.py schedule.txt --out schedule.json
 
-## 3) Validate + produce reports
-    python3 scripts/scheduler/validate_v0.py instance.json schedule_baseline.json --report report_baseline.json
-    python3 scripts/scheduler/validate_v0.py instance.json schedule_greedy.json --report report_greedy.json
-
-Exit codes:
-- 0: PASS
-- 2: FAIL
-- 1: parse/usage error
-
-## 4) Compare key metrics (example)
-    python3 - <<'PY'
-    import json
-    b = json.load(open("report_baseline.json"))
-    g = json.load(open("report_greedy.json"))
-    print("baseline ticks_total:", b["ticks_total"], "util:", round(b["utilization"], 4))
-    print("greedy   ticks_total:", g["ticks_total"], "util:", round(g["utilization"], 4))
-    print("delta_ticks_total:", int(b["ticks_total"]) - int(g["ticks_total"]))
-    PY
-
-## 5) Run the public reference pack benchmark (optional)
-    python3 scripts/scheduler/gen_ref_pack.py
-    python3 scripts/scheduler/bench_v0.py | tail -n 40
+Then validate + report:
+python3 scripts/scheduler/validate_v0.py instance.json schedule.json --report report.json --quiet

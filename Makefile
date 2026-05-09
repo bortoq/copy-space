@@ -118,3 +118,19 @@ clean:
 	rm -rf build tmp out
 
 -include $(DEPS)
+
+.PHONY: sched-demo sched-test sched-bench sched-pilot
+
+sched-demo:
+	python3 scripts/scheduler/demo_run.py
+
+sched-test:
+	./scripts/test_scheduler.sh
+
+sched-bench:
+	python3 scripts/scheduler/gen_ref_pack.py >/dev/null
+	python3 scripts/scheduler/bench_v0.py | tail -n 40
+
+# expects: demands.csv in repo root (or pass your own via scripts/scheduler/pilot_run.sh)
+sched-pilot:
+	./scripts/scheduler/pilot_run.sh --csv demands.csv --bw 256 --outdir tmp/pilot

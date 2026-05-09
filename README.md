@@ -1,5 +1,17 @@
 # Copy-Space / Deterministic Data Movement Fabric (DPF)
 
+## Scheduler quickstart
+
+Demo (baseline vs greedy):
+  python3 scripts/scheduler/demo_run.py
+
+One-command pilot (CSV -> schedules -> reports):
+  ./scripts/scheduler/pilot_run.sh --csv examples/demands.csv --bw 256 --outdir tmp/pilot
+
+More:
+- doc/partners/quickstart_pilot.md
+- doc/partners/pilot_intake.md
+
 _file: README.md_
 
 **Pitch (short):** Copy-Space is a tiny deterministic VM for *measuring and reasoning about data movement*.

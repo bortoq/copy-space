@@ -1,4 +1,4 @@
-# Status — std7_fixed + forth0 — 2026-05-07
+# Status — std7_fixed + forth0 + scheduler v0 — 2026-05-09
 
 _file: doc/status.md_
 
@@ -19,6 +19,11 @@ Legend:
 - TDD harness scripts: `scripts/tdd/test_forth0*.sh`
 - Main regression harness: `scripts/test_all.sh`
 - Runner: `scripts/tdd/run_all.sh`
+
+Scheduler v0 (Python tooling):
+- Scheduler smoke/regression test: `./scripts/test_scheduler.sh`
+- Scheduler fixtures: `scripts/scheduler/tests/`
+- Scheduler demo: `python3 scripts/scheduler/demo_run.py`
 
 ---
 
@@ -50,7 +55,7 @@ Legend:
   - doc: `doc/abi_artifacts.md`
 
 - [x] CI:
-  - `.github/workflows/ci.yml` (make bins / make test / make tdd / ABI doc sync)
+  - `.github/workflows/ci.yml` (make bins / make test / make tdd / ABI doc sync / scheduler v0 tests)
 
 ---
 
@@ -70,7 +75,6 @@ Legend:
 - [x] `ADD_PTR_CONST32` (derived):
   - Forth0 test: `src/forth0/tests/test_addptr_const32.f0`
   - TDD: `scripts/tdd/test_forth0_ptr32.sh`
-
 ### Derived pointer-based ops (via primitives)
 - [x] `ADD24P` via prims:
   - Forth0 test: `src/forth0/tests/test_add24p_via_prims.f0`
@@ -119,19 +123,65 @@ Legend:
   - `src/forth0/tests/test_add8.f0`
   - TDD: `scripts/tdd/test_forth0_bitops.sh`
 
+---
+
+## Copy-space scheduler v0 (volume-based, STRICT1)
+
+### Contract / docs
+- [x] v0 I/O + validation + metrics contract:
+  - `doc/scheduler_io_v0.md`
+- [x] Public roadmap and partner-facing docs (non-sensitive):
+  - `doc/roadmap.md`
+  - `doc/partners/partner_brief.md`
+  - `doc/partners/pilot_intake.md`
+  - `doc/partners/quickstart_pilot.md`
+  - `doc/partners/ci_gate_recipe.md`
+  - `doc/partners/pilot_report_example.md`
+
+### Tools (Python, v0)
+- [x] Validate schedule (STRICT1 + bandwidth + coverage):
+  - `scripts/scheduler/validate_v0.py`
+  - exit codes: 0 PASS, 2 FAIL, 1 parse/usage
+  - supports `--report report.json` and `--quiet`
+- [x] Solve instance (two strategies):
+  - `scripts/scheduler/solve_v0.py --solver baseline|greedy`
+- [x] CSV demands -> Instance v0:
+  - `scripts/scheduler/csv_to_instance_v0.py`
+
+### Demo / reference pack
+- [x] Real demo instance + runner:
+  - `scripts/scheduler/tests/demo_instance.json`
+  - `python3 scripts/scheduler/demo_run.py`
+- [x] Seeded public reference pack generator + benchmark:
+  - `scripts/scheduler/gen_ref_pack.py`
+  - `scripts/scheduler/bench_v0.py`
+### Bench harness integration (unified CSV schema v0)
+- [x] Scheduler results can be appended into unified CSV v0:
+  - row generator: `scripts/scheduler/sched_to_csv_row_v0.py`
+  - wrapper: `scripts/bench_scheduler_csv.sh`
+  - unified runner: `scripts/bench/run.sh --bench scheduler ...`
+    - supports `--solver-list` and `--inst-glob`
+- [x] Summarization works with existing tool:
+  - `python3 scripts/bench/summarize.py --in tmp/sched.csv`
+
+### How to run (quick)
+- Scheduler tests:
+  - `./scripts/test_scheduler.sh`
+- Demo:
+  - `python3 scripts/scheduler/demo_run.py`
+- Reference pack:
+  - `python3 scripts/scheduler/gen_ref_pack.py`
+  - `python3 scripts/scheduler/bench_v0.py | tail -n 40`
+- Unified bench:
+  - `scripts/bench/run.sh --bench scheduler --out tmp/sched.csv --repeat 1`
+  - `scripts/bench/run.sh --bench scheduler --out tmp/sched_pack.csv --inst-glob scripts/scheduler/tests/ref_pack/*.json --solver-list baseline greedy --repeat 1`
+
+### CI
+- [x] Scheduler tests run in CI:
+  - `./scripts/test_scheduler.sh`
 
 ---
 
-## Copy-space scheduler (iterations)
-
-### Iteration 001 (closed)
-
-- [x] Baseline completed: `forth0c` upgrades, forth0-first tests, unified bench harness, docs baseline.
-
-### Iteration 002 (current) — plan
-
-- [ ] Define scheduler I/O v0 (Instance + Schedule)
-- [ ] Implement schedule validator (bounds + conflicts + STRICT1 participation rule)
-- [ ] Add validator tests (must-pass + must-fail cases)
-- [ ] Implement naive baseline scheduler/solver (valid schedules for small instances)
-- [ ] Connect solver + validator to a small bench sweep (append results to CSV v0)
+## Licensing
+- [x] Project license: Apache-2.0
+  - `LICENSE`, `NOTICE`

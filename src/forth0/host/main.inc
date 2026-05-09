@@ -1,4 +1,4 @@
-/* forth0c_main.inc — entrypoint TU (included by src/tools/forth0c.c). */
+/* main.inc — forth0c entrypoint TU (included by src/tools/forth0c.c). */
 
 #include "space.h"
 #include "mkimage/std7_fixed/artifacts.h"
@@ -47,11 +47,11 @@ static int const_get(consttab_t *ct, const char *name, uint64_t *out) {
 }
 
 /* symbols + lexer */
-#include "forth0c_syms.inc"
-#include "forth0c_lex.inc"
+#include "syms.inc"
+#include "lex.inc"
 
 /* macros */
-#include "forth0c_macros.inc"
+#include "macros.inc"
 
 /* parser state */
 typedef struct {
@@ -75,12 +75,12 @@ static token_t p_take(pstate_t *ps) {
   return t;
 }
 
-/* Needed by expr parser (defined later in forth0c_compile.inc). */
+/* Provided by emit.inc (included via compile.inc) */
 static uint64_t art_read(vm_t *vm, bitaddr_t ART, unsigned idx);
 
 /* expr + compiler */
-#include "forth0c_expr.inc"
-#include "forth0c_compile.inc"
+#include "expr.inc"
+#include "compile.inc"
 
 int main(int argc, char **argv) {
   const char *image = NULL;

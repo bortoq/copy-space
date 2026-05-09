@@ -1,4 +1,6 @@
-# THIRD_PARTY.md — third-party code and licenses — 2026-05-05
+# Third-party code and licenses — 2026-05-05
+
+_file: THIRD_PARTY.md_
 
 This repository is intended to be MIT-licensed (see `LICENSE`).
 

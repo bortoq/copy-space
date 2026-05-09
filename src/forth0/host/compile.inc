@@ -1,5 +1,5 @@
-/* forth0c_compile.inc — aggregation include.
- * Keep stable name; logic is split into small modules.
+/* compile.inc — aggregation include.
+ * Keep minimal and stable; logic is split into small host modules.
  */
 
 #include "cli.inc"

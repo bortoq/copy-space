@@ -1,4 +1,5 @@
-# doc/abi_artifacts.md — ABI: std7_fixed artifacts table (ART) — 2026-05-05
+# ABI: std7_fixed artifacts table (ART) — 2026-05-05
+_file: doc/abi_artifacts.md_
 
 This document is generated from `src/mkimage/std7_fixed/artifacts.h`.
 

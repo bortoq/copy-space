@@ -1,5 +1,7 @@
 # Copy-Space / Deterministic Data Movement Fabric (DPF)
 
+_file: README.md_
+
 **Pitch (short):** Copy-Space is a tiny deterministic VM for *measuring and reasoning about data movement*.
 It treats computation as scheduled bit-copies executed in fixed ticks, making throughput and scheduling constraints explicit.
 This is useful for workloads dominated by memory movement (compaction, reorder/permute, partition/materialization).

@@ -119,3 +119,19 @@ Legend:
   - `src/forth0/tests/test_add8.f0`
   - TDD: `scripts/tdd/test_forth0_bitops.sh`
 
+
+---
+
+## Copy-space scheduler (iterations)
+
+### Iteration 001 (closed)
+
+- [x] Baseline completed: `forth0c` upgrades, forth0-first tests, unified bench harness, docs baseline.
+
+### Iteration 002 (current) — plan
+
+- [ ] Define scheduler I/O v0 (Instance + Schedule)
+- [ ] Implement schedule validator (bounds + conflicts + STRICT1 participation rule)
+- [ ] Add validator tests (must-pass + must-fail cases)
+- [ ] Implement naive baseline scheduler/solver (valid schedules for small instances)
+- [ ] Connect solver + validator to a small bench sweep (append results to CSV v0)

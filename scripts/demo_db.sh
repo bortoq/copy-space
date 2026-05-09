@@ -63,23 +63,23 @@ export VERBOSE
 log "[demo] build tools (make bins)"
 make bins >/dev/null
 
-HEADER="schema_version,bench,mode,seed,space_bytes,processor_n,addr_bits,ticks_total,moved_bits_total,vmrep_bits_sum_total,vmrep_bits_uniq_dst_total,vmrep_avg_bits_sum_per_tick,vmrep_avg_bits_uniq_dst_per_tick,thr_from,thr_len,thr_avg_bits_sum_per_tick,thr_avg_bits_uniq_dst_per_tick,notes"
+HEADER="$(python3 scripts/vmrep_to_csv.py --header)"
 emit_line "$HEADER"
 
 log "[demo] PACK: ${PACK_COPIES}x${PACK_CHUNK_BYTES}B (stride=${PACK_SRC_STRIDE_BYTES})"
 export COPIES="$PACK_COPIES" CHUNK_BYTES="$PACK_CHUNK_BYTES" SRC_STRIDE_BYTES="$PACK_SRC_STRIDE_BYTES"
-row="$(scripts/bench_pack_csv.sh)"
+row="$(scripts/bench_pack_csv.sh --row)"
 emit_line "$row"
 
 log "[demo] PERMUTE: ${PERMUTE_COPIES}x${PERMUTE_CHUNK_BYTES}B (mode=${PERMUTE_MODE}, seed=${PERMUTE_SEED})"
 export COPIES="$PERMUTE_COPIES" CHUNK_BYTES="$PERMUTE_CHUNK_BYTES" MODE="$PERMUTE_MODE" SEED="$PERMUTE_SEED"
-row="$(scripts/bench_permute_csv.sh)"
+row="$(scripts/bench_permute_csv.sh --row)"
 emit_line "$row"
 
 if [ "${DEMO_BULKCOPY:-1}" = "1" ]; then
   log "[demo] BULKCOPY: LEN_BYTES=${BULK_LEN_BYTES} (LIFE=${BULK_LIFE})"
   export LEN_BYTES="$BULK_LEN_BYTES" LIFE="$BULK_LIFE"
-  row="$(scripts/bench_bulkcopy_csv.sh)"
+  row="$(scripts/bench_bulkcopy_csv.sh --row)"
   emit_line "$row"
 fi
 

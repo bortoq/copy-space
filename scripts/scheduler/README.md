@@ -1,5 +1,14 @@
 # Scheduler scripts (v0)
 
+Optional install (CLI entrypoints):
+  python3 -m venv .venv
+  . .venv/bin/activate
+  python -m pip install -e .
+
+Then you can use:
+  copyspace-validate / copyspace-solve / copyspace-pilot
+
+
 This directory contains a minimal v0 toolchain for:
 - solving a volume-based full-mesh transfer scheduling problem (STRICT1),
 - validating schedules (including coverage vs demands),

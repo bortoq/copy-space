@@ -139,6 +139,11 @@ Scheduler v0 (Python tooling):
   - `doc/partners/pilot_report_example.md`
 
 ### Tools (Python, v0)
+- [x] Python package + CLI entrypoints (optional):
+  - `pyproject.toml`
+  - entrypoints: `copyspace-validate`, `copyspace-solve`, `copyspace-pilot`
+  - recommended install: `python3 -m venv .venv && . .venv/bin/activate && python -m pip install -e .`
+
 - [x] Validate schedule (STRICT1 + bandwidth + coverage):
   - `scripts/scheduler/validate_v0.py`
   - exit codes: 0 PASS, 2 FAIL, 1 parse/usage

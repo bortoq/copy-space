@@ -2,6 +2,17 @@
 
 ## Scheduler quickstart
 
+Install (optional, enables copyspace-* CLI entrypoints):
+  python3 -m venv .venv
+  . .venv/bin/activate
+  python -m pip install -e .
+
+CLI entrypoints (optional alternative to python3 scripts/...):
+  copyspace-validate --help
+  copyspace-solve --help
+  copyspace-pilot --help
+
+
 Demo (baseline vs greedy):
   python3 scripts/scheduler/demo_run.py
 

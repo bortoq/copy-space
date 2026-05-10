@@ -169,6 +169,10 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
   - recommended install: `python3 -m venv .venv && . .venv/bin/activate && python -m pip install -e .`
 
 - [x] Validate schedule (STRICT1 + bandwidth + coverage):
+  - [x] Lower bound + gap metrics (interpretation aid):
+    - fields: `lower_bound_ticks`, `gap_ticks`, `gap_to_lower_bound`
+    - goal: measure distance to the theoretical minimum ticks under the declared model
+
   - entrypoint: `copyspace-validate`
   - wrapper: `scripts/scheduler/validate_v0.py`
   - exit codes: 0 PASS, 2 FAIL, 1 parse/usage
@@ -202,6 +206,9 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
 
 ### Bench harness integration (unified CSV schema v0)
 - [x] Scheduler results can be appended into unified CSV v0:
+  - [x] Unified scheduler bench notes include lower-bound gap:
+    - notes fields: `lb`, `gap`, `gap_ratio`
+
   - row generator: `scripts/scheduler/sched_to_csv_row_v0.py`
   - wrapper: `scripts/bench_scheduler_csv.sh`
   - unified runner: `scripts/bench/run.sh --bench scheduler ...`

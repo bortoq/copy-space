@@ -82,7 +82,7 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
   - avoid requiring `./scripts/*.sh` for baseline user workflows (keep scripts as internal/dev helpers)
 
 ### CI bench (next)
-- [ ] Add a deterministic bench smoke job in GitHub CI:
+- [x] Add a deterministic bench smoke job in GitHub CI:
   - run a minimal `scripts/bench/run.sh --bench all ...` (small, fixed seeds)
   - if runtime/flakiness is an issue: move to nightly + manual trigger
 

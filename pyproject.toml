@@ -8,6 +8,7 @@ version = "0.1.1"
 description = "Copy-Space: validated scheduling toolkit (STRICT1, volume-based)"
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = []
 license = {text = "Apache-2.0"}
 
 [project.urls]

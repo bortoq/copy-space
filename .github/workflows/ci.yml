@@ -90,3 +90,24 @@ jobs:
             tmp/bench_smoke.md
             tmp/sched_smoke.csv
             tmp/sched_smoke.md
+
+  native-build-matrix:
+    name: Native build (CMake) on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -S . -B build/cmake
+
+      - name: Build (CMake)
+        run: cmake --build build/cmake --config Release
+
+      - name: List produced binaries
+        run: |
+          cmake -E echo "Contents of build/bin:"
+          cmake -E ls build/bin

@@ -1,0 +1,117 @@
+name: Bench history (Pages)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (main)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build (bins)
+        run: make bins
+
+      - name: Run bench smoke
+        run: |
+          mkdir -p tmp
+          scripts/bench/run.sh --bench all --out tmp/bench_smoke.csv \
+            --repeat 1 \
+            --copies-list 16 \
+            --chunk-bytes-list 16 \
+            --src-stride-bytes-list 4096 \
+            --mode-list random \
+            --seed-list 1 \
+            --len-bytes-list 1024 \
+            --life-list 100
+          python3 scripts/bench/summarize.py --in tmp/bench_smoke.csv --top 3 > tmp/bench_smoke.txt
+
+          scripts/bench/run.sh --bench scheduler --out tmp/sched_smoke.csv --repeat 1
+          python3 scripts/bench/summarize.py --in tmp/sched_smoke.csv --top 5 > tmp/sched_smoke.txt
+
+      - name: Prepare pages tree (clone gh-pages if exists)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TS="$(date -u +%Y%m%d_%H%M%S)"
+          SHA="$(git rev-parse --short HEAD)"
+          RUN_ID="${TS}_${SHA}"
+          echo "RUN_ID=${RUN_ID}" >> "$GITHUB_ENV"
+
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          rm -rf pages
+          git clone --depth 1 --branch gh-pages "$REPO_URL" pages || mkdir -p pages
+
+          mkdir -p "pages/runs/${RUN_ID}"
+          cp tmp/bench_smoke.csv "pages/runs/${RUN_ID}/bench_smoke.csv"
+          cp tmp/bench_smoke.txt "pages/runs/${RUN_ID}/bench_smoke.txt"
+          cp tmp/sched_smoke.csv "pages/runs/${RUN_ID}/sched_smoke.csv"
+          cp tmp/sched_smoke.txt "pages/runs/${RUN_ID}/sched_smoke.txt"
+          printf "%s\n" "${RUN_ID}" > "pages/runs/${RUN_ID}/run_id.txt"
+          printf "%s\n" "${SHA}" > "pages/runs/${RUN_ID}/git_rev.txt"
+          printf "%s\n" "$(date -u)" > "pages/runs/${RUN_ID}/utc_time.txt"
+
+          # Generate a simple index.html from the runs/ directory.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          pages = Path("pages")
+          runs = pages / "runs"
+          runs.mkdir(parents=True, exist_ok=True)
+
+          ids = sorted([p.name for p in runs.iterdir() if p.is_dir()], reverse=True)
+
+          def esc(s: str) -> str:
+            return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                     .replace('"', "&quot;").replace("'", "&#39;"))
+
+          html = []
+          html.append("<!doctype html>")
+          html.append("<html><head><meta charset='utf-8'>")
+          html.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
+          html.append("<title>Copy-Space bench history</title></head><body>")
+          html.append("<h1>Copy-Space bench history</h1>")
+          html.append("<p>Each run stores bench_smoke and scheduler_smoke CSV + text summaries.</p>")
+
+          if not ids:
+            html.append("<p>No runs yet.</p>")
+          else:
+            html.append("<ul>")
+            for rid in ids:
+              base = f"runs/{esc(rid)}"
+              html.append("<li>")
+              html.append(f"<b>{esc(rid)}</b> ")
+              html.append(f"[<a href='{base}/bench_smoke.txt'>bench summary</a>] ")
+              html.append(f"[<a href='{base}/bench_smoke.csv'>bench csv</a>] ")
+              html.append(f"[<a href='{base}/sched_smoke.txt'>scheduler summary</a>] ")
+              html.append(f"[<a href='{base}/sched_smoke.csv'>scheduler csv</a>]")
+              html.append("</li>")
+            html.append("</ul>")
+
+          html.append("</body></html>")
+          (pages / "index.html").write_text("\n".join(html) + "\n", encoding="utf-8")
+
+          # avoid Jekyll processing
+          (pages / ".nojekyll").write_text("\n", encoding="utf-8")
+          PY
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: pages

@@ -1,0 +1,86 @@
+name: Copy-Space CI gate (example)
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  copyspace-ci-gate:
+    runs-on: ubuntu-latest
+
+    env:
+      # Pin Copy-Space to a known tag.
+      COPYSPACE_REF: v0.1.1
+
+      # Input CSV with demands (adjust path in your repo).
+      DEMANDS_CSV: examples/demands.csv
+
+      # Model parameter.
+      BW: "256"
+
+      # Gate policy: candidate ticks_total must not exceed baseline by more than this percent.
+      # Example: 5 => allow candidate to be up to 5% worse than baseline.
+      TICKS_REGRESS_PCT: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Copy-Space
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "git+https://github.com/bortoq/copy-space@${COPYSPACE_REF}"
+
+      - name: Run pilot (baseline + greedy) and produce reports
+        run: |
+          mkdir -p tmp/copyspace_gate
+          copyspace-pilot --csv "${DEMANDS_CSV}" --bw "${BW}" --outdir tmp/copyspace_gate
+
+      - name: Validate policy (ticks_total regression)
+        run: |
+          python - <<'PY'
+          import json, math, os, sys
+
+          def load(path):
+              with open(path, "r", encoding="utf-8") as f:
+                  return json.load(f)
+
+          b = load("tmp/copyspace_gate/report_baseline.json")
+          c = load("tmp/copyspace_gate/report_greedy.json")
+
+          if b.get("status") != "PASS":
+              print("ERROR: baseline report is not PASS")
+              sys.exit(1)
+          if c.get("status") != "PASS":
+              print("ERROR: candidate report is not PASS")
+              sys.exit(1)
+
+          bt = int(b["ticks_total"])
+          ct = int(c["ticks_total"])
+
+          allowed_pct = float(os.environ.get("TICKS_REGRESS_PCT", "0"))
+          limit = int(math.floor(bt * (1.0 + allowed_pct / 100.0) + 1e-9))
+
+          print(f"baseline ticks_total={bt}")
+          print(f"candidate ticks_total={ct}")
+          print(f"limit ticks_total<={limit} (allowed {allowed_pct:.1f}%)")
+
+          if ct > limit:
+              print("FAIL: ticks_total regressed")
+              sys.exit(1)
+
+          print("OK: CI gate passed")
+          PY
+
+      - name: Upload gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: copyspace-ci-gate
+          path: tmp/copyspace_gate

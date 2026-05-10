@@ -30,7 +30,7 @@ if [ ! -f "$BASE_IMG" ]; then
 fi
 
 echo "[bench] build bench image (python)" >&2
-scripts/mkbench_bulkcopy.py --image "$BASE_IMG" --out "$BENCH_IMG" \
+python3 scripts/mkbench_bulkcopy.py --image "$BASE_IMG" --out "$BENCH_IMG" \
   --space-bytes "$SPACE_BYTES" --processor-n "$PROCESSOR_N" \
   --len-bytes "$LEN_BYTES" --pad-bytes "$PAD_BYTES" \
   2> "$TMP_DIR/mkbench.log"

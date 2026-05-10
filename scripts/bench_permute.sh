@@ -33,7 +33,7 @@ if [ ! -f "$BASE_IMG" ]; then
 fi
 
 echo "[bench] build PERMUTE image" >&2
-scripts/mkbench_permute.py --image "$BASE_IMG" --out "$BENCH_IMG" \
+python3 scripts/mkbench_permute.py --image "$BASE_IMG" --out "$BENCH_IMG" \
   --space-bytes "$SPACE_BYTES" --processor-n "$PROCESSOR_N" \
   --copies "$COPIES" --chunk-bytes "$CHUNK_BYTES" --pad-bytes "$PAD_BYTES" \
   --mode "$MODE" --seed "$SEED" \

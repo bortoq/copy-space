@@ -38,7 +38,7 @@ args=""
 if [ "$RANDOMIZE" = "1" ]; then args="--src-randomize --seed $SEED"; fi
 
 # shellcheck disable=SC2086
-scripts/mkbench_pack.py --image "$BASE_IMG" --out "$BENCH_IMG" \
+python3 scripts/mkbench_pack.py --image "$BASE_IMG" --out "$BENCH_IMG" \
   --space-bytes "$SPACE_BYTES" --processor-n "$PROCESSOR_N" \
   --copies "$COPIES" --chunk-bytes "$CHUNK_BYTES" --src-stride-bytes "$SRC_STRIDE_BYTES" \
   --pad-bytes "$PAD_BYTES" \

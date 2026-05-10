@@ -108,6 +108,7 @@ jobs:
         run: cmake --build build/cmake --config Release
 
       - name: List produced binaries
+        shell: bash
         run: |
-          cmake -E echo "Contents of build/bin:"
-          cmake -E ls build/bin
+          echo "Contents of build/bin:"
+          ls -la build/bin

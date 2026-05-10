@@ -12,6 +12,9 @@ Core terms:
 - tick: one discrete time step
 - demand: required transfer volume from src_slot to dst_slot
 - chunk: scheduled transfer performed within one tick
+
+---
+
 ## Model v0
 
 Resource model: STRICT1
@@ -22,6 +25,8 @@ Resource model: STRICT1
 Bandwidth model:
 - Instance defines copy_bw_bits_per_tick (integer > 0).
 - Each chunk must satisfy: 0 < len_bits <= copy_bw_bits_per_tick.
+
+---
 
 ## Instance v0 (JSON)
 
@@ -42,6 +47,7 @@ Demand object:
 - bits_total: integer > 0
 
 Demands are directed. Multiple demands with the same (src_slot,dst_slot) are allowed, but producers SHOULD merge them.
+
 Example instance:
 {
   "version": 0,
@@ -56,6 +62,8 @@ Example instance:
   ],
   "notes": "example"
 }
+
+---
 
 ## Schedule v0 (JSON)
 
@@ -87,6 +95,9 @@ Example schedule:
     ]
   ]
 }
+
+---
+
 ## Validation rules (v0)
 
 Structural (always):
@@ -104,7 +115,11 @@ Coverage vs demands (v0 default: REQUIRED; prevents “cheating”):
 - for each demand (src,dst,bits_total): scheduled_bits(src,dst) == bits_total
 - no extras by default: any scheduled (src,dst) must appear in instance.demands
 
+---
+
 ## Metrics (derived)
+
+Basic:
 - ticks_total = len(ticks)
 - bits_total = sum(len_bits over all chunks)
 - bits_per_tick = bits_total / ticks_total (0 if ticks_total==0)
@@ -112,9 +127,19 @@ Coverage vs demands (v0 default: REQUIRED; prevents “cheating”):
 - utilization = bits_per_tick / expected_bits_per_tick
 
 Interpretation aid (lower bound):
-- chunks(src,dst) = ceil(bits_total / copy_bw_bits_per_tick)
+- chunks(src,dst) = ceil(demand_bits_total(src,dst) / copy_bw_bits_per_tick)
 - degree(slot) = sum(chunks incident to slot, counting both in+out)
 - max_degree_chunks = max_slot degree(slot)
 Typically: ticks_total >= max_degree_chunks.
 
-Non-goals (v0): no src_bit/dst_bit; no topology/path selection.
+Lower-bound gap metrics:
+- lower_bound_ticks = max_degree_chunks
+- gap_ticks = ticks_total - lower_bound_ticks
+- gap_to_lower_bound = gap_ticks / lower_bound_ticks  (0 if lower_bound_ticks==0)
+
+---
+
+Non-goals (v0):
+- no src_bit/dst_bit address offsets inside endpoints
+- no topology/path selection (full-mesh only)
+- no global optimality claims

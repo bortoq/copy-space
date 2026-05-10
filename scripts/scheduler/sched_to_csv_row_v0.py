@@ -67,7 +67,9 @@ def run(instance_path: str, solver: str) -> Dict[str, str]:
         bpt = float(rep["bits_per_tick"])
         exp_bpt = int(rep["expected_bits_per_tick"])
         util = float(rep["utilization"])
-        lb = int(rep.get("max_degree_chunks", 0))
+        lb = int(rep.get("lower_bound_ticks", rep.get("max_degree_chunks", 0)))
+        gap_ticks = ticks_total - lb
+        gap_ratio = (gap_ticks / lb) if lb > 0 else 0.0
 
         copies_total = 0
         for tick in sched.get("ticks", []):
@@ -94,7 +96,7 @@ def run(instance_path: str, solver: str) -> Dict[str, str]:
     row["expected_bits_per_tick"] = str(exp_bpt)
 
     row["notes"] = (
-        f"solver={solver};lb={lb};bw={bw};util={util:.6f};"
+        f"solver={solver};lb={lb};gap={gap_ticks};gap_ratio={gap_ratio:.6f};bw={bw};util={util:.6f};"
         f"solve_ms={solve_ms:.3f};validate_ms={validate_ms:.3f}"
     )
     row["git_rev"] = try_git_rev()

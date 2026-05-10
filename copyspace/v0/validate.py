@@ -63,6 +63,7 @@ def compute_max_degree_chunks(dm, bw, slots):
         deg[s] += ch
         deg[t] += ch
     return max(deg) if deg else 0
+
 def validate_core_v0(inst, sched):
     # instance basic fields
     if inst.get("version") != 0:
@@ -116,7 +117,8 @@ def validate_core_v0(inst, sched):
                     model, "STRICT1", "slot participates more than once in a tick",
                     tick=ti, chunk=ci, src_slot=s, dst_slot=t
                 )
-            used.add(s); used.add(t)
+            used.add(s)
+            used.add(t)
 
             scheduled[(s, t)] = scheduled.get((s, t), 0) + l
             bits_total += l
@@ -129,16 +131,30 @@ def validate_core_v0(inst, sched):
         for pair, sbits in scheduled.items():
             if pair not in dm:
                 s, t = pair
-                return fail_report(model, "EXTRAS", "scheduled pair not present in demands",
-                                   src_slot=s, dst_slot=t, scheduled_bits=sbits)
+                return fail_report(
+                    model,
+                    "EXTRAS",
+                    "scheduled pair not present in demands",
+                    src_slot=s,
+                    dst_slot=t,
+                    scheduled_bits=sbits,
+                )
         # exact coverage
         for pair, dbits in dm.items():
             sbits = scheduled.get(pair, 0)
             if sbits != dbits:
                 s, t = pair
                 kind = "COVERAGE_UNDER" if sbits < dbits else "COVERAGE_OVER"
-                return fail_report(model, "COVERAGE", "demand coverage mismatch",
-                                   subkind=kind, src_slot=s, dst_slot=t, demand_bits=dbits, scheduled_bits=sbits)
+                return fail_report(
+                    model,
+                    "COVERAGE",
+                    "demand coverage mismatch",
+                    subkind=kind,
+                    src_slot=s,
+                    dst_slot=t,
+                    demand_bits=dbits,
+                    scheduled_bits=sbits,
+                )
 
     # PASS + metrics
     rep = pass_report(model)
@@ -148,8 +164,17 @@ def validate_core_v0(inst, sched):
     rep["bits_per_tick"] = (bits_total / ticks_total) if ticks_total > 0 else 0.0
     rep["expected_bits_per_tick"] = (slots // 2) * bw
     rep["utilization"] = (rep["bits_per_tick"] / rep["expected_bits_per_tick"]) if rep["expected_bits_per_tick"] > 0 else 0.0
-    rep["max_degree_chunks"] = compute_max_degree_chunks(dm, bw, slots) if coverage_required else 0
+
+    lb = compute_max_degree_chunks(dm, bw, slots) if coverage_required else 0
+    rep["max_degree_chunks"] = lb
+
+    # Lower-bound gap metrics (interpretation aid; deterministic, derived)
+    rep["lower_bound_ticks"] = lb
+    rep["gap_ticks"] = ticks_total - lb
+    rep["gap_to_lower_bound"] = (rep["gap_ticks"] / lb) if lb > 0 else 0.0
+
     return rep
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("instance_json")
@@ -173,10 +198,12 @@ def main():
 
     ok = (rep.get("status") == "PASS")
     if ok:
-        if not args.quiet: eprint("VALIDATION: PASS")
+        if not args.quiet:
+            eprint("VALIDATION: PASS")
         rc = 0
     else:
-        if not args.quiet: eprint("VALIDATION: FAIL")
+        if not args.quiet:
+            eprint("VALIDATION: FAIL")
         err = rep.get("errors", [{}])[0] if isinstance(rep.get("errors"), list) and rep.get("errors") else {}
         if err:
             eprint("reason:", err.get("kind", "?"), "-", err.get("msg", ""))

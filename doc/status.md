@@ -103,8 +103,9 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
   - ubuntu-latest, macos-latest, windows-latest
 - [x] Add release artifacts (prebuilt native tools per platform)
   - workflow: .github/workflows/release_native_tools.yml
-- [ ] Establish Python entrypoints as canonical user-facing path (docs):
-  - avoid requiring `./scripts/*.sh` for baseline user workflows (keep scripts as internal/dev helpers)
+- [x] Establish Python entrypoints as canonical user-facing path (docs):
+  - updated docs: examples/README.md, doc/partners/quickstart_pilot.md, doc/partners/ci_gate_recipe.md
+  - avoid requiring ./scripts/*.sh for baseline user workflows (keep scripts as internal/dev helpers)
 
 ### CI bench (next)
 - [x] Add a deterministic bench smoke job in GitHub CI:

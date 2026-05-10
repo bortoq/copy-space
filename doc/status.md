@@ -158,7 +158,7 @@ Scheduler v0 (Python tooling):
   - doc: `tools/visualizer/README.md`
 
 ### Next (prioritized)
-- [ ] CI: validate Python packaging + CLI entrypoints (installed mode):
+- [x] CI: validate Python packaging + CLI entrypoints (installed mode):
   - update: `.github/workflows/ci.yml`
   - add steps: `python -m pip install -e .` and a smoke run of `copyspace-*` (e.g. solve demo instance -> validate)
   - goal: CI catches broken entrypoints/imports even if scripts/ are still runnable

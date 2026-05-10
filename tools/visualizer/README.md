@@ -5,6 +5,9 @@ This is an optional Streamlit UI for visualizing scheduler v0 schedules.
 Install (recommended):
   python3 -m venv .venv
   . .venv/bin/activate
+  python -m pip install -e ".[viz]"
+
+Install (fallback / manual):
   python -m pip install -e .
   python -m pip install -r tools/visualizer/requirements.txt
 

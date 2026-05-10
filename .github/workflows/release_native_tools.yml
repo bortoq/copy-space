@@ -1,0 +1,78 @@
+name: Release native tools
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-native:
+    name: Build native tools (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+            pkg: copyspace-native-tools-linux.tar.gz
+          - os: macos-latest
+            name: macos
+            pkg: copyspace-native-tools-macos.tar.gz
+          - os: windows-latest
+            name: windows
+            pkg: copyspace-native-tools-windows.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -S . -B build/cmake
+
+      - name: Build (CMake)
+        run: cmake --build build/cmake --config Release
+
+      - name: Package (linux/macos)
+        if: matrix.name != 'windows'
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p dist
+          tar -czf "dist/${{ matrix.pkg }}" -C build/bin .
+
+      - name: Package (windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path build/bin/* -DestinationPath dist/${{ matrix.pkg }} -Force
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-tools-${{ matrix.name }}
+          path: dist/${{ matrix.pkg }}
+
+  release:
+    name: Publish GitHub Release assets
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List packages
+        run: ls -la dist
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

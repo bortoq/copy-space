@@ -17,6 +17,20 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Install copy-space (editable)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: CLI smoke (installed entrypoints)
+        run: |
+          copyspace-validate --help >/dev/null
+          copyspace-solve --help >/dev/null
+          copyspace-pilot --help >/dev/null
+          mkdir -p tmp
+          copyspace-solve scripts/scheduler/tests/demo_instance.json --out tmp/ci_schedule.json --solver baseline
+          copyspace-validate scripts/scheduler/tests/demo_instance.json tmp/ci_schedule.json --quiet
+
       - name: Build (bins)
         run: make bins
 

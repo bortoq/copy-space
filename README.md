@@ -2,6 +2,9 @@
 
 ## Scheduler quickstart
 
+[![asciicast](https://asciinema.org/a/3MmAYdSZq67fneOs.svg)](https://asciinema.org/a/3MmAYdSZq67fneOs)
+
+
 Install (optional, enables copyspace-* CLI entrypoints):
   python3 -m venv .venv
   . .venv/bin/activate

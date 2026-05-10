@@ -96,8 +96,9 @@ Scheduler v0 (Python tooling):
 Goal: a user-facing workflow that does not depend on `/bin/sh` + coreutils.
 Approach: keep VM/tools native; use Python entrypoints for orchestration; minimize platform-specific glue.
 
-- [ ] Add portable native build (keep Makefile, add CMake in parallel):
-  - build targets at least: `vmrun`, `mkimage_std7_fixed`, `forth0c`, `vmprep_forth0`
+- [x] Add portable native build (keep Makefile, add CMake in parallel):
+  - CMake build file: CMakeLists.txt
+  - build targets at least: vmrun, mkimage_std7_fixed, forth0c, vmprep_forth0
 - [ ] Add CI matrix build-only for native tools:
   - `ubuntu-latest`, `macos-latest`, `windows-latest`
 - [ ] Add release artifacts (prebuilt native tools per platform)

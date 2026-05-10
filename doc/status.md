@@ -171,7 +171,7 @@ Scheduler v0 (Python tooling):
   - ensure bench scripts print failing command and tail relevant logs on error
   - consider `--verbose/--keep-tmp` flags for easier reproduction
 
-- [ ] Packaging: declare optional dependencies for visualizer:
+- [x] Packaging: declare optional dependencies for visualizer:
   - update: `pyproject.toml` (`[project.optional-dependencies]`, e.g. `viz = ["streamlit>=..."]`)
   - goal: `pip install -e ".[viz]"` enables visualizer deterministically
 

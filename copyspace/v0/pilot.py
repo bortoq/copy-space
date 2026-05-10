@@ -94,8 +94,10 @@ def main(argv=None) -> int:
         dump_json(os.path.join(outdir, f"schedule_{solver}.json"), sched)
         dump_json(os.path.join(outdir, f"report_{solver}.json"), rep)
 
-    b = json.load(open(os.path.join(outdir, "report_baseline.json"), "r", encoding="utf-8"))
-    g = json.load(open(os.path.join(outdir, "report_greedy.json"), "r", encoding="utf-8"))
+    with open(os.path.join(outdir, "report_baseline.json"), "r", encoding="utf-8") as f:
+        b = json.load(f)
+    with open(os.path.join(outdir, "report_greedy.json"), "r", encoding="utf-8") as f:
+        g = json.load(f)
 
     def line(name, r):
         util = float(r.get("utilization", 0.0))

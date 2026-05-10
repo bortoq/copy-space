@@ -167,7 +167,7 @@ Scheduler v0 (Python tooling):
   - update bench scripts to call generators explicitly via `python3 scripts/mkbench_*.py ...`
   - goal: avoid `exit=126`/permission issues on fresh checkouts / different filesystems
 
-- [ ] Bench diagnostics: improve error visibility on non-zero exit:
+- [x] Bench diagnostics: improve error visibility on non-zero exit:
   - ensure bench scripts print failing command and tail relevant logs on error
   - consider `--verbose/--keep-tmp` flags for easier reproduction
 

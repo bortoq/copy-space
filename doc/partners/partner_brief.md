@@ -62,4 +62,8 @@ If you need “1 read + 1 write per tick” or broadcast-style semantics, the mo
 - Demo instance: `scripts/scheduler/tests/demo_instance.json`
 
 The demo compares baseline vs improved scheduling on a fixed instance and prints
-ticks_total, utilization, and the lower-bound reference 
+`ticks_total`, `utilization`, and the lower-bound reference.
+
+- Optional visualizer (helps onboard quickly):
+  - Run: `python -m streamlit run tools/visualizer/app.py`
+  - Docs: `tools/visualizer/README.md`

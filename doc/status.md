@@ -153,6 +153,10 @@ Scheduler v0 (Python tooling):
 - [x] CSV demands -> Instance v0:
   - `scripts/scheduler/csv_to_instance_v0.py`
 
+- [x] Optional Streamlit visualizer (onboarding / schedule timeline view):
+  - `python -m streamlit run tools/visualizer/app.py`
+  - doc: `tools/visualizer/README.md`
+
 ### Demo / reference pack
 - [x] Real demo instance + runner:
   - `scripts/scheduler/tests/demo_instance.json`

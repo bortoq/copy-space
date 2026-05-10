@@ -101,7 +101,8 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
   - build targets at least: vmrun, mkimage_std7_fixed, forth0c, vmprep_forth0
 - [x] Add CI matrix build-only for native tools:
   - ubuntu-latest, macos-latest, windows-latest
-- [ ] Add release artifacts (prebuilt native tools per platform)
+- [x] Add release artifacts (prebuilt native tools per platform)
+  - workflow: .github/workflows/release_native_tools.yml
 - [ ] Establish Python entrypoints as canonical user-facing path (docs):
   - avoid requiring `./scripts/*.sh` for baseline user workflows (keep scripts as internal/dev helpers)
 

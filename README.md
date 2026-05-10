@@ -1,26 +1,35 @@
 # Copy-Space / Deterministic Data Movement Fabric (DPF)
 
+**Pitch (short):** Copy-Space is a deterministic toolkit for **validated scheduling** of data movement.
+Given transfer demands and a resource model, it produces a conflict-free schedule plus an independent validator
+report with reproducible metrics.
+
+**Key differentiator:** the validator reports a theoretical **lower bound** on required ticks
+(`lower_bound_ticks`, derived from per-slot degree in chunks) and a normalized gap metric:
+`gap_to_lower_bound = (ticks_total - lower_bound_ticks) / lower_bound_ticks`.
+This makes it possible to track “how far from the best possible (under the model)” a schedule is.
+
+---
+
 ## Scheduler quickstart
 
 [![asciicast](https://asciinema.org/a/3MmAYdSZq67fneOs.svg)](https://asciinema.org/a/3MmAYdSZq67fneOs)
-
 
 Install (optional, enables copyspace-* CLI entrypoints):
   python3 -m venv .venv
   . .venv/bin/activate
   python -m pip install -e .
 
-CLI entrypoints (optional alternative to python3 scripts/...):
+CLI entrypoints:
   copyspace-validate --help
   copyspace-solve --help
   copyspace-pilot --help
 
-
-Demo (baseline vs greedy):
+Demo (baseline vs greedy, prints lower bound + gap):
   python3 scripts/scheduler/demo_run.py
 
-One-command pilot (CSV -> schedules -> reports):
-  ./scripts/scheduler/pilot_run.sh --csv examples/demands.csv --bw 256 --outdir tmp/pilot
+One-command pilot (CSV -> instance -> schedules -> reports):
+  copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot
 
 More:
 - doc/partners/quickstart_pilot.md
@@ -28,9 +37,9 @@ More:
 
 _file: README.md_
 
-**Pitch (short):** Copy-Space is a tiny deterministic VM for *measuring and reasoning about data movement*.
-It treats computation as scheduled bit-copies executed in fixed ticks, making throughput and scheduling constraints explicit.
-This is useful for workloads dominated by memory movement (compaction, reorder/permute, partition/materialization).
+Copy-Space treats computation as scheduled bit-copies executed in fixed ticks, making throughput and scheduling
+constraints explicit. This is useful for workloads dominated by memory movement (compaction, reorder/permute,
+partition/materialization).
 
 The core operation is:
 
@@ -45,6 +54,7 @@ All higher-level behavior is built by composing this primitive (plus a small bas
 - A host-side `.f0` compiler: `forth0c` (Forth0-first workflow)
 - A deterministic testing pipeline (`make test`, `make tdd`, CI)
 - Benchmarks and vmrep-based throughput metrics (CSV)
+- Scheduler v0 tooling (solve + validate + metrics, incl. lower bound + gap)
 
 ---
 

@@ -7,6 +7,10 @@ Copy-Space is an open-source project for **validated scheduling** of transfer-st
 > conflict-free schedule, an independent validator report, and reproducible utilization metrics — suitable
 > for benchmarking solver strategies and CI gating.
 
+**Key differentiator (under the declared model):**
+- the validator reports a theoretical **lower bound** on required ticks (`lower_bound_ticks`)
+- and a normalized gap metric: `gap_to_lower_bound = (ticks_total - lower_bound_ticks) / lower_bound_ticks`
+
 This document is intentionally non-sensitive and does not disclose solver internals.
 
 ---
@@ -22,12 +26,12 @@ You already have a scheduler (or several heuristics), but you lack:
 **What Copy-Space provides:**
 - a deterministic model + validator (objective correctness),
 - a repeatable benchmark harness,
-- standardized metrics (`ticks_total`, `bits_per_tick`, `utilization`) and summary tables.
+- standardized metrics (`ticks_total`, `utilization`, `lower_bound_ticks`, `gap_to_lower_bound`) and summary tables.
 
 ### Pain A — CI gate for transfer schedules (conflicts and performance regressions)
 You generate or modify schedules (or transfer plans) as part of firmware/toolchain/optimization work and you need:
 - fail-fast detection of conflicts under a declared model,
-- automated protection against performance regressions (e.g., longer schedules).
+- automated protection against performance regressions (e.g., longer schedules or worse gap-to-lower-bound).
 
 **What Copy-Space provides:**
 - a hard validator you can run in CI,
@@ -62,7 +66,7 @@ If you need “1 read + 1 write per tick” or broadcast-style semantics, the mo
 - Demo instance: `scripts/scheduler/tests/demo_instance.json`
 
 The demo compares baseline vs improved scheduling on a fixed instance and prints
-`ticks_total`, `utilization`, and the lower-bound reference.
+`ticks_total`, `utilization`, `lower_bound_ticks`, and `gap_to_lower_bound`.
 
 - Optional visualizer (helps onboard quickly):
   - Run: `python -m streamlit run tools/visualizer/app.py`

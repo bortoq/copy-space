@@ -1,0 +1,14 @@
+{
+  "copy_bw_bits_per_tick": 8,
+  "demands": [
+    {
+      "bits_total": 8,
+      "dst_slot": 1,
+      "src_slot": 0
+    }
+  ],
+  "model": "STRICT1",
+  "notes": "edge: 2 slots, 1 demand",
+  "slots": 2,
+  "version": 0
+}

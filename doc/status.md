@@ -23,6 +23,12 @@ Legend:
 Scheduler v0 (Python tooling):
 - Scheduler smoke/regression test: `./scripts/test_scheduler.sh`
 - Scheduler fixtures: `scripts/scheduler/tests/`
+- Adversarial/edge-case scheduler instances (covered by scripts/test_scheduler.sh):
+  - edge_2slots.instance.json
+  - edge_2slots_dupdemands.instance.json
+  - adv_star_8.instance.json
+  - adv_cycle_8.instance.json
+
 - Scheduler demo: `python3 scripts/scheduler/demo_run.py`
 
 ---

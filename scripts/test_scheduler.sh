@@ -68,4 +68,19 @@ $PY "$S" "$T/demands.instance.json" --out "$tmp" --solver greedy >/dev/null 2>/d
 run_validate_ok "$T/demands.instance.json" "$tmp"
 rm -f "$tmp"
 
+# --- Adversarial / edge-case solver smokes ---
+for inst in \
+  "$T/edge_2slots.instance.json" \
+  "$T/edge_2slots_dupdemands.instance.json" \
+  "$T/adv_star_8.instance.json" \
+  "$T/adv_cycle_8.instance.json"
+do
+  for solver in baseline greedy; do
+    tmp="$(mktemp)"
+    $PY "$S" "$inst" --out "$tmp" --solver "$solver" >/dev/null 2>/dev/null
+    run_validate_ok "$inst" "$tmp"
+    rm -f "$tmp"
+  done
+done
+
 echo "OK: scheduler validator+solver tests passed"

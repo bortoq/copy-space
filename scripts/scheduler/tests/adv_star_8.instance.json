@@ -1,0 +1,44 @@
+{
+  "copy_bw_bits_per_tick": 256,
+  "demands": [
+    {
+      "bits_total": 256,
+      "dst_slot": 1,
+      "src_slot": 0
+    },
+    {
+      "bits_total": 256,
+      "dst_slot": 2,
+      "src_slot": 0
+    },
+    {
+      "bits_total": 256,
+      "dst_slot": 3,
+      "src_slot": 0
+    },
+    {
+      "bits_total": 256,
+      "dst_slot": 4,
+      "src_slot": 0
+    },
+    {
+      "bits_total": 256,
+      "dst_slot": 5,
+      "src_slot": 0
+    },
+    {
+      "bits_total": 256,
+      "dst_slot": 6,
+      "src_slot": 0
+    },
+    {
+      "bits_total": 256,
+      "dst_slot": 7,
+      "src_slot": 0
+    }
+  ],
+  "model": "STRICT1",
+  "notes": "adversarial: star from slot0 to all others",
+  "slots": 8,
+  "version": 0
+}

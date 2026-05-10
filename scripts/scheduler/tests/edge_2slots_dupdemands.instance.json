@@ -1,0 +1,19 @@
+{
+  "copy_bw_bits_per_tick": 8,
+  "demands": [
+    {
+      "bits_total": 4,
+      "dst_slot": 1,
+      "src_slot": 0
+    },
+    {
+      "bits_total": 4,
+      "dst_slot": 1,
+      "src_slot": 0
+    }
+  ],
+  "model": "STRICT1",
+  "notes": "edge: duplicate demands for same (src,dst)",
+  "slots": 2,
+  "version": 0
+}

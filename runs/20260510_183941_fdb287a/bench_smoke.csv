@@ -1,0 +1,6 @@
+schema_version,bench,mode,seed,space_bytes,slots,addr_bits,ticks_total,moved_bits_total,vmrep_bits_sum_total,vmrep_bits_uniq_dst_total,vmrep_avg_bits_sum_per_tick,vmrep_avg_bits_uniq_dst_per_tick,thr_from,thr_len,thr_avg_bits_sum_per_tick,thr_avg_bits_uniq_dst_per_tick,notes,git_rev,copies_total,expected_bits_per_tick
+csv.v0,pack,pack,1,,,,20000,40960000,40960000,40960000,2048.000,2048.000,1000,5000,2048.000,2048.000,COPIES=16 CHUNK_BYTES=16 SRC_STRIDE_BYTES=4096 COPIES_TOTAL=16 EXPECTED_BITS_PER_TICK=2048,fdb287a,16,2048
+csv.v0,permute,random,1,,,,20000,40960000,40960000,40960000,2048.000,2048.000,1000,5000,2048.000,2048.000,COPIES=16 CHUNK_BYTES=16 MODE=random SEED=1 COPIES_TOTAL=16 EXPECTED_BITS_PER_TICK=2048,fdb287a,16,2048
+csv.v0,bulkcopy,,,,,,100,819200,819200,819200,8192.000,8192.000,,,,,LEN_BYTES=1024 LIFE=100 COPIES_TOTAL=1 EXPECTED_BITS_PER_TICK=8192,fdb287a,1,8192
+0,scheduler,demo_instance.json,0,0,20,0,40,71424,-,-,1785.600000,1785.600000,-,-,-,-,solver=baseline;lb=39;gap=1;gap_ratio=0.025641;bw=256;util=0.697500;solve_ms=55.429;validate_ms=54.100,fdb287a,279,2560
+0,scheduler,demo_instance.json,0,0,20,0,39,71424,-,-,1831.384615,1831.384615,-,-,-,-,solver=greedy;lb=39;gap=0;gap_ratio=0.000000;bw=256;util=0.715385;solve_ms=57.893;validate_ms=50.828,fdb287a,279,2560

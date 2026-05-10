@@ -14,7 +14,7 @@ Legend:
 
 ## Next (prioritized)
 
-- [ ] Live CI gate recipe (copy-paste workflow example for partners)
+- [x] Live CI gate recipe (copy-paste workflow example for partners)
   - add an example GitHub Actions workflow that runs: solve -> validate -> thresholds
   - keep example inputs in examples/ (stable paths)
 

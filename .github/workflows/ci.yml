@@ -45,3 +45,48 @@ jobs:
 
       - name: Scheduler v0 tests
         run: ./scripts/test_scheduler.sh
+
+  bench-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Build (bins)
+        run: make bins
+
+      - name: Bench smoke (core benches)
+        run: |
+          mkdir -p tmp
+          scripts/bench/run.sh --bench all --out tmp/bench_smoke.csv \
+            --repeat 1 \
+            --copies-list 16 \
+            --chunk-bytes-list 16 \
+            --src-stride-bytes-list 4096 \
+            --mode-list random \
+            --seed-list 1 \
+            --len-bytes-list 1024 \
+            --life-list 100
+          python3 scripts/bench/summarize.py --in tmp/bench_smoke.csv --top 3 > tmp/bench_smoke.md
+          cat tmp/bench_smoke.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Bench smoke (scheduler unified CSV)
+        run: |
+          mkdir -p tmp
+          scripts/bench/run.sh --bench scheduler --out tmp/sched_smoke.csv --repeat 1
+          python3 scripts/bench/summarize.py --in tmp/sched_smoke.csv --top 5 > tmp/sched_smoke.md
+          cat tmp/sched_smoke.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-smoke
+          path: |
+            tmp/bench_smoke.csv
+            tmp/bench_smoke.md
+            tmp/sched_smoke.csv
+            tmp/sched_smoke.md

@@ -12,6 +12,29 @@ Legend:
 
 ---
 
+## Next (prioritized)
+
+- [ ] Live CI gate recipe (copy-paste workflow example for partners)
+  - add an example GitHub Actions workflow that runs: solve -> validate -> thresholds
+  - keep example inputs in examples/ (stable paths)
+
+- [ ] Cross-platform: portable native build and distribution
+  - add CMake build in parallel to Makefile
+  - CI build matrix (linux, macos, windows) at least build-only
+  - publish prebuilt native tools as release artifacts
+
+- [ ] Benchmark history (beyond per-run artifacts)
+  - publish a rolling history of bench results (e.g. GitHub Pages) for reference packs / smokes
+
+- [ ] External solver integration hook
+  - run a third-party solver command and validate output under the v0 contract
+  - unify reporting into the existing CSV schema
+
+- [ ] Pilot artifacts: optional plots for onboarding
+  - generate simple schedule visual artifacts (PNG/HTML) as part of pilot output
+
+---
+
 ## Where tests live
 
 - Forth0 libs: `src/forth0/lib/`

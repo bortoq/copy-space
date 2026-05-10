@@ -18,12 +18,13 @@ Legend:
   - add an example GitHub Actions workflow that runs: solve -> validate -> thresholds
   - keep example inputs in examples/ (stable paths)
 
-- [ ] Cross-platform: portable native build and distribution
+- [x] Cross-platform: portable native build and distribution
   - add CMake build in parallel to Makefile
   - CI build matrix (linux, macos, windows) at least build-only
   - publish prebuilt native tools as release artifacts
 
-- [ ] Benchmark history (beyond per-run artifacts)
+- [~] Benchmark history (beyond per-run artifacts)
+  - per-run artifacts and summaries are available in CI; GitHub Pages history is still pending
   - publish a rolling history of bench results (e.g. GitHub Pages) for reference packs / smokes
 
 - [ ] External solver integration hook
@@ -109,6 +110,7 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
 
 ### CI bench (next)
 - [x] Add a deterministic bench smoke job in GitHub CI:
+  - bench-smoke runs on push and workflow_dispatch; skipped on pull_request to keep PR fast
   - run a minimal `scripts/bench/run.sh --bench all ...` (small, fixed seeds)
   - if runtime/flakiness is an issue: move to nightly + manual trigger
 

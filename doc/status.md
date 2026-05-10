@@ -163,7 +163,7 @@ Scheduler v0 (Python tooling):
   - add steps: `python -m pip install -e .` and a smoke run of `copyspace-*` (e.g. solve demo instance -> validate)
   - goal: CI catches broken entrypoints/imports even if scripts/ are still runnable
 
-- [ ] Bench harness: remove dependency on executable-bit for Python generators:
+- [x] Bench harness: remove dependency on executable-bit for Python generators:
   - update bench scripts to call generators explicitly via `python3 scripts/mkbench_*.py ...`
   - goal: avoid `exit=126`/permission issues on fresh checkouts / different filesystems
 

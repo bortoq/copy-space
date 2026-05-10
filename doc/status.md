@@ -157,6 +157,28 @@ Scheduler v0 (Python tooling):
   - `python -m streamlit run tools/visualizer/app.py`
   - doc: `tools/visualizer/README.md`
 
+### Next (prioritized)
+- [ ] CI: validate Python packaging + CLI entrypoints (installed mode):
+  - update: `.github/workflows/ci.yml`
+  - add steps: `python -m pip install -e .` and a smoke run of `copyspace-*` (e.g. solve demo instance -> validate)
+  - goal: CI catches broken entrypoints/imports even if scripts/ are still runnable
+
+- [ ] Bench harness: remove dependency on executable-bit for Python generators:
+  - update bench scripts to call generators explicitly via `python3 scripts/mkbench_*.py ...`
+  - goal: avoid `exit=126`/permission issues on fresh checkouts / different filesystems
+
+- [ ] Bench diagnostics: improve error visibility on non-zero exit:
+  - ensure bench scripts print failing command and tail relevant logs on error
+  - consider `--verbose/--keep-tmp` flags for easier reproduction
+
+- [ ] Packaging: declare optional dependencies for visualizer:
+  - update: `pyproject.toml` (`[project.optional-dependencies]`, e.g. `viz = ["streamlit>=..."]`)
+  - goal: `pip install -e ".[viz]"` enables visualizer deterministically
+
+- [ ] Scheduler scalability (long-term): avoid expanding demands into per-bw chunks for very large instances:
+  - consider representing pending as `(src, dst, remaining_bits)` and emitting chunks on demand
+  - goal: reduce memory/time blowups on large `bits_total`
+
 ### Demo / reference pack
 - [x] Real demo instance + runner:
   - `scripts/scheduler/tests/demo_instance.json`

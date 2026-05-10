@@ -152,6 +152,9 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
 ## Copy-space scheduler v0 (volume-based, STRICT1)
 
 ### Contract / docs (source of truth)
+- [x] STRICT1 model spec (one-page):
+  - doc/strict1_model_v0.md
+
 - [x] v0 I/O + validation + metrics contract:
   - `doc/scheduler_io_v0.md`
 - [x] Public roadmap and partner-facing docs (non-sensitive):

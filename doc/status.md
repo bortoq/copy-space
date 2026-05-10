@@ -1,4 +1,4 @@
-# Status — std7_fixed + forth0 + scheduler v0 — 2026-05-09
+# Status — std7_fixed + forth0 + scheduler v0 — 2026-05-10
 
 _file: doc/status.md_
 
@@ -55,7 +55,30 @@ Scheduler v0 (Python tooling):
   - doc: `doc/abi_artifacts.md`
 
 - [x] CI:
-  - `.github/workflows/ci.yml` (make bins / make test / make tdd / ABI doc sync / scheduler v0 tests)
+  - `.github/workflows/ci.yml`
+  - includes:
+    - build: `make bins`
+    - tests: `make test`, `make tdd`
+    - ABI doc sync: `python3 scripts/check_art_doc_sync.py --doc doc/abi_artifacts.md`
+    - scheduler v0 tests: `./scripts/test_scheduler.sh`
+    - packaging smoke (installed mode): `pip install -e .` + `copyspace-*` smoke
+
+### Cross-platform direction (accepted; next tasks)
+Goal: a user-facing workflow that does not depend on `/bin/sh` + coreutils.
+Approach: keep VM/tools native; use Python entrypoints for orchestration; minimize platform-specific glue.
+
+- [ ] Add portable native build (keep Makefile, add CMake in parallel):
+  - build targets at least: `vmrun`, `mkimage_std7_fixed`, `forth0c`, `vmprep_forth0`
+- [ ] Add CI matrix build-only for native tools:
+  - `ubuntu-latest`, `macos-latest`, `windows-latest`
+- [ ] Add release artifacts (prebuilt native tools per platform)
+- [ ] Establish Python entrypoints as canonical user-facing path (docs):
+  - avoid requiring `./scripts/*.sh` for baseline user workflows (keep scripts as internal/dev helpers)
+
+### CI bench (next)
+- [ ] Add a deterministic bench smoke job in GitHub CI:
+  - run a minimal `scripts/bench/run.sh --bench all ...` (small, fixed seeds)
+  - if runtime/flakiness is an issue: move to nightly + manual trigger
 
 ---
 
@@ -75,6 +98,7 @@ Scheduler v0 (Python tooling):
 - [x] `ADD_PTR_CONST32` (derived):
   - Forth0 test: `src/forth0/tests/test_addptr_const32.f0`
   - TDD: `scripts/tdd/test_forth0_ptr32.sh`
+
 ### Derived pointer-based ops (via primitives)
 - [x] `ADD24P` via prims:
   - Forth0 test: `src/forth0/tests/test_add24p_via_prims.f0`
@@ -127,7 +151,7 @@ Scheduler v0 (Python tooling):
 
 ## Copy-space scheduler v0 (volume-based, STRICT1)
 
-### Contract / docs
+### Contract / docs (source of truth)
 - [x] v0 I/O + validation + metrics contract:
   - `doc/scheduler_io_v0.md`
 - [x] Public roadmap and partner-facing docs (non-sensitive):
@@ -141,40 +165,29 @@ Scheduler v0 (Python tooling):
 ### Tools (Python, v0)
 - [x] Python package + CLI entrypoints (optional):
   - `pyproject.toml`
-  - entrypoints: `copyspace-validate`, `copyspace-solve`, `copyspace-pilot`
+  - entrypoints: `copyspace-validate`, `copyspace-solve`, `copyspace-pilot`, etc.
   - recommended install: `python3 -m venv .venv && . .venv/bin/activate && python -m pip install -e .`
 
 - [x] Validate schedule (STRICT1 + bandwidth + coverage):
-  - `scripts/scheduler/validate_v0.py`
+  - entrypoint: `copyspace-validate`
+  - wrapper: `scripts/scheduler/validate_v0.py`
   - exit codes: 0 PASS, 2 FAIL, 1 parse/usage
   - supports `--report report.json` and `--quiet`
+
 - [x] Solve instance (two strategies):
-  - `scripts/scheduler/solve_v0.py --solver baseline|greedy`
+  - entrypoint: `copyspace-solve`
+  - wrapper: `scripts/scheduler/solve_v0.py --solver baseline|greedy`
+
 - [x] CSV demands -> Instance v0:
-  - `scripts/scheduler/csv_to_instance_v0.py`
+  - entrypoint: `copyspace-csv-to-instance`
+  - wrapper: `scripts/scheduler/csv_to_instance_v0.py`
 
 - [x] Optional Streamlit visualizer (onboarding / schedule timeline view):
-  - `python -m streamlit run tools/visualizer/app.py`
+  - run: `python -m streamlit run tools/visualizer/app.py`
   - doc: `tools/visualizer/README.md`
+  - install extras: `pip install -e ".[viz]"`
 
-### Next (prioritized)
-- [x] CI: validate Python packaging + CLI entrypoints (installed mode):
-  - update: `.github/workflows/ci.yml`
-  - add steps: `python -m pip install -e .` and a smoke run of `copyspace-*` (e.g. solve demo instance -> validate)
-  - goal: CI catches broken entrypoints/imports even if scripts/ are still runnable
-
-- [x] Bench harness: remove dependency on executable-bit for Python generators:
-  - update bench scripts to call generators explicitly via `python3 scripts/mkbench_*.py ...`
-  - goal: avoid `exit=126`/permission issues on fresh checkouts / different filesystems
-
-- [x] Bench diagnostics: improve error visibility on non-zero exit:
-  - ensure bench scripts print failing command and tail relevant logs on error
-  - consider `--verbose/--keep-tmp` flags for easier reproduction
-
-- [x] Packaging: declare optional dependencies for visualizer:
-  - update: `pyproject.toml` (`[project.optional-dependencies]`, e.g. `viz = ["streamlit>=..."]`)
-  - goal: `pip install -e ".[viz]"` enables visualizer deterministically
-
+### Next (scheduler-specific)
 - [ ] Scheduler scalability (long-term): avoid expanding demands into per-bw chunks for very large instances:
   - consider representing pending as `(src, dst, remaining_bits)` and emitting chunks on demand
   - goal: reduce memory/time blowups on large `bits_total`
@@ -186,14 +199,16 @@ Scheduler v0 (Python tooling):
 - [x] Seeded public reference pack generator + benchmark:
   - `scripts/scheduler/gen_ref_pack.py`
   - `scripts/scheduler/bench_v0.py`
+
 ### Bench harness integration (unified CSV schema v0)
 - [x] Scheduler results can be appended into unified CSV v0:
   - row generator: `scripts/scheduler/sched_to_csv_row_v0.py`
   - wrapper: `scripts/bench_scheduler_csv.sh`
   - unified runner: `scripts/bench/run.sh --bench scheduler ...`
     - supports `--solver-list` and `--inst-glob`
-- [x] Summarization works with existing tool:
-  - `python3 scripts/bench/summarize.py --in tmp/sched.csv`
+- [x] Bench harness does not depend on executable-bit for python generators:
+  - `scripts/bench_{pack,permute,bulkcopy}.sh` call generators via `python3 ...`
+- [x] Bench diagnostics: failures print useful log tails (mkbench/vmrun)
 
 ### How to run (quick)
 - Scheduler tests:
@@ -207,12 +222,11 @@ Scheduler v0 (Python tooling):
   - `scripts/bench/run.sh --bench scheduler --out tmp/sched.csv --repeat 1`
   - `scripts/bench/run.sh --bench scheduler --out tmp/sched_pack.csv --inst-glob scripts/scheduler/tests/ref_pack/*.json --solver-list baseline greedy --repeat 1`
 
-### CI
-- [x] Scheduler tests run in CI:
-  - `./scripts/test_scheduler.sh`
-
 ---
 
 ## Licensing
+
 - [x] Project license: Apache-2.0
   - `LICENSE`, `NOTICE`
+- [x] Third-party notes:
+  - `THIRD_PARTY.md`

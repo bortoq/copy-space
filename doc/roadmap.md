@@ -13,6 +13,23 @@ See also: `doc/status.md`.
 
 ---
 
+## Principles (accepted)
+
+### Single source of truth
+- Contracts and schemas live in `doc/*` (e.g. `doc/scheduler_io_v0.md`).
+- README / partner docs should link to contracts rather than duplicate details.
+- CI should include small smoke checks for canonical entrypoints and critical docs sync.
+
+### Cross-platform direction
+Goal: a user-facing workflow that does not rely on `/bin/sh` + coreutils.
+Approach: Python entrypoints for orchestration; native binaries for VM/tools; portable native build + release artifacts.
+
+### Bench in CI
+Benchmarks should be runnable in automation in a deterministic smoke mode (small, fixed seeds).
+If runtime becomes an issue, prefer nightly + manual trigger rather than removing coverage.
+
+---
+
 ## Milestone 0 — Engineering baseline (done)
 - CI (`make bins`, `make test`, `make tdd`)
 - Forth0-first regression tests executed via `forth0c`
@@ -30,8 +47,8 @@ See also: `doc/status.md`.
 
 ### Key implementation artifacts
 - I/O v0 contract: `doc/scheduler_io_v0.md`
-- Validator + metrics (coverage required by default): `scripts/scheduler/validate_v0.py`
-- Two strategies (baseline + greedy): `scripts/scheduler/solve_v0.py`
+- Validator + metrics (coverage required by default): `copyspace-validate`
+- Two strategies (baseline + greedy): `copyspace-solve`
 - Reference benchmark pack (seeded): `scripts/scheduler/gen_ref_pack.py`, `scripts/scheduler/bench_v0.py`
 - Real demo:
   - instance: `scripts/scheduler/tests/demo_instance.json`
@@ -48,14 +65,13 @@ See also: `doc/status.md`.
 ---
 
 ## Milestone 2 — CI gating + pilot helpers (done)
-
 - Real CI gate recipe (incl. `--quiet`): `doc/partners/ci_gate_recipe.md`
-- CSV -> Instance adapter: `scripts/scheduler/csv_to_instance_v0.py`
+- CSV -> Instance adapter: `copyspace-csv-to-instance`
 - One-command pilot runner:
   - `scripts/scheduler/pilot_run.sh`
   - example input: `examples/demands.csv`
 - Validate-only helper (text lines -> Schedule v0):
-  - `scripts/scheduler/lines_to_schedule_v0.py`
+  - `copyspace-lines-to-schedule`
 - Pilot path docs:
   - `doc/partners/pilot_intake.md`
   - `doc/partners/quickstart_pilot.md`
@@ -72,13 +88,53 @@ Deliverables:
    - Pilot request (collect workload shape and constraints)
    - Bug report (collect instance/schedule + validator report)
 3) CONTRIBUTING.md (how to run tests/benches, where to put new instances, PR checklist).
-4) Optional packaging:
-   - Python CLI entrypoints (`copyspace-solve`, `copyspace-validate`, `copyspace-pilot`)
-   - Keep scripts as source of truth; entrypoints are thin wrappers.
+4) Public docs hygiene:
+   - clarify canonical entrypoints (`copyspace-*`) vs internal scripts
+   - keep contracts in `doc/*` as the source of truth
+
+---
+
+## Milestone 4 — Cross-platform UX + portable native build (next)
+
+Goal: a user can run core workflows on Linux/macOS/Windows without requiring `/bin/sh`.
+
+Deliverables:
+1) Portable native build (in parallel to Makefile):
+   - add CMake build for native tools (`vmrun`, `mkimage_std7_fixed`, `forth0c`, `vmprep_forth0`, etc.)
+2) CI: native build matrix (build-only initially):
+   - `ubuntu-latest`, `macos-latest`, `windows-latest`
+3) Prebuilt binaries:
+   - produce release artifacts for native tools per platform (GitHub Releases)
+4) Python-first orchestration:
+   - add/extend Python entrypoints to cover user-facing flows (bench/pilot/demo) without shell scripts
+   - ensure docs do not require `./scripts/*.sh` for baseline usage
+
+---
+
+## Milestone 5 — Bench CI + performance regression signals (next)
+
+Goal: deterministic, automated signals for bench-level regressions.
+
+Deliverables:
+1) CI: add a deterministic bench smoke job:
+   - minimal sweep; fixed seeds; bounded runtime
+2) Optional: nightly extended benches:
+   - larger sweeps / reference pack tracking
+
+---
+
+## Milestone 6 — Scheduler scalability (long-term)
+
+Goal: handle instances with large `bits_total` without memory blowups.
+
+Deliverables:
+- Avoid expanding demands into per-bw chunks in the host solver:
+  - represent pending as `(src, dst, remaining_bits)` and emit chunks on demand
+- Add reproducible stress fixtures + metrics for large instances
 
 ---
 
 ## Non-goals (current scope)
 - No topology/path selection (full-mesh only)
 - No address-level allocation/validation inside endpoints (`src_bit/dst_bit`)
-- No “best price”/global optimality claims
+- No global optimality claims

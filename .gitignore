@@ -51,3 +51,4 @@ htmlcov/
 Thumbs.db
 .venv/
 tmp/plots/
+.streamlit/

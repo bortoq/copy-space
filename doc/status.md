@@ -99,8 +99,8 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
 - [x] Add portable native build (keep Makefile, add CMake in parallel):
   - CMake build file: CMakeLists.txt
   - build targets at least: vmrun, mkimage_std7_fixed, forth0c, vmprep_forth0
-- [ ] Add CI matrix build-only for native tools:
-  - `ubuntu-latest`, `macos-latest`, `windows-latest`
+- [x] Add CI matrix build-only for native tools:
+  - ubuntu-latest, macos-latest, windows-latest
 - [ ] Add release artifacts (prebuilt native tools per platform)
 - [ ] Establish Python entrypoints as canonical user-facing path (docs):
   - avoid requiring `./scripts/*.sh` for baseline user workflows (keep scripts as internal/dev helpers)

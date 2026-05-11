@@ -31,7 +31,7 @@ CLI entrypoints:
 
 Demo (baseline vs greedy, prints lower bound + gap):
 
-  python3 scripts/scheduler/demo_run.py
+  copyspace-demo-scheduler
 
 One-command pilot (CSV -> instance -> schedules -> reports):
 

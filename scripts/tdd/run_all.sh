@@ -14,6 +14,7 @@ scripts/tdd/test_fail_bundle.sh
 scripts/tdd/test_art_doc_sync.sh
 scripts/tdd/test_forth0c.sh
 scripts/tdd/test_forth0c_strict.sh
+scripts/tdd/test_vmrun_strict_align32.sh
 scripts/tdd/test_forth0_bitops.sh
 scripts/tdd/test_forth0_2a.sh
 scripts/tdd/test_forth0_ptr32.sh

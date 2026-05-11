@@ -3,6 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int env_enabled(const char *name) {
+  const char *s = getenv(name);
+  if (!s) return 0;
+  if (!strcmp(s, "1")) return 1;
+  if (!strcmp(s, "true")) return 1;
+  if (!strcmp(s, "TRUE")) return 1;
+  return 0;
+}
+
 static void usage(const char *a0) {
   fprintf(stderr,
     "usage: %s --image space.bin [--life N] [--space-bytes N] [--processor-n N] [--dump after.bin]\n"
@@ -10,7 +19,10 @@ static void usage(const char *a0) {
     "  --life         max ticks to run (default: 1e6)\n"
     "  --space-bytes  must match image build (default: VM_SPACE_BYTES)\n"
     "  --processor-n  must match image build (default: VM_PROCESSOR_N)\n"
-    "  --dump         dump full vm.space after run to a file\n",
+    "  --dump         dump full vm.space after run to a file\n"
+    "\n"
+    "env:\n"
+    "  COPYSPACE_VM_STRICT_ALIGN32=1  enforce 32-bit alignment for VAR_AP/VAR_BP/VAR_RP (std7_fixed)\n",
     a0);
 }
 
@@ -81,6 +93,8 @@ int main(int argc, char **argv) {
     vm_free(&vm);
     return 1;
   }
+
+  vm.strict_align32 = env_enabled("COPYSPACE_VM_STRICT_ALIGN32");
 
   vm_rc_t rc = vm_run(&vm, life, stdin, stdout);
 

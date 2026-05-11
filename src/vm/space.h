@@ -67,7 +67,8 @@ typedef struct {
 typedef enum {
   VM_E_NONE = 0,
   VM_E_SRC_BOUNDS = 1,
-  VM_E_DST_BOUNDS = 2
+  VM_E_DST_BOUNDS = 2,
+  VM_E_ALIGN32 = 3
 } vm_err_kind_t;
 
 typedef struct {
@@ -139,6 +140,7 @@ typedef struct vm {
   /* conventional workspace base (first free bit after MMIO) */
   bitaddr_t workspace_base;
   /* diagnostics */
+  int strict_align32; /* if set, enforce 32-bit alignment for VAR_AP/VAR_BP/VAR_RP (std7_fixed) */
   uint64_t tick_counter; /* increments per vm_tick() call that completes */
   vm_err_t last_err;
 

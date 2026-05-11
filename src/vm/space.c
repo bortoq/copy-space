@@ -259,6 +259,57 @@ static int service_out(vm_t *vm, FILE *out) {
 
 /* -------- execution -------- */
 
+static bitaddr_t align8_bits(bitaddr_t x) { return (x + 7u) & ~(bitaddr_t)7u; }
+
+static int vm_strict_align32_check_var(vm_t *vm, const char *name, bitaddr_t var_addr) {
+  uint64_t v = vm_read_uint(vm, var_addr, vm->addr_bits);
+  if ((v & 31ull) == 0ull) return 0;
+  vm->last_err.kind = VM_E_ALIGN32;
+  vm->last_err.tick = vm->tick_counter;
+  vm->last_err.slot = 0;
+  vm->last_err.ins  = (vm_inst_t){0,0,0};
+  vm->last_err.space_bits = vm->space_bits;
+  fprintf(stderr,
+          "VM_ERR: tick=%" PRIu64 " kind=%d %s=%" PRIu64 " (at bitaddr=%" PRIu64 ") is not 32-bit aligned (bitaddr%%32!=0)\n",
+          (uint64_t)vm->last_err.tick,
+          (int)vm->last_err.kind,
+          name,
+          (uint64_t)v,
+          (uint64_t)var_addr);
+  return -1;
+}
+
+static int vm_strict_align32_check(vm_t *vm) {
+  const unsigned width = vm->addr_bits;
+  const bitaddr_t ART = align8_bits(vm->workspace_base + 512u);
+  const bitaddr_t need_end = ART + (bitaddr_t)(61u) * (bitaddr_t)width;
+  if (need_end > vm->space_bits) {
+    vm->last_err.kind = VM_E_ALIGN32;
+    vm->last_err.tick = vm->tick_counter;
+    vm->last_err.slot = 0;
+    vm->last_err.ins  = (vm_inst_t){0,0,0};
+    vm->last_err.space_bits = vm->space_bits;
+    fprintf(stderr,
+            "VM_ERR: tick=%" PRIu64 " kind=%d cannot locate ART (out of bounds)\n",
+            (uint64_t)vm->last_err.tick,
+            (int)vm->last_err.kind);
+    return -1;
+  }
+
+  bitaddr_t var_ap_addr = (bitaddr_t)vm_read_uint(vm, ART + (bitaddr_t)58u * (bitaddr_t)width, width);
+  bitaddr_t var_bp_addr = (bitaddr_t)vm_read_uint(vm, ART + (bitaddr_t)59u * (bitaddr_t)width, width);
+  bitaddr_t var_rp_addr = (bitaddr_t)vm_read_uint(vm, ART + (bitaddr_t)60u * (bitaddr_t)width, width);
+
+  if (var_ap_addr + width > vm->space_bits) return -1;
+  if (var_bp_addr + width > vm->space_bits) return -1;
+  if (var_rp_addr + width > vm->space_bits) return -1;
+
+  if (vm_strict_align32_check_var(vm, "VAR_AP", var_ap_addr) != 0) return -1;
+  if (vm_strict_align32_check_var(vm, "VAR_BP", var_bp_addr) != 0) return -1;
+  if (vm_strict_align32_check_var(vm, "VAR_RP", var_rp_addr) != 0) return -1;
+  return 0;
+}
+
 vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
   if (!vm || !vm->space) return VM_ERR;
 
@@ -328,6 +379,10 @@ vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
     vmrep_note_copy((uint64_t)dst, (uint64_t)n);
 
     bitcpy((size_t)n, vm->space, (size_t)src, vm->space, (size_t)dst);
+  }
+
+  if (vm->strict_align32) {
+    if (vm_strict_align32_check(vm) != 0) return VM_ERR;
   }
 
   vmrep_tick_end();

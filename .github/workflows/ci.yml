@@ -79,6 +79,7 @@ jobs:
           copyspace-solve scripts/scheduler/tests/demo_instance.json --out tmp/ci_schedule.json --solver baseline
           copyspace-validate scripts/scheduler/tests/demo_instance.json tmp/ci_schedule.json --quiet
           copyspace-bench-scheduler --out tmp/sched_smoke.csv --repeat 1 --inst-glob scripts/scheduler/tests/demo_instance.json
+          copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot_smoke
 
   stress-smoke:
     if: github.event_name != 'pull_request'
@@ -158,6 +159,7 @@ jobs:
         run: |
           mkdir -p tmp
           copyspace-bench-scheduler --out tmp/sched_smoke.csv --repeat 1 --inst-glob scripts/scheduler/tests/demo_instance.json
+          copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot_smoke
           python3 scripts/bench/summarize.py --in tmp/sched_smoke.csv --top 5 > tmp/sched_smoke.md
           cat tmp/sched_smoke.md >> "$GITHUB_STEP_SUMMARY"
 

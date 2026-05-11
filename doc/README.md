@@ -28,11 +28,14 @@ All documentation is written in **simple English**.
 7) `glossary.md`  
    Minimal terminology index.
 
+8) cross_platform.md  
+   Cross-platform build, native tools, CMake, and release artifacts.
+
 ### Project tracking
-8) `status.md`  
+9) `status.md`  
    What is currently done and what is covered by tests/CI.
 
-9) `roadmap.md`  
+10) `roadmap.md`  
    What we plan to do next.
 
 ## Specs / core references

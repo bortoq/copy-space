@@ -23,9 +23,8 @@ References:
 ## Next (prioritized)
 
 - [~] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
-  - current state: opt-in runtime checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1
+  - current state: opt-in runtime checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1 (implementation in src/vm/invariants.c)
   - remaining: decide and implement additional invariants (bounds / region checks) if needed
-  - remaining: refactor strict-check implementation (extract from src/vm/space.c into a smaller module)
 
 ------------------------------------------------------------
 

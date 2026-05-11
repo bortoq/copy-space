@@ -25,10 +25,14 @@ jobs:
       - name: Build (bins)
         run: make bins
 
+      - name: Install package (entrypoints)
+        run: python3 -m pip install -e .
+
       - name: Run bench smoke
         run: |
           mkdir -p tmp
-          scripts/bench/run.sh --bench all --out tmp/bench_smoke.csv \
+
+          copyspace-bench-core --bench all --out tmp/bench_smoke.csv \
             --repeat 1 \
             --copies-list 16 \
             --chunk-bytes-list 16 \
@@ -39,7 +43,7 @@ jobs:
             --life-list 100
           python3 scripts/bench/summarize.py --in tmp/bench_smoke.csv --top 3 > tmp/bench_smoke.txt
 
-          scripts/bench/run.sh --bench scheduler --out tmp/sched_smoke.csv --repeat 1
+          copyspace-bench-scheduler --out tmp/sched_smoke.csv --repeat 1 --inst-glob scripts/scheduler/tests/demo_instance.json
           python3 scripts/bench/summarize.py --in tmp/sched_smoke.csv --top 5 > tmp/sched_smoke.txt
 
       - name: Prepare pages tree (clone gh-pages if exists)

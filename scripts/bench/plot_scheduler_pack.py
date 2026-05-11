@@ -10,9 +10,12 @@ from typing import Dict, Tuple, List
 
 def run_ref_pack_csv(out_csv: str) -> None:
     Path("tmp").mkdir(exist_ok=True)
+
+    # Ensure python-first CLI entrypoints are available.
+    subprocess.check_call(["python3", "-m", "pip", "install", "-e", "."])
+
     subprocess.check_call([
-        "scripts/bench/run.sh",
-        "--bench", "scheduler",
+        "copyspace-bench-scheduler",
         "--out", out_csv,
         "--inst-glob", "scripts/scheduler/tests/ref_pack/*.json",
         "--solver-list", "baseline", "greedy",
@@ -143,13 +146,13 @@ def main() -> int:
 
     lo = min(min(baseline_ticks), min(greedy_ticks))
     hi = max(max(baseline_ticks), max(greedy_ticks))
-    plt.plot([lo, hi], [lo, hi], linestyle='--', linewidth=1.0)
+    plt.plot([lo, hi], [lo, hi], linestyle="--", linewidth=1.0)
 
     plt.title("Scheduler ref_pack: ticks_total (baseline vs greedy)\\npoints below diagonal = improvement", fontsize=12)
     plt.xlabel("baseline ticks_total")
     plt.ylabel("greedy ticks_total")
     plt.grid(True, alpha=0.3)
-    plt.legend(loc='best', frameon=True)
+    plt.legend(loc="best", frameon=True)
 
     p3 = outdir / "ticks_scatter.png"
     plt.tight_layout()

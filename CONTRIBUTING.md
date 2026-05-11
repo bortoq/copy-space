@@ -29,9 +29,10 @@ From repo root:
 4) Scheduler tests:
    ./scripts/test_scheduler.sh
 
-Optional (local smoke benches):
-- scripts/bench/run.sh --bench scheduler --out tmp/sched.csv --repeat 1
-- python3 scripts/bench/summarize.py --in tmp/sched.csv --top 5
+Optional (local smoke benches, Python-first entrypoints):
+- python3 -m pip install -e .
+- copyspace-bench-core --bench all --out tmp/bench_smoke.csv --repeat 1
+- copyspace-bench-scheduler --out tmp/sched_smoke.csv --repeat 1 --inst-glob scripts/scheduler/tests/demo_instance.json
 
 CI notes:
 - Heavy jobs (bench-smoke, stress-smoke) run on push to main and workflow_dispatch, and are skipped on pull_request.
@@ -40,16 +41,18 @@ CI notes:
 
 ## Scheduler v0 notes
 
-Preferred user-facing entrypoints (installed via pip install -e .):
+Preferred user-facing entrypoints (installed via python3 -m pip install -e .):
 - copyspace-validate
 - copyspace-solve
 - copyspace-pilot
+- copyspace-bench-core
+- copyspace-bench-scheduler
 
 Internal scripts exist as wrappers for development and CI.
 
 Useful links:
 - I/O contract: doc/scheduler_io_v0.md
-- Demo: python3 scripts/scheduler/demo_run.py
+- Demo (python-first): copyspace-demo-scheduler
 - One-command pilot: copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot
 
 ------------------------------------------------------------

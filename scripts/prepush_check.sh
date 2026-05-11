@@ -58,9 +58,13 @@ if [ "$FAST" -eq 1 ]; then
 fi
 
 echo
+echo "[prepush] install package (entrypoints)"
+python3 -m pip install -e .
+
+echo
 echo "[prepush] bench smoke: core benches"
 mkdir -p tmp
-scripts/bench/run.sh --bench all --out tmp/bench_smoke.csv \
+copyspace-bench-core --bench all --out tmp/bench_smoke.csv \
   --repeat 1 \
   --copies-list 16 \
   --chunk-bytes-list 16 \
@@ -74,7 +78,7 @@ python3 scripts/bench/summarize.py --in tmp/bench_smoke.csv --top 2 >/dev/null
 
 echo
 echo "[prepush] bench smoke: scheduler (unified CSV)"
-scripts/bench/run.sh --bench scheduler --out tmp/sched_smoke.csv --repeat 1
+copyspace-bench-scheduler --out tmp/sched_smoke.csv --repeat 1 --inst-glob scripts/scheduler/tests/demo_instance.json
 python3 scripts/bench/summarize.py --in tmp/sched_smoke.csv --top 5 >/dev/null
 
 echo

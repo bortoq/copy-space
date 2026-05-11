@@ -36,6 +36,9 @@ References:
   - Removed conflicting language and outdated milestones
   - Covered by: doc/status.md, doc/roadmap.md, README.md
 
+- [x] Docs: benchmarks and quickstart recommend python-first bench entrypoints
+  - Updated: doc/benchmarks.md, doc/quickstart.md
+
 
 - [x] Scheduler scalability stress smoke coverage (large-instance regression signal)
   - runner: scripts/scheduler/stress_smoke.py
@@ -246,7 +249,7 @@ Bench integration (unified CSV schema v0):
   - row generator: scripts/scheduler/sched_to_csv_row_v0.py
   - wrapper: scripts/bench_scheduler_csv.sh
   - python entrypoint: copyspace-bench-scheduler
-  - unified runner: scripts/bench/run.sh --bench scheduler
+  - python-first runner: copyspace-bench-scheduler
   - scheduler bench notes include:
     - solver, lb, gap, gap_ratio
 

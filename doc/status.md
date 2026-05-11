@@ -22,10 +22,6 @@ References:
 
 ## Next (prioritized)
 
-- [ ] Bench regression policy (core and scheduler metrics)
-  - current state: deterministic bench-smoke and stress-smoke jobs exist with CSV artifacts
-  - remaining: define regression criteria and where it is enforced (for example CI summary now, optional hard limits later)
-
 - [~] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
   - current state: opt-in runtime checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1 (implementation in src/vm/invariants.c)
   - remaining: decide and implement additional invariants (bounds / region checks) if needed
@@ -42,6 +38,11 @@ References:
 
 - [x] Docs: benchmarks and quickstart recommend python-first bench entrypoints
   - Updated: doc/benchmarks.md, doc/quickstart.md
+
+
+- [x] Bench regression policy (v0)
+  - doc: doc/bench_regression_policy.md
+  - Covered by: bench-smoke job in .github/workflows/ci.yml; bench history workflow .github/workflows/bench_history_pages.yml
 
 
 - [x] Repo hygiene: python-first benches in Pages workflow and dev tooling; PR template

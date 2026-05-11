@@ -120,9 +120,8 @@ Current state
 - CI includes a deterministic bench-smoke job (skipped on pull_request).
 
 Remaining
-1) Regression signal policy
-- Define what constitutes a regression for key metrics and where it is enforced
-  (for example, as a CI summary with optional hard limits in later iterations).
+1) Regression signal policy (done)
+- doc/bench_regression_policy.md
 
 2) Optional: extended runs
 - Add nightly or manual extended benches (larger sweeps) if needed.

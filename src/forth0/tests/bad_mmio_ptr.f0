@@ -1,0 +1,4 @@
+# Should fail under COPYSPACE_VM_STRICT_ALIGN32=1:
+# pointer in processor/MMIO region (below workspace_base)
+LITAP 32
+HALT

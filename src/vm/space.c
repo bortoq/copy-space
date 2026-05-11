@@ -264,6 +264,9 @@ static bitaddr_t align8_bits(bitaddr_t x) { return (x + 7u) & ~(bitaddr_t)7u; }
 static int vm_strict_align32_check_var(vm_t *vm, const char *name, bitaddr_t var_addr) {
   uint64_t v = vm_read_uint(vm, var_addr, vm->addr_bits);
   uint64_t sb = (uint64_t)vm->space_bits;
+  uint64_t wb = (uint64_t)vm->workspace_base;
+
+  if (v == 0ull) return 0;
 
   if (v >= sb || v + 32ull > sb) {
     vm->last_err.kind = VM_E_ALIGN32;
@@ -281,21 +284,41 @@ static int vm_strict_align32_check_var(vm_t *vm, const char *name, bitaddr_t var
     return -1;
   }
 
-  if ((v & 31ull) == 0ull) return 0;
-  vm->last_err.kind = VM_E_ALIGN32;
-  vm->last_err.tick = vm->tick_counter;
-  vm->last_err.slot = 0;
-  vm->last_err.ins  = (vm_inst_t){0,0,0};
-  vm->last_err.space_bits = vm->space_bits;
-  fprintf(stderr,
-          "VM_ERR: tick=%" PRIu64 " kind=%d %s=%" PRIu64 " (at bitaddr=%" PRIu64 ") is not 32-bit aligned (bitaddr%%32!=0)\n",
-          (uint64_t)vm->last_err.tick,
-          (int)vm->last_err.kind,
-          name,
-          (uint64_t)v,
-          (uint64_t)var_addr);
-  return -1;
+  if ((v & 31ull) != 0ull) {
+    vm->last_err.kind = VM_E_ALIGN32;
+    vm->last_err.tick = vm->tick_counter;
+    vm->last_err.slot = 0;
+    vm->last_err.ins  = (vm_inst_t){0,0,0};
+    vm->last_err.space_bits = vm->space_bits;
+    fprintf(stderr,
+            "VM_ERR: tick=%" PRIu64 " kind=%d %s=%" PRIu64 " (at bitaddr=%" PRIu64 ") is not 32-bit aligned (bitaddr%%32!=0)\n",
+            (uint64_t)vm->last_err.tick,
+            (int)vm->last_err.kind,
+            name,
+            (uint64_t)v,
+            (uint64_t)var_addr);
+    return -1;
+  }
+
+  if (v < wb) {
+    vm->last_err.kind = VM_E_ALIGN32;
+    vm->last_err.tick = vm->tick_counter;
+    vm->last_err.slot = 0;
+    vm->last_err.ins  = (vm_inst_t){0,0,0};
+    vm->last_err.space_bits = vm->space_bits;
+    fprintf(stderr,
+            "VM_ERR: tick=%" PRIu64 " kind=%d %s=%" PRIu64 " is in processor/MMIO region (workspace_base=%" PRIu64 ")\n",
+            (uint64_t)vm->last_err.tick,
+            (int)vm->last_err.kind,
+            name,
+            (uint64_t)v,
+            (uint64_t)vm->workspace_base);
+    return -1;
+  }
+
+  return 0;
 }
+
 
 static int vm_strict_align32_check(vm_t *vm) {
   const unsigned width = vm->addr_bits;

@@ -40,3 +40,4 @@ run_case_expect_fail() {
 
 run_case_expect_fail vmrun_strict_align32_unaligned src/forth0/tests/bad_unaligned_ptr.f0 "not 32-bit aligned"
 run_case_expect_fail vmrun_strict_align32_oob      src/forth0/tests/bad_oob_ptr.f0       "out of bounds"
+run_case_expect_fail vmrun_strict_align32_mmio     src/forth0/tests/bad_mmio_ptr.f0      "processor/MMIO region"

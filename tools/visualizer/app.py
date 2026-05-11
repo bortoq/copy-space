@@ -10,9 +10,8 @@ import matplotlib.pyplot as plt
 
 # Use in-repo package (works with `pip install -e .`).
 from copyspace.v0.solve import (
-    chunk_demands,
-    solve_baseline_strict1,
-    solve_greedy_strict1,
+    solve_baseline_strict1_demands,
+    solve_greedy_strict1_demands,
 )
 from copyspace.v0.validate import validate_core_v0
 
@@ -27,11 +26,10 @@ def load_json_path(p: str) -> Any:
 def build_schedule(inst: dict, solver: str) -> dict:
     bw = int(inst["copy_bw_bits_per_tick"])
     demands = inst.get("demands", []) or []
-    pending = chunk_demands(demands, bw)
     if solver == "baseline":
-        ticks = solve_baseline_strict1(pending)
+        ticks = solve_baseline_strict1_demands(demands, bw)
     else:
-        ticks = solve_greedy_strict1(pending)
+        ticks = solve_greedy_strict1_demands(demands, bw)
     return {"version": 0, "model": inst["model"], "ticks": ticks}
 
 def tick_slot_heatmap(inst: dict, sched: dict) -> plt.Figure:

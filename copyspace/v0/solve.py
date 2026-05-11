@@ -53,18 +53,163 @@ def parse_instance(inst):
             raise ValueError(f"demand[{i}] bits_total must be > 0")
     return slots, bw, demands
 
-def chunk_demands(demands, bw):
+def aggregate_demands(demands):
+    dm = {}
+    for d in demands:
+        s = int(d["src_slot"])
+        t = int(d["dst_slot"])
+        b = int(d["bits_total"])
+        dm[(s, t)] = dm.get((s, t), 0) + b
+    out = []
+    for (s, t), b in sorted(dm.items()):
+        out.append({"src_slot": s, "dst_slot": t, "bits_total": b})
+    return out
+
+def demands_to_pending_volume(demands):
     pending = []
     for d in demands:
-        s = d["src_slot"]
-        t = d["dst_slot"]
-        bits = d["bits_total"]
+        pending.append(
+            {
+                "src_slot": int(d["src_slot"]),
+                "dst_slot": int(d["dst_slot"]),
+                "rem_bits": int(d["bits_total"]),
+            }
+        )
+    return pending
+
+def solve_baseline_strict1_volume(pending, bw):
+    ticks = []
+    while pending:
+        used = set()
+        tick = []
+        new_pending = []
+        for item in pending:
+            s = item["src_slot"]
+            t = item["dst_slot"]
+            rem = item["rem_bits"]
+            if s in used or t in used:
+                new_pending.append(item)
+                continue
+
+            l = bw if rem > bw else rem
+            tick.append({"src_slot": s, "dst_slot": t, "len_bits": l})
+            used.add(s)
+            used.add(t)
+
+            rem2 = rem - l
+            if rem2 > 0:
+                new_pending.append({"src_slot": s, "dst_slot": t, "rem_bits": rem2})
+
+        if not tick:
+            raise RuntimeError("solver made no progress (empty tick)")
+        ticks.append(tick)
+        pending = new_pending
+
+    return ticks
+
+def _pending_degrees_volume(pending, bw):
+    deg = {}
+    for item in pending:
+        s = item["src_slot"]
+        t = item["dst_slot"]
+        rem = item["rem_bits"]
+        ch = (rem + bw - 1) // bw
+        deg[s] = deg.get(s, 0) + ch
+        deg[t] = deg.get(t, 0) + ch
+    return deg
+
+def solve_greedy_strict1_volume(pending, bw):
+    """
+    Deterministic greedy on the volume-based pending set.
+
+    Each tick:
+    - compute per-slot degrees from pending (in chunks, i.e. ceil(rem/bw))
+    - sort pending indices by score desc:
+        score = deg[src] + deg[dst]
+      with deterministic tie-breakers
+    - select an item if both endpoints are unused in this tick
+    - emit one chunk (len_bits = min(bw, rem_bits))
+    - keep remainder in pending, preserving original item order
+    """
+    ticks = []
+    while pending:
+        deg = _pending_degrees_volume(pending, bw)
+        order = list(range(len(pending)))
+
+        def key(i):
+            it = pending[i]
+            s = it["src_slot"]
+            t = it["dst_slot"]
+            rem = it["rem_bits"]
+            l = bw if rem > bw else rem
+            score = deg.get(s, 0) + deg.get(t, 0)
+            return (-score, s, t, -l, i)
+
+        order.sort(key=key)
+
+        used = set()
+        tick = []
+        chosen = [False] * len(pending)
+        chosen_len = [0] * len(pending)
+
+        for i in order:
+            it = pending[i]
+            s = it["src_slot"]
+            t = it["dst_slot"]
+            if s in used or t in used:
+                continue
+            rem = it["rem_bits"]
+            l = bw if rem > bw else rem
+            tick.append({"src_slot": s, "dst_slot": t, "len_bits": l})
+            chosen[i] = True
+            chosen_len[i] = l
+            used.add(s)
+            used.add(t)
+
+        if not tick:
+            raise RuntimeError("greedy solver made no progress (empty tick)")
+
+        new_pending = []
+        for i in range(len(pending)):
+            it = pending[i]
+            if chosen[i]:
+                rem2 = it["rem_bits"] - chosen_len[i]
+                if rem2 > 0:
+                    new_pending.append({"src_slot": it["src_slot"], "dst_slot": it["dst_slot"], "rem_bits": rem2})
+            else:
+                new_pending.append(it)
+
+        ticks.append(tick)
+        pending = new_pending
+
+    return ticks
+
+def solve_baseline_strict1_demands(demands, bw):
+    demands2 = aggregate_demands(demands)
+    pending = demands_to_pending_volume(demands2)
+    return solve_baseline_strict1_volume(pending, bw)
+
+def solve_greedy_strict1_demands(demands, bw):
+    demands2 = aggregate_demands(demands)
+    pending = demands_to_pending_volume(demands2)
+    return solve_greedy_strict1_volume(pending, bw)
+
+
+# Backwards compatibility helpers (legacy chunk-based API)
+# Note: these may expand demands into per-bw chunks and can be memory-heavy.
+
+def chunk_demands(demands, bw):
+    pending = []
+    for d in aggregate_demands(demands):
+        s = int(d['src_slot'])
+        t = int(d['dst_slot'])
+        bits = int(d['bits_total'])
         full = bits // bw
         rem = bits % bw
         for _ in range(full):
-            pending.append({"src_slot": s, "dst_slot": t, "len_bits": bw})
+            pending.append({'src_slot': s, 'dst_slot': t, 'len_bits': bw})
         if rem:
-            pending.append({"src_slot": s, "dst_slot": t, "len_bits": rem})
+            pending.append({'src_slot': s, 'dst_slot': t, 'len_bits': rem})
     return pending
 
 def solve_baseline_strict1(pending):
@@ -74,8 +219,8 @@ def solve_baseline_strict1(pending):
         tick = []
         new_pending = []
         for ch in pending:
-            s = ch["src_slot"]
-            t = ch["dst_slot"]
+            s = ch['src_slot']
+            t = ch['dst_slot']
             if s in used or t in used:
                 new_pending.append(ch)
             else:
@@ -83,7 +228,7 @@ def solve_baseline_strict1(pending):
                 used.add(s)
                 used.add(t)
         if not tick:
-            raise RuntimeError("solver made no progress (empty tick)")
+            raise RuntimeError('solver made no progress (empty tick)')
         ticks.append(tick)
         pending = new_pending
     return ticks
@@ -91,53 +236,43 @@ def solve_baseline_strict1(pending):
 def _pending_degrees(pending):
     deg = {}
     for ch in pending:
-        s = ch["src_slot"]
-        t = ch["dst_slot"]
+        s = ch['src_slot']
+        t = ch['dst_slot']
         deg[s] = deg.get(s, 0) + 1
         deg[t] = deg.get(t, 0) + 1
     return deg
 
 def solve_greedy_strict1(pending):
-    """
-    Deterministic greedy: each tick picks chunks incident to the most constrained slots first.
-    """
     ticks = []
     while pending:
         deg = _pending_degrees(pending)
         order = list(range(len(pending)))
-
         def key(i):
             ch = pending[i]
-            s = ch["src_slot"]
-            t = ch["dst_slot"]
-            l = ch["len_bits"]
+            s = ch['src_slot']
+            t = ch['dst_slot']
+            l = ch['len_bits']
             score = deg.get(s, 0) + deg.get(t, 0)
             return (-score, s, t, -l, i)
-
         order.sort(key=key)
-
         used = set()
         tick = []
         chosen = [False] * len(pending)
-
         for i in order:
             ch = pending[i]
-            s = ch["src_slot"]
-            t = ch["dst_slot"]
+            s = ch['src_slot']
+            t = ch['dst_slot']
             if s in used or t in used:
                 continue
             tick.append(ch)
             chosen[i] = True
             used.add(s)
             used.add(t)
-
         if not tick:
-            raise RuntimeError("greedy solver made no progress (empty tick)")
-
+            raise RuntimeError('greedy solver made no progress (empty tick)')
         new_pending = [pending[i] for i in range(len(pending)) if not chosen[i]]
         ticks.append(tick)
         pending = new_pending
-
     return ticks
 
 def run_external_solver(instance_json: str, out_json: str, argv: list[str]) -> int:
@@ -204,13 +339,11 @@ def main():
         eprint("ERROR:", e)
         return 1
 
-    pending = chunk_demands(demands, bw)
-
     try:
         if args.solver == "baseline":
-            ticks = solve_baseline_strict1(pending)
+            ticks = solve_baseline_strict1_demands(demands, bw)
         else:
-            ticks = solve_greedy_strict1(pending)
+            ticks = solve_greedy_strict1_demands(demands, bw)
     except Exception as e:
         eprint("ERROR:", e)
         return 1

@@ -14,9 +14,9 @@ Legend:
 
 ## Next (prioritized)
 
-- [ ] Scheduler scalability: avoid expanding demands into per-bw chunks for very large instances
-  - implement streaming pending representation and keep deterministic behavior
-  - add stress fixtures and CI smoke limits
+- [~] Scheduler scalability: avoid expanding demands into per-bw chunks for very large instances
+  - solver now schedules from volume-based pending representation (no up-front chunk expansion)
+  - remaining: add stress fixtures and CI smoke limits for large instances
 
 - [ ] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
 

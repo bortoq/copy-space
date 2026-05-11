@@ -60,12 +60,11 @@ def build_instance_from_csv(csv_path: str, bw: int, slots: int | None, inst_id: 
 def solve_and_validate(inst: dict, solver: str) -> tuple[dict, dict]:
     bw = int(inst["copy_bw_bits_per_tick"])
     demands = inst.get("demands", [])
-    pending = sol.chunk_demands(demands, bw)
 
     if solver == "baseline":
-        ticks = sol.solve_baseline_strict1(pending)
+        ticks = sol.solve_baseline_strict1_demands(demands, bw)
     elif solver == "greedy":
-        ticks = sol.solve_greedy_strict1(pending)
+        ticks = sol.solve_greedy_strict1_demands(demands, bw)
     else:
         raise SystemExit(f"ERROR: unknown solver: {solver}")
 

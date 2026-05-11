@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -45,6 +46,46 @@ jobs:
 
       - name: Scheduler v0 tests
         run: ./scripts/test_scheduler.sh
+
+  stress-smoke:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install copy-space (editable)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Scheduler stress smoke (solve + validate)
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          python3 scripts/scheduler/stress_smoke.py \
+            --outdir tmp/stress_smoke_ci \
+            --slots 16 \
+            --bw 256 \
+            --bits-per-pair 65536 \
+            --pattern full-mesh \
+            --solver-list baseline greedy | tee tmp/stress_smoke_ci/run.txt
+          tail -n 50 tmp/stress_smoke_ci/run.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload stress smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-smoke
+          path: |
+            tmp/stress_smoke_ci/instance.json
+            tmp/stress_smoke_ci/report_*.json
+            tmp/stress_smoke_ci/summary.json
+            tmp/stress_smoke_ci/run.txt
 
   bench-smoke:
     if: github.event_name != 'pull_request'

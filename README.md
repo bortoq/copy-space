@@ -1,141 +1,130 @@
-# Copy-Space / Deterministic Data Movement Fabric (DPF)
+# Copy-Space — validated scheduling toolkit for deterministic data movement
 
-**Pitch (short):** Copy-Space is a deterministic toolkit for **validated scheduling** of data movement.
+Copy-Space is a deterministic toolkit for validated scheduling of data movement.
 Given transfer demands and a resource model, it produces a conflict-free schedule plus an independent validator
 report with reproducible metrics.
 
-**Key differentiator:** the validator reports a theoretical **lower bound** on required ticks
-(`lower_bound_ticks`, derived from per-slot degree in chunks) and a normalized gap metric:
-`gap_to_lower_bound = (ticks_total - lower_bound_ticks) / lower_bound_ticks`.
-This makes it possible to track “how far from the best possible (under the model)” a schedule is.
+Primary use cases (pilot-facing):
+- CI gating: schedule correctness checks plus performance regression limits
+- Benchmarking: compare scheduling strategies with reproducible metrics
 
----
+Key differentiator:
+- The validator reports a theoretical lower bound on required ticks (lower_bound_ticks)
+- It also reports a normalized gap metric: gap_to_lower_bound
+This makes it possible to track how far a schedule is from the best possible result under the model.
 
-## Scheduler quickstart
+------------------------------------------------------------
 
-[![asciicast](https://asciinema.org/a/3MmAYdSZq67fneOs.svg)](https://asciinema.org/a/3MmAYdSZq67fneOs)
+## Start here (Scheduler v0)
 
 Install (optional, enables copyspace-* CLI entrypoints):
+
   python3 -m venv .venv
   . .venv/bin/activate
   python -m pip install -e .
 
 CLI entrypoints:
+
   copyspace-validate --help
   copyspace-solve --help
   copyspace-pilot --help
 
 Demo (baseline vs greedy, prints lower bound + gap):
+
   python3 scripts/scheduler/demo_run.py
 
 One-command pilot (CSV -> instance -> schedules -> reports):
+
   copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot
 
-More:
+Partner-facing docs:
 - doc/partners/quickstart_pilot.md
 - doc/partners/pilot_intake.md
+- doc/partners/ci_gate_recipe.md
 
-_file: README.md_
+Technical contracts (source of truth):
+- doc/scheduler_io_v0.md
+- doc/strict1_model_v0.md
 
-Copy-Space treats computation as scheduled bit-copies executed in fixed ticks, making throughput and scheduling
-constraints explicit. This is useful for workloads dominated by memory movement (compaction, reorder/permute,
-partition/materialization).
+------------------------------------------------------------
 
-The core operation is:
+## What is inside (high-level)
 
-    copy(n, dst, src)
+Scheduler v0 (recommended for pilots and external users):
+- schedule validator + metrics (copyspace-validate)
+- solver strategies for comparison (copyspace-solve: baseline, greedy, external)
+- pilot runner for onboarding (copyspace-pilot)
+- adapters:
+  - CSV demands -> instance (copyspace-csv-to-instance)
+  - text lines -> schedule JSON (copyspace-lines-to-schedule)
 
-All higher-level behavior is built by composing this primitive (plus a small baseline image: `std7_fixed`).
+Under the hood (research VM and toolchain):
+- a minimal bit-addressable VM (space, ticks, copy slots)
+- a baseline image builder (mkimage_std7_fixed)
+- a host-side Forth0 compiler (forth0c) and Forth0-first regression tests
+- benchmarks and vmrep-based throughput metrics (CSV)
 
-## What’s inside (high-level)
+If you are a pilot partner evaluating validated scheduling, you do not need the VM toolchain to start.
+Use the Scheduler v0 entrypoints above.
 
-- A minimal bit-addressable VM (`space`, ticks, copy slots)
-- A baseline image builder: `mkimage_std7_fixed`
-- A host-side `.f0` compiler: `forth0c` (Forth0-first workflow)
-- A deterministic testing pipeline (`make test`, `make tdd`, CI)
-- Benchmarks and vmrep-based throughput metrics (CSV)
-- Scheduler v0 tooling (solve + validate + metrics, incl. lower bound + gap)
+------------------------------------------------------------
 
----
+## Optional: VM demo (DB / analytics focus)
 
-## Quick Demo (DB / Analytics Focus)
+Build native tools:
 
-Build tools:
-
-    make bins
+  make bins
 
 Run demo (produces CSV):
 
-    scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
-    cat tmp/demo.csv
+  scripts/demo_db.sh > /dev/null 2> tmp/demo.stderr
+  cat tmp/demo.csv
 
 Key metric in CSV:
 
-    vmrep_avg_bits_uniq_dst_per_tick
+  vmrep_avg_bits_uniq_dst_per_tick
 
-This is effective unique destination bits written per tick (useful write throughput).
+Meaning:
+- effective unique destination bits written per tick (useful write throughput)
 
----
-
-## Forth0-first workflow (recommended)
-
-This repo uses **host-compiled Forth0** for most tests and higher-level logic:
-
-- `.f0` text program → `build/bin/forth0c` → `.tok` stream
-- VM compile phase (`vmrun`) → `vmprep_forth0` → VM run phase (`vmrun`)
-
-Docs:
-
-- `doc/forth0.md`
-
-Run a `.f0` program and dump `TESTG`:
-
-    scripts/forth0/run_f0.sh --in src/forth0/tests/test_eq24.f0 --dump-testg 4
-
-Strict alignment check for block pointers (`LITAP/LITBP/LITRP` immediates must be 32-bit aligned):
-
-    F0C_STRICT_ALIGN32=1 build/bin/forth0c --image std7.bin --in prog.f0 --out prog.tok
-
----
+------------------------------------------------------------
 
 ## Tests
 
-Run all tests:
+Run all regression tests:
 
-    make test
-    make tdd
+  make test
+  make tdd
 
-Legacy C token-generators (`build/bin/mktok_test_*`) are **optional**:
+Scheduler v0 fixtures and smokes:
+- scripts/test_scheduler.sh
+- scripts/scheduler/tests
 
-    make tok
-    # or
-    make TOK=1 bins
-
----
+------------------------------------------------------------
 
 ## Documentation
 
 Start here:
 
-- `doc/README.md`
+- doc/README.md
 
-Status / roadmap:
+Status and roadmap:
 
-- `doc/status.md`
-- `doc/roadmap.md`
+- doc/status.md
+- doc/roadmap.md
 
----
+------------------------------------------------------------
 
 ## License
 
-Apache-2.0 — see LICENSE  
+Apache-2.0 — see LICENSE
 Third-party notes — see THIRD_PARTY.md
 
----
+------------------------------------------------------------
 
 ## Contact
 
-Dmitri Bortoq  
-Email: bortoq@gmail.com  
-Telegram: @the_arctium  
+Dmitri Bortoq
+Email: bortoq@gmail.com
+Telegram: @the_arctium
 GitHub repo: https://github.com/bortoq/copy-space

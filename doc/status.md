@@ -22,15 +22,24 @@ References:
 
 ## Next (prioritized)
 
-- [~] Scheduler scalability: avoid expanding demands into per-bw chunks for very large instances
-  - current state: solver schedules from a volume-based pending representation (no up-front chunk expansion)
-  - remaining: add stress fixtures and CI smoke limits for large instances
-
 - [ ] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
 
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
+
+- [x] Documentation hygiene and clear product positioning
+  - Clarified Scheduler v0 as the primary pilot-facing product
+  - Split "pilot path" and "under the hood (VM/Forth0)" in README.md, overview.md, doc/README.md and roadmap.md
+  - Removed conflicting language and outdated milestones
+  - Covered by: doc/status.md, doc/roadmap.md, README.md
+
+
+- [x] Scheduler scalability stress smoke coverage (large-instance regression signal)
+  - runner: scripts/scheduler/stress_smoke.py
+  - CI job: stress-smoke in .github/workflows/ci.yml (push main and workflow_dispatch; skipped on pull_request)
+  - profile: slots=16 bw=256 bits_per_pair=65536 pattern=full-mesh; solvers baseline and greedy
+  - artifacts: instance.json, report_*.json, summary.json (schedule JSON deleted by default)
 
 - [x] Live CI gate recipe (copy-paste workflow example for partners)
   - docs: doc/partners/ci_gate_recipe.md

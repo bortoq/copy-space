@@ -2,55 +2,72 @@
 
 _file: doc/README.md_
 
-All documentation is written in **simple English**.
+All documentation is written in simple English.
 
-## Start here (recommended order)
+This repo has two layers:
+- Scheduler v0 toolkit (pilot-facing, recommended)
+- DPF VM and toolchain (under the hood)
 
-### Guides
-1) `overview.md`  
-   What the project is and the core execution model.
+------------------------------------------------------------
 
-2) `semantics.md`  
-   Tick/slot semantics, conflicts, and recommended scheduling constraints.
+## Start here (pilot path, recommended)
 
-3) `quickstart.md`  
-   Build, run the demo, run tests, run a `.f0` program.
+1) Partner brief
+- doc/partners/partner_brief.md
 
-4) `testing.md`  
-   How tests work, how to run one test, fail bundles, debugging tips.
+2) Pilot quickstart (one command)
+- doc/partners/quickstart_pilot.md
 
-5) `forth0.md`  
-   Forth0 workflow and `.f0` syntax supported by `forth0c`.
+3) Pilot intake (what we need from you)
+- doc/partners/pilot_intake.md
 
-6) `forth0_howto.md`  
-   Recipes / templates for writing `.f0` programs and tests.
+4) CI gate recipe (copy-paste workflow)
+- doc/partners/ci_gate_recipe.md
+- doc/partners/ci_gate_workflow_example.yml
 
-7) `glossary.md`  
-   Minimal terminology index.
+5) Scheduler contracts (source of truth)
+- doc/scheduler_io_v0.md
+- doc/strict1_model_v0.md
 
-8) cross_platform.md  
-   Cross-platform build, native tools, CMake, and release artifacts.
+------------------------------------------------------------
 
-### Project tracking
-9) `status.md`  
-   What is currently done and what is covered by tests/CI.
+## Engineering docs (for contributors)
 
-10) `roadmap.md`  
-   What we plan to do next.
+6) Overview (two-layer model)
+- doc/overview.md
 
-11) release_checklist.md  
-   Steps to verify before and after a release.
+7) Quickstart (local build, demo, tests)
+- doc/quickstart.md
 
-## Specs / core references
+8) Semantics (ticks, slots, conflicts)
+- doc/semantics.md
 
-- `stability.md` — what is stable vs implementation-defined
-- `abi_artifacts.md` — ART table ABI (generated; append-only)
-- `memory_layout.md` — space regions and what programs/tests may touch
-- `devices.md` — device/channel model and TERM0 descriptor ABI
-- `benchmarks.md` — benchmarks, vmrep metrics, CSV output
-- `bench_csv_schema.md` — stable CSV schema (v0 target)
+9) Testing guide
+- doc/testing.md
 
-## Partner materials (non-technical)
+10) Cross-platform build and native tools
+- doc/cross_platform.md
 
-See `doc/partners/` (one-pager and email templates).
+11) Status and roadmap
+- doc/status.md
+- doc/roadmap.md
+- doc/release_checklist.md
 
+------------------------------------------------------------
+
+## VM and toolchain docs (under the hood)
+
+12) Forth0 workflow and syntax
+- doc/forth0.md
+- doc/forth0_howto.md
+
+13) VM baseline references
+- doc/stability.md
+- doc/memory_layout.md
+- doc/devices.md
+- doc/abi_artifacts.md
+- doc/glossary.md
+
+14) Benchmarks and CSV schema
+- doc/benchmarks.md
+- doc/bench_csv_schema.md

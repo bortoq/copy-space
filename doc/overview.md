@@ -2,91 +2,86 @@
 
 _file: doc/overview.md_
 
-Copy-Space (DPF — Deterministic Data Movement Fabric) is a small research VM where the main execution primitive is a scheduled copy:
+Copy-Space is a deterministic toolkit for validated scheduling of data movement.
 
-    copy(n, dst, src)
+This repository contains two layers:
 
-The goal is not to replace existing DB engines or ML accelerators.
-The goal is to provide a clear and deterministic model for data movement and scheduling,
-with a path to hardware-friendly execution (ASIC/FPGA feasibility discussions).
+1) Scheduler v0 toolkit (pilot-facing, recommended)
+- Purpose: correctness gating and reproducible metrics for transfer schedules under a strict resource model.
+- Interfaces:
+  - CLI: copyspace-validate, copyspace-solve, copyspace-pilot
+  - Contracts: doc/scheduler_io_v0.md, doc/strict1_model_v0.md
+  - Partner path: doc/partners/quickstart_pilot.md and doc/partners/ci_gate_recipe.md
 
----
+2) DPF VM and toolchain (under the hood)
+- Purpose: a small research VM for deterministic data-movement experiments and hardware-feasibility discussion.
+- Includes: baseline image (std7_fixed), native tools, Forth0-first test workflow, and VM-level benchmarks.
 
-## Core execution model (very short)
+If you are evaluating Copy-Space as a validated scheduling tool for CI gating or regression tracking,
+start with the Scheduler v0 toolkit and the partner docs. You do not need to build the VM toolchain to start.
 
-### Memory model
-- There is one memory array called `space`.
-- Addressing is **bit-based** (`bitaddr`), so memory is bit-addressable.
+------------------------------------------------------------
 
-### Instruction model
-Each instruction slot is a copy:
+## Scheduler v0 (recommended for pilots)
 
-    copy(n, dst, src)
+Scheduler v0 solves and validates schedules for directed transfer demands:
 
-Meaning: copy `n` bits from `src` to `dst` inside `space`.
+- Input: instance.json (directed demands src_slot -> dst_slot with bits_total)
+- Output: schedule.json plus a validator report with metrics
 
-A VM tick executes a fixed number of instruction slots (processor slots).
-
-### Determinism and conflicts
-Given the same initial image and the same input, results are deterministic.
-However, deterministic does not mean “safe”: same-tick write conflicts can hide bugs.
+The model is STRICT1:
+- each slot may participate in at most one copy per tick (as src or dst)
 
 See:
-- `semantics.md`
+- doc/scheduler_io_v0.md
+- doc/strict1_model_v0.md
+- doc/partners/quickstart_pilot.md
 
----
+------------------------------------------------------------
+
+## DPF VM (under the hood)
+
+The DPF VM is a small deterministic execution model where the main primitive is a scheduled copy:
+
+    copy(n, dst, src)
+
+Very short model sketch:
+
+Memory model
+- One memory array called space (bit-addressable).
+- Addressing is bit-based (bitaddr).
+
+Instruction model
+- Each instruction slot is a copy(n, dst, src).
+- A VM tick executes a fixed number of instruction slots (copy slots).
+
+Determinism and conflicts
+- Given the same initial image and the same input, results are deterministic.
+- Deterministic does not mean safe: same-tick write conflicts can hide bugs.
+
+See:
+- doc/semantics.md
+- doc/stability.md
+
+------------------------------------------------------------
 
 ## Baseline image: std7_fixed and ART (ABI)
+
 The baseline image publishes key addresses through an artifacts table (ART).
 ART is the ABI contract for tools and programs.
 
 See:
-- `abi_artifacts.md`
+- doc/abi_artifacts.md
+- doc/memory_layout.md
+- doc/devices.md
 
----
+------------------------------------------------------------
 
-## Forth0-first workflow (recommended)
-Most tests and higher-level logic in this repo are written as `.f0` programs compiled by `forth0c`.
+## Forth0-first workflow (under the hood)
+
+Most VM-level tests and higher-level logic in this repository are written as Forth0 programs compiled by forth0c.
 
 See:
-- `forth0.md`
-- `forth0_howto.md`
-- `testing.md`
-
----
-
-## Current gap: flow control / scheduling layer partitioner
-Today, Forth0 is used mainly as a *host-compiled DSL* to build specific schedules and tests.
-
-What is still missing (design work):
-- A “copy-flow manager” / control layer that owns higher-level copy plans.
-- Automatic partitioning of copies into tick-layers under a constraint such as:
-  “within one tick/layer, each space index participates at most once”
-  (vertex-disjoint / no-overlap dst, and usually no overlap src).
-- Replication trees for broadcast (one source → many destinations) under fanout constraints.
-
-This is a major upcoming design step and should be implemented *using Forth0* (not by expanding ART),
-but it needs a clear interface and a stable layer model.
-
----
-
-## Stability / guarantees
-See:
-- `stability.md`
-
----
-
-## Quickstart
-See:
-- `quickstart.md`
-
----
-
-## Why DB/analytics may care (high-level)
-Many pipelines are dominated by moving bytes, not computing:
-- compaction after filter (selection vectors)
-- reorder / partition (hash partitioning, sort preparation, materialization)
-- bulk buffer movement (DMA-like)
-
-The repo includes benchmarks (`benchmarks.md`) that output CSV metrics.
-
+- doc/forth0.md
+- doc/forth0_howto.md
+- doc/testing.md

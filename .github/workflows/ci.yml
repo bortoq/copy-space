@@ -47,6 +47,39 @@ jobs:
       - name: Scheduler v0 tests
         run: ./scripts/test_scheduler.sh
 
+  py-smoke-matrix:
+    name: Python-first smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install copy-space (editable)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Python-first CLI smoke
+        run: |
+          python -c "from pathlib import Path; Path('tmp').mkdir(exist_ok=True)"
+          copyspace-validate --help
+          copyspace-solve --help
+          copyspace-pilot --help
+          copyspace-bench-scheduler --help
+          copyspace-demo-scheduler --help
+          copyspace-solve scripts/scheduler/tests/demo_instance.json --out tmp/ci_schedule.json --solver baseline
+          copyspace-validate scripts/scheduler/tests/demo_instance.json tmp/ci_schedule.json --quiet
+          copyspace-bench-scheduler --out tmp/sched_smoke.csv --repeat 1 --inst-glob scripts/scheduler/tests/demo_instance.json
+
   stress-smoke:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest

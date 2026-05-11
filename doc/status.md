@@ -22,9 +22,9 @@ References:
 
 ## Next (prioritized)
 
-- [ ] Cross-platform UX: run Python-first flows in CI on at least one non-Linux platform profile
-  - current state: native-build-matrix builds tools; Python-first smoke flows run on ubuntu-latest
-  - remaining: add a CI job to install the package and run copyspace-* entrypoints on windows and/or macos (bounded smoke)
+- [~] Cross-platform UX: run Python-first flows in CI on at least one non-Linux platform profile
+  - current state: py-smoke-matrix job added in .github/workflows/ci.yml (macos-latest, windows-latest); installs the package and runs copyspace-* entrypoints smoke
+  - remaining: confirm green runs on both platforms, then move this item to Recently completed with CI coverage reference
 
 - [ ] Bench regression policy (core and scheduler metrics)
   - current state: deterministic bench-smoke and stress-smoke jobs exist with CSV artifacts

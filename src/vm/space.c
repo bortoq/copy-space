@@ -263,6 +263,24 @@ static bitaddr_t align8_bits(bitaddr_t x) { return (x + 7u) & ~(bitaddr_t)7u; }
 
 static int vm_strict_align32_check_var(vm_t *vm, const char *name, bitaddr_t var_addr) {
   uint64_t v = vm_read_uint(vm, var_addr, vm->addr_bits);
+  uint64_t sb = (uint64_t)vm->space_bits;
+
+  if (v >= sb || v + 32ull > sb) {
+    vm->last_err.kind = VM_E_ALIGN32;
+    vm->last_err.tick = vm->tick_counter;
+    vm->last_err.slot = 0;
+    vm->last_err.ins  = (vm_inst_t){0,0,0};
+    vm->last_err.space_bits = vm->space_bits;
+    fprintf(stderr,
+            "VM_ERR: tick=%" PRIu64 " kind=%d %s=%" PRIu64 " is out of bounds (space_bits=%" PRIu64 ")\n",
+            (uint64_t)vm->last_err.tick,
+            (int)vm->last_err.kind,
+            name,
+            (uint64_t)v,
+            (uint64_t)vm->space_bits);
+    return -1;
+  }
+
   if ((v & 31ull) == 0ull) return 0;
   vm->last_err.kind = VM_E_ALIGN32;
   vm->last_err.tick = vm->tick_counter;
@@ -300,9 +318,36 @@ static int vm_strict_align32_check(vm_t *vm) {
   bitaddr_t var_bp_addr = (bitaddr_t)vm_read_uint(vm, ART + (bitaddr_t)59u * (bitaddr_t)width, width);
   bitaddr_t var_rp_addr = (bitaddr_t)vm_read_uint(vm, ART + (bitaddr_t)60u * (bitaddr_t)width, width);
 
-  if (var_ap_addr + width > vm->space_bits) return -1;
-  if (var_bp_addr + width > vm->space_bits) return -1;
-  if (var_rp_addr + width > vm->space_bits) return -1;
+  if (var_ap_addr + width > vm->space_bits) {
+    vm->last_err.kind = VM_E_ALIGN32;
+    vm->last_err.tick = vm->tick_counter;
+    vm->last_err.slot = 0;
+    vm->last_err.ins  = (vm_inst_t){0,0,0};
+    vm->last_err.space_bits = vm->space_bits;
+    fprintf(stderr, "VM_ERR: tick=%" PRIu64 " kind=%d VAR_AP addr out of bounds\n",
+            (uint64_t)vm->last_err.tick, (int)vm->last_err.kind);
+    return -1;
+  }
+  if (var_bp_addr + width > vm->space_bits) {
+    vm->last_err.kind = VM_E_ALIGN32;
+    vm->last_err.tick = vm->tick_counter;
+    vm->last_err.slot = 0;
+    vm->last_err.ins  = (vm_inst_t){0,0,0};
+    vm->last_err.space_bits = vm->space_bits;
+    fprintf(stderr, "VM_ERR: tick=%" PRIu64 " kind=%d VAR_BP addr out of bounds\n",
+            (uint64_t)vm->last_err.tick, (int)vm->last_err.kind);
+    return -1;
+  }
+  if (var_rp_addr + width > vm->space_bits) {
+    vm->last_err.kind = VM_E_ALIGN32;
+    vm->last_err.tick = vm->tick_counter;
+    vm->last_err.slot = 0;
+    vm->last_err.ins  = (vm_inst_t){0,0,0};
+    vm->last_err.space_bits = vm->space_bits;
+    fprintf(stderr, "VM_ERR: tick=%" PRIu64 " kind=%d VAR_RP addr out of bounds\n",
+            (uint64_t)vm->last_err.tick, (int)vm->last_err.kind);
+    return -1;
+  }
 
   if (vm_strict_align32_check_var(vm, "VAR_AP", var_ap_addr) != 0) return -1;
   if (vm_strict_align32_check_var(vm, "VAR_BP", var_bp_addr) != 0) return -1;

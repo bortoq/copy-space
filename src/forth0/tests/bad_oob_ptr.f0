@@ -1,0 +1,3 @@
+# Should fail under COPYSPACE_VM_STRICT_ALIGN32=1 (out of bounds):
+LITAP 0x400000
+HALT

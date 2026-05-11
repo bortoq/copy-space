@@ -28,9 +28,9 @@ Legend:
   - workflow: .github/workflows/bench_history_pages.yml
   - publish a rolling history of bench results (e.g. GitHub Pages) for reference packs / smokes
 
-- [ ] External solver integration hook
+- [x] External solver integration hook
   - run a third-party solver command and validate output under the v0 contract
-  - unify reporting into the existing CSV schema
+  - external solver interface: env COPYSPACE_INSTANCE_JSON and COPYSPACE_SCHEDULE_OUT
 
 - [ ] Pilot artifacts: optional plots for onboarding
   - generate simple schedule visual artifacts (PNG/HTML) as part of pilot output
@@ -217,6 +217,8 @@ Approach: keep VM/tools native; use Python entrypoints for orchestration; minimi
   - supports `--report report.json` and `--quiet`
 
 - [x] Solve instance (two strategies):
+  - supports external solver command (solver=external)
+    - solver receives env vars COPYSPACE_INSTANCE_JSON and COPYSPACE_SCHEDULE_OUT
   - entrypoint: `copyspace-solve`
   - wrapper: `scripts/scheduler/solve_v0.py --solver baseline|greedy`
 

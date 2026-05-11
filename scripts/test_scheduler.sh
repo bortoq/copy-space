@@ -68,6 +68,12 @@ $PY "$S" "$T/demands.instance.json" --out "$tmp" --solver greedy >/dev/null 2>/d
 run_validate_ok "$T/demands.instance.json" "$tmp"
 rm -f "$tmp"
 
+# Solver smoke: external -> schedule must validate
+tmp="$(mktemp)"
+$PY "$S" "$T/demands.instance.json" --out "$tmp" --solver external --external-argv $PY "$T/ext_solver_baseline.py" >/dev/null 2>/dev/null
+run_validate_ok "$T/demands.instance.json" "$tmp"
+rm -f "$tmp"
+
 # --- Adversarial / edge-case solver smokes ---
 for inst in \
   "$T/edge_2slots.instance.json" \

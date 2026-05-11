@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
+import subprocess
 import sys
 
 MODEL = "STRICT1"
@@ -54,7 +56,9 @@ def parse_instance(inst):
 def chunk_demands(demands, bw):
     pending = []
     for d in demands:
-        s = d["src_slot"]; t = d["dst_slot"]; bits = d["bits_total"]
+        s = d["src_slot"]
+        t = d["dst_slot"]
+        bits = d["bits_total"]
         full = bits // bw
         rem = bits % bw
         for _ in range(full):
@@ -70,12 +74,14 @@ def solve_baseline_strict1(pending):
         tick = []
         new_pending = []
         for ch in pending:
-            s = ch["src_slot"]; t = ch["dst_slot"]
+            s = ch["src_slot"]
+            t = ch["dst_slot"]
             if s in used or t in used:
                 new_pending.append(ch)
             else:
                 tick.append(ch)
-                used.add(s); used.add(t)
+                used.add(s)
+                used.add(t)
         if not tick:
             raise RuntimeError("solver made no progress (empty tick)")
         ticks.append(tick)
@@ -85,7 +91,8 @@ def solve_baseline_strict1(pending):
 def _pending_degrees(pending):
     deg = {}
     for ch in pending:
-        s = ch["src_slot"]; t = ch["dst_slot"]
+        s = ch["src_slot"]
+        t = ch["dst_slot"]
         deg[s] = deg.get(s, 0) + 1
         deg[t] = deg.get(t, 0) + 1
     return deg
@@ -93,12 +100,6 @@ def _pending_degrees(pending):
 def solve_greedy_strict1(pending):
     """
     Deterministic greedy: each tick picks chunks incident to the most constrained slots first.
-    Implementation:
-      - compute current per-slot degrees from pending (incident chunk counts)
-      - iterate pending indices sorted by score desc:
-          score = deg[src] + deg[dst], tie-break by (src,dst,len_bits,original_index)
-      - select chunk if both endpoints are unused in this tick
-      - deferred chunks keep original order (important for determinism and fairness)
     """
     ticks = []
     while pending:
@@ -107,7 +108,9 @@ def solve_greedy_strict1(pending):
 
         def key(i):
             ch = pending[i]
-            s = ch["src_slot"]; t = ch["dst_slot"]; l = ch["len_bits"]
+            s = ch["src_slot"]
+            t = ch["dst_slot"]
+            l = ch["len_bits"]
             score = deg.get(s, 0) + deg.get(t, 0)
             return (-score, s, t, -l, i)
 
@@ -119,12 +122,14 @@ def solve_greedy_strict1(pending):
 
         for i in order:
             ch = pending[i]
-            s = ch["src_slot"]; t = ch["dst_slot"]
+            s = ch["src_slot"]
+            t = ch["dst_slot"]
             if s in used or t in used:
                 continue
             tick.append(ch)
             chosen[i] = True
-            used.add(s); used.add(t)
+            used.add(s)
+            used.add(t)
 
         if not tick:
             raise RuntimeError("greedy solver made no progress (empty tick)")
@@ -134,16 +139,67 @@ def solve_greedy_strict1(pending):
         pending = new_pending
 
     return ticks
+
+def run_external_solver(instance_json: str, out_json: str, argv: list[str]) -> int:
+    inst_abs = os.path.abspath(instance_json)
+    out_abs = os.path.abspath(out_json)
+
+    env = dict(os.environ)
+    env["COPYSPACE_INSTANCE_JSON"] = inst_abs
+    env["COPYSPACE_SCHEDULE_OUT"] = out_abs
+    env["COPYSPACE_MODEL"] = MODEL
+
+    try:
+        p = subprocess.run(argv, env=env)
+    except FileNotFoundError as e:
+        eprint("ERROR: external solver not found:", e)
+        return 1
+    except Exception as e:
+        eprint("ERROR: failed to run external solver:", e)
+        return 1
+
+    if p.returncode != 0:
+        eprint("ERROR: external solver returned non-zero exit:", p.returncode)
+        return 1
+
+    if not os.path.isfile(out_abs):
+        eprint("ERROR: external solver did not produce schedule:", out_abs)
+        return 1
+
+    # sanity check: output must be JSON
+    try:
+        _ = load_json(out_abs)
+    except Exception as e:
+        eprint("ERROR: external solver output is not valid JSON:", e)
+        return 1
+
+    return 0
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("instance_json")
     ap.add_argument("--out", required=True, help="output schedule JSON path")
-    ap.add_argument("--solver", choices=["baseline", "greedy"], default="baseline")
+    ap.add_argument("--solver", choices=["baseline", "greedy", "external"], default="baseline")
+    ap.add_argument(
+        "--external-argv",
+        nargs=argparse.REMAINDER,
+        help="external solver command (use after --external-argv). "
+             "The command receives env vars COPYSPACE_INSTANCE_JSON and COPYSPACE_SCHEDULE_OUT.",
+    )
     args = ap.parse_args()
+
+    if args.solver == "external":
+        argv = args.external_argv or []
+        if argv and argv[0] == "--":
+            argv = argv[1:]
+        if not argv:
+            eprint("ERROR: --solver external requires --external-argv CMD [ARGS...]")
+            return 1
+        return run_external_solver(args.instance_json, args.out, argv)
 
     try:
         inst = load_json(args.instance_json)
-        slots, bw, demands = parse_instance(inst)
+        _slots, bw, demands = parse_instance(inst)
     except Exception as e:
         eprint("ERROR:", e)
         return 1

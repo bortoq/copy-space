@@ -22,10 +22,6 @@ References:
 
 ## Next (prioritized)
 
-- [~] Cross-platform UX: python-first flows in CI on macOS and Windows (no shell scripts)
-  - current state: py-smoke-matrix job in .github/workflows/ci.yml installs the package and runs solve+validate, scheduler bench smoke, and a bounded copyspace-pilot run (examples/demands.csv) on macos-latest and windows-latest
-  - remaining: confirm green runs on both platforms, then move this item to Recently completed with CI coverage reference
-
 - [ ] Bench regression policy (core and scheduler metrics)
   - current state: deterministic bench-smoke and stress-smoke jobs exist with CSV artifacts
   - remaining: define regression criteria and where it is enforced (for example CI summary now, optional hard limits later)
@@ -51,6 +47,10 @@ References:
 - [x] Repo hygiene: python-first benches in Pages workflow and dev tooling; PR template
   - Updated: .github/workflows/bench_history_pages.yml, scripts/prepush_check.sh, scripts/bench/plot_scheduler_pack.py, CONTRIBUTING.md, .github/pull_request_template.md
   - Covered by: CI job bench-smoke in .github/workflows/ci.yml; Pages workflow bench_history_pages.yml
+
+- [x] Cross-platform UX: python-first smoke flows covered on macOS and Windows in CI
+  - CI job: py-smoke-matrix in .github/workflows/ci.yml (macos-latest, windows-latest)
+
 
 
 - [x] Scheduler scalability stress smoke coverage (large-instance regression signal)

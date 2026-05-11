@@ -89,7 +89,7 @@ Deliverables
 
 ------------------------------------------------------------
 
-## Milestone 4 — Cross-platform UX (next)
+## Milestone 4 — Cross-platform UX (done)
 
 Goal: a user can run core pilot and bench workflows on Linux, macOS, and Windows without requiring shell scripts.
 

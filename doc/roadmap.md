@@ -70,7 +70,7 @@ Key artifacts
 
 ------------------------------------------------------------
 
-## Milestone 3 — Release and repo hygiene (next)
+## Milestone 3 — Release and repo hygiene (done)
 
 Goal: make it easy to reference a stable version and accept pilot requests and contributions.
 
@@ -129,7 +129,7 @@ Remaining
 
 ------------------------------------------------------------
 
-## Milestone 6 — Scheduler scalability signals (next)
+## Milestone 6 — Scheduler scalability signals (done)
 
 Goal: catch regressions related to large instances and long schedules without slowing PR CI.
 

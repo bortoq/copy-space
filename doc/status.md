@@ -198,6 +198,7 @@ Tools (Python, v0):
 - [x] Python package and CLI entrypoints
   - config: pyproject.toml
   - entrypoints: copyspace-validate, copyspace-solve, copyspace-pilot, copyspace-csv-to-instance, copyspace-lines-to-schedule
+  - pilot runner: copyspace-pilot (scripts/scheduler/pilot_run.sh is a thin wrapper)
   - core dependencies: none (dependencies is empty)
 
 - [x] Validate schedule (STRICT1 + bandwidth + coverage) + metrics

@@ -5,44 +5,52 @@ _file: doc/benchmarks.md_
 This repo includes throughput benchmarks and a small reporting toolchain.
 
 CSV schema (v0):
-- `bench_csv_schema.md`
-- header source of truth: `python3 scripts/vmrep_to_csv.py --header`
+- bench_csv_schema.md
+- header source of truth: python3 scripts/vmrep_to_csv.py --header
 
----
+------------------------------------------------------------
 
 ## Benchmarks
 
-- `pack`:
+- pack:
   compaction-like benchmark (sparse source -> dense destination).
-  Useful mental model: "filter result compaction" in DB/analytics.
+  Useful mental model: filter result compaction in DB/analytics.
 
-- `permute`:
+- permute:
   reorder-like benchmark (chunk permutation).
-  Useful mental model: reorder/partition/materialization.
+  Useful mental model: reorder, partition, materialization.
 
-- `bulkcopy`:
+- bulkcopy:
   large contiguous copy per tick (upper bound style benchmark).
 
----
+------------------------------------------------------------
 
-## Run benchmarks
+## Run benchmarks (Python-first, recommended)
 
-### Unified runner (recommended)
+Core benches (pack, permute, bulkcopy) use the python-first entrypoint:
+- copyspace-bench-core
 
-Run all benchmarks into one CSV file:
+Run all core benches into one CSV file:
 
-    scripts/bench/run.sh --bench all --out tmp/bench.csv
+    copyspace-bench-core --bench all --out tmp/bench.csv
     head -5 tmp/bench.csv
 
 Run just one:
 
-    scripts/bench/run.sh --bench pack --out tmp/pack.csv
+    copyspace-bench-core --bench pack --out tmp/pack.csv
 
-### Simple sweeps
+Scheduler bench (validated scheduling, unified CSV):
+
+    copyspace-bench-scheduler --out tmp/sched.csv --repeat 1 --inst-glob scripts/scheduler/tests/ref_pack/*.json
+    head -5 tmp/sched.csv
+
+------------------------------------------------------------
+
+## Simple sweeps
 
 Sweep copies and chunk size (pack):
 
-    scripts/bench/run.sh --bench pack --out tmp/pack_sweep.csv \
+    copyspace-bench-core --bench pack --out tmp/pack_sweep.csv \
       --copies-list 32,64,128 \
       --chunk-bytes-list 32,64 \
       --src-stride-bytes-list 4096 \
@@ -50,19 +58,19 @@ Sweep copies and chunk size (pack):
 
 Sweep modes and seeds (permute):
 
-    scripts/bench/run.sh --bench permute --out tmp/permute_sweep.csv \
+    copyspace-bench-core --bench permute --out tmp/permute_sweep.csv \
       --mode-list random \
       --seed-list 1,2,3 \
       --repeat 1
 
-Sweep len/life (bulkcopy):
+Sweep len and life (bulkcopy):
 
-    scripts/bench/run.sh --bench bulkcopy --out tmp/bulk_sweep.csv \
+    copyspace-bench-core --bench bulkcopy --out tmp/bulk_sweep.csv \
       --len-bytes-list 16384,65536 \
       --life-list 20000 \
       --repeat 1
 
----
+------------------------------------------------------------
 
 ## Summarize results (human-readable)
 
@@ -71,11 +79,10 @@ Create a summary report (markdown-like tables):
     python3 scripts/bench/summarize.py --in tmp/bench.csv > tmp/bench_summary.md
     sed -n '1,120p' tmp/bench_summary.md
 
----
+------------------------------------------------------------
 
 ## The key metric
 
-- `vmrep_avg_bits_uniq_dst_per_tick`:
+- vmrep_avg_bits_uniq_dst_per_tick:
   effective unique destination bits written per tick.
-  This is a "useful write throughput" metric (overlapping writes do not inflate it).
-
+  This is a useful write throughput metric (overlapping writes do not inflate it).

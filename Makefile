@@ -27,6 +27,7 @@ TOK ?= 0
 
 VM_SRCS := \
   src/vm/space.c \
+  src/vm/invariants.c \
   src/vm/bitcpy.c
 
 # optional vmrep module

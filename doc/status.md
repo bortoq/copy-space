@@ -22,13 +22,11 @@ Legend:
   - ensure scheduler bench notes include solver=external and key report fields
   - add a stable example external solver contract snippet in docs
 
-- [ ] CI check: confirm bench-smoke is skipped on pull_request
-  - open a test PR and verify job conclusion is skipped via gh
-
 - [ ] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
 
 ## Recently completed (2026-05)
 
+- [x] CI check: bench-smoke skipped on pull_request (verified via gh)
 - [x] Release checklist: doc/release_checklist.md
 - [x] Cross-platform docs: doc/cross_platform.md
 - [x] Live CI gate recipe (copy-paste workflow example for partners)

@@ -52,3 +52,6 @@ Thumbs.db
 .venv/
 tmp/plots/
 .streamlit/
+
+# examples used by CI smoke
+!examples/demands.csv

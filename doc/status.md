@@ -18,11 +18,6 @@ Legend:
   - implement streaming pending representation and keep deterministic behavior
   - add stress fixtures and CI smoke limits
 
-- [ ] Release checklist: prevent version and documentation drift
-  - ensure pyproject version matches tag
-  - ensure release_native_tools workflow assets are attached on tag
-  - ensure docs use stable example paths (examples/ for user-facing inputs)
-
 - [ ] External solver: unify reporting into scheduler bench CSV
   - ensure scheduler bench notes include solver=external and key report fields
   - add a stable example external solver contract snippet in docs
@@ -34,6 +29,7 @@ Legend:
 
 ## Recently completed (2026-05)
 
+- [x] Release checklist: doc/release_checklist.md
 - [x] Cross-platform docs: doc/cross_platform.md
 - [x] Live CI gate recipe (copy-paste workflow example for partners)
 - [x] Cross-platform: portable native build and distribution (CMake + CI build matrix + native tool release artifacts)

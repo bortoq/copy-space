@@ -38,6 +38,9 @@ All documentation is written in **simple English**.
 10) `roadmap.md`  
    What we plan to do next.
 
+11) release_checklist.md  
+   Steps to verify before and after a release.
+
 ## Specs / core references
 
 - `stability.md` — what is stable vs implementation-defined

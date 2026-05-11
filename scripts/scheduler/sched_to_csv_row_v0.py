@@ -34,6 +34,24 @@ def load_json(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def solve_instance(instance_path: str, sched_path: str, solver: str) -> None:
+    if solver == "external":
+        subprocess.check_call(
+            SOLVE
+            + [
+                instance_path,
+                "--out",
+                sched_path,
+                "--solver",
+                "external",
+                "--external-argv",
+                PY,
+                "scripts/scheduler/tests/ext_solver_baseline.py",
+            ]
+        )
+    else:
+        subprocess.check_call(SOLVE + [instance_path, "--out", sched_path, "--solver", solver])
+
 def run(instance_path: str, solver: str) -> Dict[str, str]:
     inst = load_json(instance_path)
     slots = int(inst["slots"])
@@ -46,10 +64,9 @@ def run(instance_path: str, solver: str) -> Dict[str, str]:
 
         # solve
         t0 = time.perf_counter()
-        subprocess.check_call(SOLVE + [instance_path, "--out", sched_path, "--solver", solver])
+        solve_instance(instance_path, sched_path, solver)
         t1 = time.perf_counter()
         solve_ms = (t1 - t0) * 1000.0
-
 
         # validate + report
         # validate_v0 returns 0 on PASS; coverage is enforced by default if demands non-empty
@@ -57,7 +74,6 @@ def run(instance_path: str, solver: str) -> Dict[str, str]:
         subprocess.check_call(VALIDATE + [instance_path, sched_path, "--report", rep_path, "--quiet"])
         t1 = time.perf_counter()
         validate_ms = (t1 - t0) * 1000.0
-
 
         sched = load_json(sched_path)
         rep = load_json(rep_path)
@@ -106,7 +122,7 @@ def run(instance_path: str, solver: str) -> Dict[str, str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--instance", required=True)
-    ap.add_argument("--solver", required=True, choices=["baseline", "greedy"])
+    ap.add_argument("--solver", required=True, choices=["baseline", "greedy", "external"])
     args = ap.parse_args()
 
     cols = get_header_cols()

@@ -31,6 +31,16 @@ Outputs (tmp/pilot):
 
 The command prints a short summary (ticks, utilization, deltas).
 
+## Optional: write HTML plots (no extra dependencies)
+
+This generates two simple HTML files to help onboarding:
+- plot_baseline.html
+- plot_greedy.html
+
+Example:
+
+    copyspace-pilot --csv demands.csv --bw 256 --outdir tmp/pilot --plot --plot-max-ticks 256
+
 ## Validate-only (if you already have a schedule)
 
 If you can export simple lines:

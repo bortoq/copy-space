@@ -32,7 +32,8 @@ Legend:
   - run a third-party solver command and validate output under the v0 contract
   - external solver interface: env COPYSPACE_INSTANCE_JSON and COPYSPACE_SCHEDULE_OUT
 
-- [ ] Pilot artifacts: optional plots for onboarding
+- [x] Pilot artifacts: optional plots for onboarding
+  - copyspace-pilot supports --plot to emit plot_baseline.html and plot_greedy.html
   - generate simple schedule visual artifacts (PNG/HTML) as part of pilot output
 
 ---

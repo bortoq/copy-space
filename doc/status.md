@@ -23,8 +23,9 @@ Legend:
   - CI build matrix (linux, macos, windows) at least build-only
   - publish prebuilt native tools as release artifacts
 
-- [~] Benchmark history (beyond per-run artifacts)
-  - per-run artifacts and summaries are available in CI; GitHub Pages history is still pending
+- [x] Benchmark history (beyond per-run artifacts)
+  - GitHub Pages: https://bortoq.github.io/copy-space/ (published from gh-pages)
+  - workflow: .github/workflows/bench_history_pages.yml
   - publish a rolling history of bench results (e.g. GitHub Pages) for reference packs / smokes
 
 - [ ] External solver integration hook

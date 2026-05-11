@@ -2,9 +2,16 @@
 
 Thanks for considering contributing to Copy-Space.
 
-This repo contains:
-- a Forth0 toolchain baseline (tests + CI)
-- scheduler v0 tooling (validated scheduling under STRICT1, volume-based)
+This repo contains two layers:
+- Scheduler v0 toolkit (pilot-facing, recommended): validated scheduling under STRICT1 with reproducible metrics
+- DPF VM and toolchain (under the hood): native tools, Forth0-first tests, VM-level benchmarks
+
+For stable interfaces and contracts see:
+- doc/scheduler_io_v0.md
+- doc/strict1_model_v0.md
+- doc/status.md
+
+------------------------------------------------------------
 
 ## Quick checks (before opening a PR)
 
@@ -22,15 +29,30 @@ From repo root:
 4) Scheduler tests:
    ./scripts/test_scheduler.sh
 
-Optional (smoke benches):
+Optional (local smoke benches):
 - scripts/bench/run.sh --bench scheduler --out tmp/sched.csv --repeat 1
 - python3 scripts/bench/summarize.py --in tmp/sched.csv --top 5
 
+CI notes:
+- Heavy jobs (bench-smoke, stress-smoke) run on push to main and workflow_dispatch, and are skipped on pull_request.
+
+------------------------------------------------------------
+
 ## Scheduler v0 notes
 
+Preferred user-facing entrypoints (installed via pip install -e .):
+- copyspace-validate
+- copyspace-solve
+- copyspace-pilot
+
+Internal scripts exist as wrappers for development and CI.
+
+Useful links:
 - I/O contract: doc/scheduler_io_v0.md
 - Demo: python3 scripts/scheduler/demo_run.py
-- One-command pilot: ./scripts/scheduler/pilot_run.sh --csv examples/demands.csv --bw 256 --outdir tmp/pilot
+- One-command pilot: copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot
+
+------------------------------------------------------------
 
 ## Adding a new scheduler instance (reference pack)
 
@@ -42,20 +64,28 @@ You can regenerate the seeded pack:
 
 If you add a new hand-crafted instance, please also:
 - include a short note in the JSON (notes field)
-- ensure both solvers pass validation on it
+- ensure baseline and greedy solvers validate on it
 - keep it small and reproducible
+
+------------------------------------------------------------
 
 ## Reporting bugs
 
 Please include:
-- Instance JSON
-- Schedule JSON (or demands CSV)
-- Validator report JSON (if available)
-- commands to reproduce
-- OS + Python version + git revision
+- instance.json
+- schedule.json (or demands CSV)
+- validator report JSON (copyspace-validate --report report.json)
+- exact commands to reproduce
+- OS, Python version, git revision (or copy-space version)
+
+------------------------------------------------------------
 
 ## Style
 
 - Keep changes focused and easy to review.
 - Prefer deterministic behavior (or fixed recorded seeds).
 - Update doc/status.md when changes are substantial (new tools, new workflows, new guarantees).
+
+If you change GitHub Actions workflows:
+- keep Python pinned to a stable version
+- ensure workflow_dispatch behavior matches doc/status.md and doc/roadmap.md

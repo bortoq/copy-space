@@ -1,2 +1,8 @@
 blank_issues_enabled: true
-contact_links: []
+contact_links:
+  - name: Pilot intake (v0)
+    url: https://github.com/bortoq/copy-space/blob/main/doc/partners/pilot_intake.md
+    about: What we need to run a first pilot (data, constraints, acceptance criteria)
+  - name: Pilot quickstart (v0)
+    url: https://github.com/bortoq/copy-space/blob/main/doc/partners/quickstart_pilot.md
+    about: One-command pilot path using copyspace-pilot

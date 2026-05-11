@@ -22,7 +22,9 @@ References:
 
 ## Next (prioritized)
 
-- [ ] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
+- [~] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
+  - current state: opt-in runtime alignment check for VAR_AP/VAR_BP/VAR_RP via env COPYSPACE_VM_STRICT_ALIGN32=1
+  - remaining: decide and implement additional invariants (bounds / region checks) if needed
 
 ------------------------------------------------------------
 

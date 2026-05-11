@@ -18,10 +18,6 @@ Legend:
   - implement streaming pending representation and keep deterministic behavior
   - add stress fixtures and CI smoke limits
 
-- [ ] Cross-platform docs: one-page guide for building and running native tools on Linux, macOS, Windows
-  - explain CMake build steps
-  - explain how to use prebuilt native tool packages from GitHub Releases
-
 - [ ] Release checklist: prevent version and documentation drift
   - ensure pyproject version matches tag
   - ensure release_native_tools workflow assets are attached on tag
@@ -38,6 +34,7 @@ Legend:
 
 ## Recently completed (2026-05)
 
+- [x] Cross-platform docs: doc/cross_platform.md
 - [x] Live CI gate recipe (copy-paste workflow example for partners)
 - [x] Cross-platform: portable native build and distribution (CMake + CI build matrix + native tool release artifacts)
 - [x] Benchmark history (GitHub Pages)

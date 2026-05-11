@@ -67,14 +67,14 @@ jobs:
       - name: Scheduler stress smoke (solve + validate)
         run: |
           set -euo pipefail
-          mkdir -p tmp
+          mkdir -p tmp tmp/stress_smoke_ci
           python3 scripts/scheduler/stress_smoke.py \
             --outdir tmp/stress_smoke_ci \
             --slots 16 \
             --bw 256 \
             --bits-per-pair 65536 \
             --pattern full-mesh \
-            --solver-list baseline greedy | tee tmp/stress_smoke_ci/run.txt
+            --solver-list baseline greedy 2>&1 | tee tmp/stress_smoke_ci/run.txt
           tail -n 50 tmp/stress_smoke_ci/run.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload stress smoke artifacts

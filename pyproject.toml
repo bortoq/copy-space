@@ -23,6 +23,7 @@ copyspace-csv-to-instance = "copyspace.v0.csv_to_instance:main"
 copyspace-lines-to-schedule = "copyspace.v0.lines_to_schedule:main"
 copyspace-bench-scheduler = "copyspace.v0.bench_scheduler:main"
 copyspace-demo-scheduler = "copyspace.v0.demo_scheduler:main"
+copyspace-bench-core = "copyspace.v0.bench_core:main"
 
 [project.optional-dependencies]
 viz = [

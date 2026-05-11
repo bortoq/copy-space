@@ -108,6 +108,7 @@ References:
     - scheduler tests: scripts/test_scheduler.sh
     - packaging smoke: pip install -e . and copyspace-* smoke
     - bench smoke (push and manual): bench-smoke job
+    - python-first core benches smoke: copyspace-bench-core (pack/permute/bulkcopy)
     - CMake native build matrix: native-build-matrix job (linux, macos, windows)
   - native tool release artifacts: .github/workflows/release_native_tools.yml
   - bench history publishing: .github/workflows/bench_history_pages.yml

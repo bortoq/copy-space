@@ -109,7 +109,7 @@ jobs:
       - name: Bench smoke (core benches)
         run: |
           mkdir -p tmp
-          scripts/bench/run.sh --bench all --out tmp/bench_smoke.csv \
+          copyspace-bench-core --bench all --out tmp/bench_smoke.csv \
             --repeat 1 \
             --copies-list 16 \
             --chunk-bytes-list 16 \

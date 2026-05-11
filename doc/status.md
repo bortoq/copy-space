@@ -14,29 +14,38 @@ Legend:
 
 ## Next (prioritized)
 
+- [ ] Scheduler scalability: avoid expanding demands into per-bw chunks for very large instances
+  - implement streaming pending representation and keep deterministic behavior
+  - add stress fixtures and CI smoke limits
+
+- [ ] Cross-platform docs: one-page guide for building and running native tools on Linux, macOS, Windows
+  - explain CMake build steps
+  - explain how to use prebuilt native tool packages from GitHub Releases
+
+- [ ] Release checklist: prevent version and documentation drift
+  - ensure pyproject version matches tag
+  - ensure release_native_tools workflow assets are attached on tag
+  - ensure docs use stable example paths (examples/ for user-facing inputs)
+
+- [ ] External solver: unify reporting into scheduler bench CSV
+  - ensure scheduler bench notes include solver=external and key report fields
+  - add a stable example external solver contract snippet in docs
+
+- [ ] CI check: confirm bench-smoke is skipped on pull_request
+  - open a test PR and verify job conclusion is skipped via gh
+
+- [ ] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
+
+## Recently completed (2026-05)
+
 - [x] Live CI gate recipe (copy-paste workflow example for partners)
-  - add an example GitHub Actions workflow that runs: solve -> validate -> thresholds
-  - keep example inputs in examples/ (stable paths)
-
-- [x] Cross-platform: portable native build and distribution
-  - add CMake build in parallel to Makefile
-  - CI build matrix (linux, macos, windows) at least build-only
-  - publish prebuilt native tools as release artifacts
-
-- [x] Benchmark history (beyond per-run artifacts)
-  - GitHub Pages: https://bortoq.github.io/copy-space/ (published from gh-pages)
-  - workflow: .github/workflows/bench_history_pages.yml
-  - publish a rolling history of bench results (e.g. GitHub Pages) for reference packs / smokes
-
-- [x] External solver integration hook
-  - run a third-party solver command and validate output under the v0 contract
-  - external solver interface: env COPYSPACE_INSTANCE_JSON and COPYSPACE_SCHEDULE_OUT
-
-- [x] Pilot artifacts: optional plots for onboarding
-  - copyspace-pilot supports --plot to emit plot_baseline.html and plot_greedy.html
-  - generate simple schedule visual artifacts (PNG/HTML) as part of pilot output
+- [x] Cross-platform: portable native build and distribution (CMake + CI build matrix + native tool release artifacts)
+- [x] Benchmark history (GitHub Pages)
+- [x] External solver integration hook (solver=external)
+- [x] Pilot artifacts: optional HTML plots for onboarding
 
 ---
+
 
 ## Where tests live
 

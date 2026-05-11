@@ -98,6 +98,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install copy-space (editable)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
       - name: Build (bins)
         run: make bins
 
@@ -119,7 +124,7 @@ jobs:
       - name: Bench smoke (scheduler unified CSV)
         run: |
           mkdir -p tmp
-          scripts/bench/run.sh --bench scheduler --out tmp/sched_smoke.csv --repeat 1
+          copyspace-bench-scheduler --out tmp/sched_smoke.csv --repeat 1 --inst-glob scripts/scheduler/tests/demo_instance.json
           python3 scripts/bench/summarize.py --in tmp/sched_smoke.csv --top 5 > tmp/sched_smoke.md
           cat tmp/sched_smoke.md >> "$GITHUB_STEP_SUMMARY"
 

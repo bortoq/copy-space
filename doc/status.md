@@ -242,6 +242,7 @@ Bench integration (unified CSV schema v0):
 - [x] Scheduler results can be appended into unified CSV v0
   - row generator: scripts/scheduler/sched_to_csv_row_v0.py
   - wrapper: scripts/bench_scheduler_csv.sh
+  - python entrypoint: copyspace-bench-scheduler
   - unified runner: scripts/bench/run.sh --bench scheduler
   - scheduler bench notes include:
     - solver, lb, gap, gap_ratio

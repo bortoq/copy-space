@@ -1,21 +1,27 @@
 # Examples
 
-## demands.csv
-A tiny example demand list for a first run.
+File: examples/README.md
 
-Recommended: install Copy-Space (enables copyspace-* commands):
+These examples are intended to be runnable via python-first CLI entrypoints.
 
-    python3 -m venv .venv
-    . .venv/bin/activate
-    python -m pip install -e .
+------------------------------------------------------------
 
-Run a pilot in one command:
+## Shuffle-like workload (8 slots)
 
-    copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot_example
+Demands:
+- examples/shuffle8.csv
 
-Outputs (tmp/pilot_example):
-- instance.json
-- schedule_baseline.json, schedule_greedy.json
-- report_baseline.json, report_greedy.json
+Interpretation:
+- 4 source slots (0..3) send equal volumes to 4 destination slots (4..7)
+- This resembles a shuffle/materialization phase (many-to-many transfers)
 
-See also: doc/partners/quickstart_pilot.md
+Run pilot (creates instance, schedules, validator reports, and optional HTML plots):
+
+    python3 -m pip install -e .
+    copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+
+Inspect:
+- tmp/pilot_shuffle8/report_baseline.json
+- tmp/pilot_shuffle8/report_greedy.json
+- tmp/pilot_shuffle8/plot_baseline.html
+- tmp/pilot_shuffle8/plot_greedy.html

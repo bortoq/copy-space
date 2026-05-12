@@ -55,3 +55,6 @@ tmp/plots/
 
 # examples used by CI smoke
 !examples/demands.csv
+
+# examples used by docs/demo
+!examples/shuffle8.csv

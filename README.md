@@ -19,6 +19,10 @@ What you get:
 
 [![asciicast](https://asciinema.org/a/aSmWNpabss26xVkY.svg)](https://asciinema.org/a/aSmWNpabss26xVkY)
 
+Greedy schedule timeline (rendered from tmp/pilot_shuffle8/plot_greedy.html):
+
+![shuffle8 greedy plot](doc/img/shuffle8_plot_greedy.png)
+
 Shuffle/materialization-like workload (8 slots):
 
   python3 -m venv .venv

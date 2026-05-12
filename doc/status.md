@@ -43,6 +43,10 @@ References:
 - [x] Docs: benchmarks and quickstart recommend python-first bench entrypoints
   - Updated: doc/benchmarks.md, doc/quickstart.md
 
+- [x] Examples: shuffle8 pilot hero demo
+  - files: examples/shuffle8.csv, examples/README.md
+  - run: copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+
 - [x] Bench regression policy (v0)
   - doc: doc/bench_regression_policy.md
   - Covered by: bench-smoke job in .github/workflows/ci.yml; bench history workflow .github/workflows/bench_history_pages.yml

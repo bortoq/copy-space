@@ -134,6 +134,20 @@ Deliverables
 
 ------------------------------------------------------------
 
+## Milestone 7 — Post-release audit and hardening (planned)
+
+Goal: make post-release quality and partner-facing surface area easier to review and maintain.
+
+Deliverables
+- Audit v0 doc: inventory of stable interfaces and surfaces
+  - doc: doc/audit_v0.md
+  - includes: CLI entrypoints, contracts/schemas, environment variables, file formats, compatibility notes
+- Packaging sanity in CI (release-adjacent)
+  - build: python -m build
+  - check: twine check dist/*
+- Trusted publishing decision
+  - doc: update doc/pypi_publish.md with a short section: trusted publishing status (enabled or not) and rationale
+
 ## Non-goals (current scope)
 
 - No topology or routing selection

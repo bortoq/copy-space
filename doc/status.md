@@ -22,6 +22,18 @@ References:
 
 ## Next (prioritized)
 
+- [ ] Milestone 7: Audit v0 (stable interfaces and surfaces)
+  - current state: milestones 0-6 done; release 0.1.3 shipped
+  - remaining: add doc/audit_v0.md with inventory of CLI entrypoints, contracts/schemas, env vars, file formats; list follow-ups
+
+- [ ] CI: packaging sanity (build + twine check)
+  - current state: CI runs pip install -e . packaging smoke
+  - remaining: add a lightweight CI job that runs python -m build and twine check dist/*
+
+- [ ] PyPI: trusted publishing decision (OIDC)
+  - current state: manual token-based publish documented in doc/pypi_publish.md
+  - remaining: decide whether to enable trusted publishing; document the decision and minimal setup
+
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)

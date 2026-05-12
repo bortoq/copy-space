@@ -22,10 +22,6 @@ References:
 
 ## Next (prioritized)
 
-- [ ] Release 0.1.3: publish to PyPI and create GitHub Release
-  - current state: tag v0.1.3 exists (dbdafce); PyPI publishing guide merged (doc/pypi_publish.md)
-  - remaining: publish wheel and sdist to PyPI; create GitHub Release for v0.1.3; sanity-check pip install and entrypoints
-
 - [~] VM runtime checks (optional): pointer alignment / invariants (host-policy)
   - current state: opt-in checks for VAR_AP/VAR_BP/VAR_RP via env COPYSPACE_VM_STRICT_ALIGN32=1 (invoked by vmrun)
     - 32-bit alignment
@@ -37,6 +33,11 @@ References:
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
+
+- [x] Release 0.1.3: PyPI publish + GitHub Release
+  - PyPI: https://pypi.org/project/copy-space/0.1.3/
+  - GitHub Release: https://github.com/bortoq/copy-space/releases/tag/v0.1.3
+  - Sanity: pip install copy-space==0.1.3; entrypoints copyspace-validate/copyspace-solve/copyspace-pilot --help
 
 - [x] Documentation hygiene and clear product positioning
   - Clarified Scheduler v0 as the primary pilot-facing product

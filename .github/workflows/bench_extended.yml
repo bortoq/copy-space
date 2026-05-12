@@ -32,7 +32,7 @@ jobs:
           mkdir -p tmp
           copyspace-bench-core --bench all --out tmp/bench_extended.csv \
             --repeat 3 \
-            --copies-list 32,64,128 \
+            --copies-list 8,16 \
             --chunk-bytes-list 32,64,128 \
             --src-stride-bytes-list 4096 \
             --mode-list random \

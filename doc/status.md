@@ -22,10 +22,6 @@ References:
 
 ## Next (prioritized)
 
-- [ ] Milestone 7: Audit v0 (stable interfaces and surfaces)
-  - current state: milestones 0-6 done; release 0.1.3 shipped
-  - remaining: add doc/audit_v0.md with inventory of CLI entrypoints, contracts/schemas, env vars, file formats; list follow-ups
-
 - [ ] CI: packaging sanity (build + twine check)
   - current state: CI runs pip install -e . packaging smoke
   - remaining: add a lightweight CI job that runs python -m build and twine check dist/*
@@ -37,6 +33,9 @@ References:
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
+
+- [x] Milestone 7: Audit v0 doc (stable interfaces and surfaces)
+  - doc: doc/audit_v0.md
 
 - [x] Release 0.1.3: PyPI publish + GitHub Release
   - PyPI: https://pypi.org/project/copy-space/0.1.3/

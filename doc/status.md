@@ -22,13 +22,14 @@ References:
 
 ## Next (prioritized)
 
-- [ ] Geek demo: Conway's Game of Life on VM/Forth0
-  - current state: no demo yet
-  - remaining: add src/forth0/demos/life.f0; add doc/demos/life.md (how to run + expected); optional smoke test
-
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
+
+- [x] Geek demo: Conway's Game of Life on VM/Forth0
+  - demo: src/forth0/demos/life.f0
+  - doc: doc/demos/life.md
+  - Tests: scripts/tdd/test_forth0_life_demo.sh
 
 - [x] Milestone 8: Audit report v0 (quality and alignment)
   - doc: doc/audit_report_v0.md

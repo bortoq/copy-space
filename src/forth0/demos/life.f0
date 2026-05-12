@@ -1,0 +1,189 @@
+# life.f0 — Conway's Game of Life demo on the VM/Forth0 toolchain.
+#
+# Goal: a deterministic "wow" demo that stays fast.
+# Output is written into TESTG for host-side inspection (no terminal I/O).
+#
+# Grid:
+# - padded grid: 8 rows x 8 cols (1-byte stride, 8 bits)
+# - interior: rows 1..6, cols 1..6
+#
+# Demo scope (v0):
+# - initial pattern: blinker (horizontal) at row=3, cols 2..4
+# - compute GEN1 for the 3x3 region around the blinker center (rows 2..4, cols 2..4)
+#   This is sufficient to obtain the correct next generation for this isolated pattern.
+#
+# Memory in TESTG:
+# - GEN0: 8 bytes (rows 0..7)
+# - GEN1: 8 bytes (rows 0..7)
+# - scratch: a few bits after that
+
+const STRIDE 8
+const H 8
+const GEN_BITS (H * STRIDE)
+
+const GEN0 TESTG
+const GEN1 (TESTG + 1 * GEN_BITS)
+
+const SCR  (TESTG + 2 * GEN_BITS)
+const SUM0 (SCR + 0)
+const SUM1 (SCR + 1)
+const SUM2 (SCR + 2)
+const SUM3 (SCR + 3)
+
+macro FULLADD_1BIT()
+  # BA=A, BB=B, BC=Cin -> BR=Sum, BC=Cout
+  copybits 1 T1 BC
+
+  BXOR
+  copybits 1 T0 BR
+
+  BAND
+  copybits 1 BC BR
+
+  copybits 1 BA T1
+  copybits 1 BB T0
+  BAND
+
+  copybits 1 BA BC
+  copybits 1 BB BR
+  BOR
+  copybits 1 BC BR
+
+  copybits 1 BA T0
+  copybits 1 BB T1
+  BXOR
+endmacro
+
+macro ADD1_TO_SUM4(nbit)
+  # SUM = SUM + nbit (4-bit sum, little-endian)
+  setbit BC 0
+
+  copybits 1 BA SUM0
+  copybits 1 BB nbit
+  FULLADD_1BIT()
+  copybits 1 SUM0 BR
+
+  copybits 1 BA SUM1
+  setbit BB 0
+  FULLADD_1BIT()
+  copybits 1 SUM1 BR
+
+  copybits 1 BA SUM2
+  setbit BB 0
+  FULLADD_1BIT()
+  copybits 1 SUM2 BR
+
+  copybits 1 BA SUM3
+  setbit BB 0
+  FULLADD_1BIT()
+  copybits 1 SUM3 BR
+endmacro
+
+macro NOT1(dst, src)
+  copybits 1 BA src
+  setbit BB 1
+  BXOR
+  copybits 1 dst BR
+endmacro
+
+macro LIFE_CELL(SRC, DST, r, c)
+  const cell     (SRC + r * STRIDE + c)
+  const dst_cell (DST + r * STRIDE + c)
+
+  # SUM=0
+  setbit BR 0
+  copybits 1 SUM0 BR
+  copybits 1 SUM1 BR
+  copybits 1 SUM2 BR
+  copybits 1 SUM3 BR
+
+  # neighbors (in-bounds due to padding)
+  const n00 (SRC + (r - 1) * STRIDE + (c - 1))
+  const n01 (SRC + (r - 1) * STRIDE + (c + 0))
+  const n02 (SRC + (r - 1) * STRIDE + (c + 1))
+  const n10 (SRC + (r + 0) * STRIDE + (c - 1))
+  const n12 (SRC + (r + 0) * STRIDE + (c + 1))
+  const n20 (SRC + (r + 1) * STRIDE + (c - 1))
+  const n21 (SRC + (r + 1) * STRIDE + (c + 0))
+  const n22 (SRC + (r + 1) * STRIDE + (c + 1))
+
+  ADD1_TO_SUM4(n00)
+  ADD1_TO_SUM4(n01)
+  ADD1_TO_SUM4(n02)
+  ADD1_TO_SUM4(n10)
+  ADD1_TO_SUM4(n12)
+  ADD1_TO_SUM4(n20)
+  ADD1_TO_SUM4(n21)
+  ADD1_TO_SUM4(n22)
+
+  # eq2 = (SUM == 2) = SUM1 & !SUM0 & !SUM2 & !SUM3
+  NOT1(T0, SUM0)
+  copybits 1 BA SUM1
+  copybits 1 BB T0
+  BAND
+  copybits 1 T0 BR
+
+  NOT1(T1, SUM2)
+  copybits 1 BA T0
+  copybits 1 BB T1
+  BAND
+  copybits 1 T0 BR
+
+  NOT1(T1, SUM3)
+  copybits 1 BA T0
+  copybits 1 BB T1
+  BAND
+  copybits 1 T0 BR   # T0 = eq2
+
+  # eq3 = (SUM == 3) = SUM1 & SUM0 & !SUM2 & !SUM3
+  copybits 1 BA SUM1
+  copybits 1 BB SUM0
+  BAND
+  copybits 1 T1 BR
+
+  NOT1(BC, SUM2)
+  copybits 1 BA T1
+  copybits 1 BB BC
+  BAND
+  copybits 1 T1 BR
+
+  NOT1(BC, SUM3)
+  copybits 1 BA T1
+  copybits 1 BB BC
+  BAND
+  copybits 1 T1 BR   # T1 = eq3
+
+  # next = eq3 OR (cell AND eq2)
+  copybits 1 BA cell
+  copybits 1 BB T0
+  BAND
+  copybits 1 BC BR
+
+  copybits 1 BA T1
+  copybits 1 BB BC
+  BOR
+
+  copybits 1 dst_cell BR
+endmacro
+
+# Clear first 16 bytes (GEN0 + GEN1)
+for i 0 15
+  setbyte (TESTG + i * 8) 0x00
+endfor
+
+# Initial pattern in GEN0: a blinker (horizontal) inside the interior.
+# Row 3: cols 2..4 set => 0x20|0x10|0x08 = 0x38.
+setbyte (GEN0 + 3 * STRIDE) 0x38
+
+# Compute GEN1 for the 3x3 region around the blinker center (r=3,c=3).
+LIFE_CELL(GEN0, GEN1, 2, 2)
+LIFE_CELL(GEN0, GEN1, 2, 3)
+LIFE_CELL(GEN0, GEN1, 2, 4)
+LIFE_CELL(GEN0, GEN1, 3, 2)
+LIFE_CELL(GEN0, GEN1, 3, 3)
+LIFE_CELL(GEN0, GEN1, 3, 4)
+LIFE_CELL(GEN0, GEN1, 4, 2)
+LIFE_CELL(GEN0, GEN1, 4, 3)
+LIFE_CELL(GEN0, GEN1, 4, 4)
+
+HALT

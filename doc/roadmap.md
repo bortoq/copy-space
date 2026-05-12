@@ -163,7 +163,7 @@ Deliverables
 
 ------------------------------------------------------------
 
-## Milestone 9 — Geek demo: Game of Life on VM/Forth0 (planned)
+## Milestone 9 — Geek demo: Game of Life on VM/Forth0 (done)
 
 Goal: provide a small, deterministic VM/Forth0 demo for low-level readers, without changing the scheduler v0 product path.
 

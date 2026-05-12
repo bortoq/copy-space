@@ -21,6 +21,7 @@ scripts/tdd/test_forth0_ptr32.sh
 scripts/tdd/test_forth0_ptrprims.sh
 scripts/tdd/test_forth0_add24p.sh
 scripts/tdd/test_forth0_lt24p.sh
+scripts/tdd/test_forth0_life_demo.sh
 "
 
 for t in $tests; do

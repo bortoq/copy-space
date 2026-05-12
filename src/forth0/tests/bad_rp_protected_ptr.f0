@@ -1,0 +1,5 @@
+# Should fail under COPYSPACE_VM_STRICT_ALIGN32=1:
+# VAR_RP points into a protected region near ART/VAR tables
+# Note: for default VM config (SPACE_BYTES=512KiB, PROCESSOR_N=64) workspace_base is 4760 bits.
+LITRP 4768
+HALT

@@ -23,8 +23,12 @@ References:
 ## Next (prioritized)
 
 - [~] VM runtime checks (optional): pointer alignment / invariants (host-policy)
-  - current state: opt-in checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1 (implementation in src/vm/invariants.c; invoked by vmrun)
-  - remaining: decide and implement additional invariants (bounds / region checks) if needed
+  - current state: opt-in checks for VAR_AP/VAR_BP/VAR_RP via env COPYSPACE_VM_STRICT_ALIGN32=1 (invoked by vmrun)
+    - 32-bit alignment
+    - bounds (min_bits=24 for LOAD24/STORE24 style access)
+    - processor/MMIO region rejection (null=0 allowed)
+    - VAR_RP protected-region rejection (keeps RP away from ART and VAR tables)
+  - remaining: decide and implement additional invariants if needed (for example stronger writable-region policies)
 
 ------------------------------------------------------------
 
@@ -39,7 +43,6 @@ References:
 - [x] Docs: benchmarks and quickstart recommend python-first bench entrypoints
   - Updated: doc/benchmarks.md, doc/quickstart.md
 
-
 - [x] Bench regression policy (v0)
   - doc: doc/bench_regression_policy.md
   - Covered by: bench-smoke job in .github/workflows/ci.yml; bench history workflow .github/workflows/bench_history_pages.yml
@@ -52,7 +55,9 @@ References:
   - Updated: src/vm/space.h, src/vm/space.c, src/vm/diag/vmrep_attach.*, src/tools/vmrun.c
   - Covered by: make test, make tdd; CI main workflow
 
-
+- [x] VM strict runtime invariants: bounds and protected RP region
+  - Updated: src/vm/invariants.c
+  - Tests: scripts/tdd/test_vmrun_strict_align32.sh (bad_rp_protected_ptr.f0)
 
 - [x] Repo hygiene: python-first benches in Pages workflow and dev tooling; PR template
   - Updated: .github/workflows/bench_history_pages.yml, scripts/prepush_check.sh, scripts/bench/plot_scheduler_pack.py, CONTRIBUTING.md, .github/pull_request_template.md
@@ -60,8 +65,6 @@ References:
 
 - [x] Cross-platform UX: python-first smoke flows covered on macOS and Windows in CI
   - CI job: py-smoke-matrix in .github/workflows/ci.yml (macos-latest, windows-latest)
-
-
 
 - [x] Scheduler scalability stress smoke coverage (large-instance regression signal)
   - runner: scripts/scheduler/stress_smoke.py

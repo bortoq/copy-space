@@ -17,6 +17,16 @@ This makes it possible to track how far a schedule is from the best possible res
 
 ## Start here (Scheduler v0)
 
+Try it in 60 seconds (shuffle/materialization-like hero example):
+
+  python3 -m venv .venv
+  . .venv/bin/activate
+  python -m pip install -e .
+  copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+
+Bench history (smoke time series):
+- https://bortoq.github.io/copy-space/
+
 Install (optional, enables copyspace-* CLI entrypoints):
 
   python3 -m venv .venv

@@ -22,6 +22,10 @@ References:
 
 ## Next (prioritized)
 
+- [~] Extended benches (manual/nightly)
+  - current state: workflow .github/workflows/bench_extended.yml added (workflow_dispatch + weekly schedule)
+  - remaining: run once via workflow_dispatch and confirm artifacts and summaries, then move to Recently completed
+
 - [~] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
   - current state: opt-in runtime checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1 (implementation in src/vm/invariants.c)
   - remaining: decide and implement additional invariants (bounds / region checks) if needed

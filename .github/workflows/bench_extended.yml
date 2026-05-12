@@ -1,0 +1,86 @@
+name: Bench extended (manual/nightly)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly extended run (Sunday), keep separate from PR CI.
+    - cron: "37 4 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  core-extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build (bins)
+        run: make bins
+
+      - name: Install package (entrypoints)
+        run: python3 -m pip install -e .
+
+      - name: Run core benches (extended sweep)
+        run: |
+          mkdir -p tmp
+          copyspace-bench-core --bench all --out tmp/bench_extended.csv \
+            --repeat 3 \
+            --copies-list 32,64,128 \
+            --chunk-bytes-list 32,64,128 \
+            --src-stride-bytes-list 4096 \
+            --mode-list random \
+            --seed-list 1,2,3 \
+            --len-bytes-list 16384,65536 \
+            --life-list 2000,20000
+          python3 scripts/bench/summarize.py --in tmp/bench_extended.csv --top 12 > tmp/bench_extended.md
+          cat tmp/bench_extended.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload core artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-extended-core
+          path: |
+            tmp/bench_extended.csv
+            tmp/bench_extended.md
+
+  scheduler-extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build (bins)
+        run: make bins
+
+      - name: Install package (entrypoints)
+        run: python3 -m pip install -e .
+
+      - name: Run scheduler bench (ref_pack, baseline+greedy)
+        run: |
+          mkdir -p tmp
+          copyspace-bench-scheduler --out tmp/sched_extended.csv \
+            --repeat 1 \
+            --solver-list baseline greedy \
+            --inst-glob scripts/scheduler/tests/ref_pack/*.json
+          python3 scripts/bench/summarize.py --in tmp/sched_extended.csv --top 20 > tmp/sched_extended.md
+          cat tmp/sched_extended.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload scheduler artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-extended-scheduler
+          path: |
+            tmp/sched_extended.csv
+            tmp/sched_extended.md

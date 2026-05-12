@@ -43,6 +43,12 @@ Goal: make releases reproducible and prevent drift between tags, package metadat
 
 ------------------------------------------------------------
 
+5) PyPI publishing (optional)
+
+- See doc/pypi_publish.md
+
+------------------------------------------------------------
+
 5) Bench and history
 
 - Confirm CI bench smoke is green on the release commit.

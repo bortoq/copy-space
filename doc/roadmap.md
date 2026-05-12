@@ -112,19 +112,14 @@ Remaining
 
 ------------------------------------------------------------
 
-## Milestone 5 — Bench and regression signals (in progress)
+## Milestone 5 — Bench and regression signals (done)
 
 Goal: deterministic, automated signals for bench-level regressions with bounded runtime.
 
-Current state
+Delivered
 - CI includes a deterministic bench-smoke job (skipped on pull_request).
-
-Remaining
-1) Regression signal policy (done)
-- doc/bench_regression_policy.md
-
-2) Optional: extended runs
-- Add nightly or manual extended benches (larger sweeps) if needed.
+- Regression signal policy: doc/bench_regression_policy.md
+- Optional extended runs: .github/workflows/bench_extended.yml (workflow_dispatch + weekly schedule)
 
 ------------------------------------------------------------
 

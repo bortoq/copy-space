@@ -1,4 +1,4 @@
-# Status — std7_fixed + forth0 + scheduler v0 — 2026-05-11
+# Status — std7_fixed + forth0 + scheduler v0 — 2026-05-12
 #
 # File: doc/status.md
 #
@@ -22,10 +22,6 @@ References:
 
 ## Next (prioritized)
 
-- [~] Extended benches (manual/nightly)
-  - current state: workflow .github/workflows/bench_extended.yml added (workflow_dispatch + weekly schedule)
-  - remaining: run once via workflow_dispatch and confirm artifacts and summaries, then move to Recently completed
-
 - [~] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
   - current state: opt-in runtime checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1 (implementation in src/vm/invariants.c)
   - remaining: decide and implement additional invariants (bounds / region checks) if needed
@@ -47,6 +43,11 @@ References:
 - [x] Bench regression policy (v0)
   - doc: doc/bench_regression_policy.md
   - Covered by: bench-smoke job in .github/workflows/ci.yml; bench history workflow .github/workflows/bench_history_pages.yml
+
+- [x] Extended benches (manual/nightly)
+  - workflow: .github/workflows/bench_extended.yml (workflow_dispatch + weekly schedule)
+  - artifacts: bench-extended-core, bench-extended-scheduler
+
 
 
 - [x] Repo hygiene: python-first benches in Pages workflow and dev tooling; PR template

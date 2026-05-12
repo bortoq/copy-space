@@ -1,55 +1,50 @@
 # Copy-Space — validated scheduling toolkit for deterministic data movement
 
-Copy-Space is a deterministic toolkit for validated scheduling of data movement.
-Given transfer demands and a resource model, it produces a conflict-free schedule plus an independent validator
-report with reproducible metrics.
+[![CI](https://github.com/bortoq/copy-space/actions/workflows/ci.yml/badge.svg)](https://github.com/bortoq/copy-space/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/bortoq/copy-space)](https://github.com/bortoq/copy-space/releases)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue)](pyproject.toml)
 
-Primary use cases (pilot-facing):
-- CI gating: schedule correctness checks plus performance regression limits
-- Benchmarking: compare scheduling strategies with reproducible metrics
+Copy-Space produces conflict-free schedules for directed data transfer demands under a deterministic resource model (STRICT1).
+It also provides an independent validator report with reproducible metrics.
 
-Key differentiator:
-- The validator reports a theoretical lower bound on required ticks (lower_bound_ticks)
-- It also reports a normalized gap metric: gap_to_lower_bound
-This makes it possible to track how far a schedule is from the best possible result under the model.
+What you get:
+- Correctness: schedule validation under STRICT1 (coverage + bandwidth + model constraints)
+- A lower bound on required ticks (lower_bound_ticks) and a normalized gap metric (gap_to_lower_bound)
+- Reproducible metrics suitable for CI gating and regression tracking
 
 ------------------------------------------------------------
 
-## Start here (Scheduler v0)
+## Try it in 60 seconds (hero example)
 
-Try it in 60 seconds (shuffle/materialization-like hero example):
+[![asciicast](https://asciinema.org/a/aSmWNpabss26xVkY.svg)](https://asciinema.org/a/aSmWNpabss26xVkY)
+
+Shuffle/materialization-like workload (8 slots):
 
   python3 -m venv .venv
   . .venv/bin/activate
   python -m pip install -e .
   copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+
+What to open after the run:
+- tmp/pilot_shuffle8/report_baseline.json
+- tmp/pilot_shuffle8/report_greedy.json
+- tmp/pilot_shuffle8/plot_baseline.html
+- tmp/pilot_shuffle8/plot_greedy.html
 
 Bench history (smoke time series):
 - https://bortoq.github.io/copy-space/
 
-Install (optional, enables copyspace-* CLI entrypoints):
+------------------------------------------------------------
 
-  python3 -m venv .venv
-  . .venv/bin/activate
-  python -m pip install -e .
-
-CLI entrypoints:
+## CLI entrypoints (Scheduler v0)
 
   copyspace-validate --help
   copyspace-solve --help
   copyspace-pilot --help
-
-Demo (baseline vs greedy, prints lower bound + gap):
-
-  copyspace-demo-scheduler
-
-One-command pilot (CSV -> instance -> schedules -> reports):
-
-  copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot
-
-Hero example (shuffle/materialization-like, 8 slots):
-
-  copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+  copyspace-demo-scheduler --help
+  copyspace-bench-core --help
+  copyspace-bench-scheduler --help
 
 Partner-facing docs:
 - doc/partners/quickstart_pilot.md
@@ -64,22 +59,15 @@ Technical contracts (source of truth):
 
 ## What is inside (high-level)
 
-Scheduler v0 (recommended for pilots and external users):
-- schedule validator + metrics (copyspace-validate)
-- solver strategies for comparison (copyspace-solve: baseline, greedy, external)
-- pilot runner for onboarding (copyspace-pilot)
-- adapters:
-  - CSV demands -> instance (copyspace-csv-to-instance)
-  - text lines -> schedule JSON (copyspace-lines-to-schedule)
+Scheduler v0 (pilot-facing, recommended):
+- validator + metrics (copyspace-validate)
+- solver strategies (copyspace-solve: baseline, greedy, external)
+- pilot runner (copyspace-pilot)
 
-Under the hood (research VM and toolchain):
-- a minimal bit-addressable VM (space, ticks, copy slots)
-- a baseline image builder (mkimage_std7_fixed)
-- a host-side Forth0 compiler (forth0c) and Forth0-first regression tests
-- benchmarks and vmrep-based throughput metrics (CSV)
-
-If you are a pilot partner evaluating validated scheduling, you do not need the VM toolchain to start.
-Use the Scheduler v0 entrypoints above.
+Under the hood (VM and toolchain):
+- minimal bit-addressable VM (space, ticks, copy slots)
+- std7_fixed image builder (mkimage_std7_fixed)
+- host-side Forth0 compiler (forth0c) and Forth0-first regression tests
 
 ------------------------------------------------------------
 
@@ -119,11 +107,9 @@ Scheduler v0 fixtures and smokes:
 ## Documentation
 
 Start here:
-
 - doc/README.md
 
 Status and roadmap:
-
 - doc/status.md
 - doc/roadmap.md
 

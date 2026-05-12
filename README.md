@@ -17,18 +17,17 @@ What you get:
 
 ## Try it in 60 seconds (hero example)
 
-[![asciicast](https://asciinema.org/a/aSmWNpabss26xVkY.svg)](https://asciinema.org/a/aSmWNpabss26xVkY)
-
-Greedy schedule timeline (rendered from tmp/pilot_shuffle8/plot_greedy.html):
-
-![shuffle8 greedy plot](doc/img/shuffle8_plot_greedy.png)
-
 Shuffle/materialization-like workload (8 slots):
 
   python3 -m venv .venv
   . .venv/bin/activate
   python -m pip install -e .
   copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+
+Example output (expected shape):
+
+  baseline status=PASS ticks=128 lb=128 gap=0 gapr=0.000000 util=1.0000
+  greedy   status=PASS ticks=128 lb=128 gap=0 gapr=0.000000 util=1.0000
 
 What to open after the run:
 - tmp/pilot_shuffle8/report_baseline.json

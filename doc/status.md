@@ -22,14 +22,6 @@ References:
 
 ## Next (prioritized)
 
-- [~] VM runtime checks (optional): pointer alignment / invariants (host-policy)
-  - current state: opt-in checks for VAR_AP/VAR_BP/VAR_RP via env COPYSPACE_VM_STRICT_ALIGN32=1 (invoked by vmrun)
-    - 32-bit alignment
-    - bounds (min_bits=24 for LOAD24/STORE24 style access)
-    - processor/MMIO region rejection (null=0 allowed)
-    - VAR_RP protected-region rejection (keeps RP away from ART and VAR tables)
-  - remaining: decide and implement additional invariants if needed (for example stronger writable-region policies)
-
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
@@ -64,9 +56,15 @@ References:
   - Updated: src/vm/space.h, src/vm/space.c, src/vm/diag/vmrep_attach.*, src/tools/vmrun.c
   - Covered by: make test, make tdd; CI main workflow
 
-- [x] VM strict runtime invariants: bounds and protected RP region
-  - Updated: src/vm/invariants.c
-  - Tests: scripts/tdd/test_vmrun_strict_align32.sh (bad_rp_protected_ptr.f0)
+- [x] VM runtime checks (opt-in): pointer alignment and invariants (host-policy)
+  - Enabled via: COPYSPACE_VM_STRICT_ALIGN32=1 (vmrun)
+  - Checks:
+    - 32-bit alignment (VAR_AP/VAR_BP/VAR_RP)
+    - bounds (min_bits=24 for LOAD24/STORE24 style access)
+    - processor/MMIO region rejection (null=0 allowed)
+    - VAR_RP protected-region rejection (keeps RP away from ART and VAR tables)
+  - Tests: scripts/tdd/test_vmrun_strict_align32.sh (bad_mmio_ptr.f0, bad_oob_ptr.f0, bad_rp_protected_ptr.f0)
+  - Code: src/tools/vmrun.c, src/vm/invariants.c
 
 - [x] Repo hygiene: python-first benches in Pages workflow and dev tooling; PR template
   - Updated: .github/workflows/bench_history_pages.yml, scripts/prepush_check.sh, scripts/bench/plot_scheduler_pack.py, CONTRIBUTING.md, .github/pull_request_template.md

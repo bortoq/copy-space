@@ -1,30 +1,26 @@
-/* space.h — Copy-Space VM
+/* space.h — Copy-Space VM core
  *
- * Модель:
- *  - Единая память vm->space[] (SPACE_BYTES), адресуемая в БИТАХ.
- *  - Единственная операция "вычисления": copy(n_bits, dst_bit, src_bit).
- *  - "Процессор" — это область памяти, содержащая PROCESSOR_N слотов инструкций.
- *  - Один тик VM:
- *      (1) обслуживает MMIO (stdin/stdout/ halt) по handshake-регистрам,
- *      (2) выполняет слоты 0..PROCESSOR_N-1 в режиме fetch-execute.
+ * Model:
+ * - Single memory vm->space[] (SPACE_BYTES), addressed in bits.
+ * - Only computation primitive: copy(n_bits, dst_bit, src_bit).
+ * - "Processor" is a memory region with PROCESSOR_N instruction slots.
+ * - One VM tick:
+ *     (1) services MMIO (stdin/stdout/halt) via handshake registers,
+ *     (2) executes slots 0..PROCESSOR_N-1 (fetch-execute).
  *
- * Инструкция в памяти:
- *  - имеет три поля: n, dst, src
- *  - ширина адреса (ADDR_BITS) выводится из SPACE_BYTES
- *  - N_BITS = ADDR_BITS
- *  - INSTR_BITS = 3 * ADDR_BITS (и ADDR_BITS округляется до кратности 8 => INSTR_BITS кратно 8)
- *  - кодировка битов внутри байта: bit0 = MSB (0x80), MSB-first.
+ * Instruction encoding:
+ * - three fields: n, dst, src
+ * - address width (ADDR_BITS) derived from SPACE_BYTES
+ * - N_BITS = ADDR_BITS
+ * - INSTR_BITS = 3 * ADDR_BITS (ADDR_BITS is rounded up to a multiple of 8)
+ * - bit numbering inside a byte: bit0 is MSB (0x80), MSB-first.
  *
- * Параллельные "слои":
- *  - Если в одном слое ни один битовый индекс space не используется более одного раза
- *    (включая чтение), то слой независим и эквивалентен параллельному шагу.
- *
- * Loader 3B (слой-за-слоем):
- *  - VM не имеет встроенного "state" для переключения слоёв.
- *  - Переход к следующему слою реализуется самим копикодом:
- *      * slot0 = NOP (n=0), а в его dst-поле хранится указатель на следующий слой (бит-адрес)
- *      * предпоследний слот патчит src-поле последнего слота
- *      * последний слот копирует PROCESSOR_BITS бит следующего слоя в область процессора
+ * Layered execution (loader 3B):
+ * - VM has no built-in layer switching state.
+ * - Next layer loading is implemented by copycode:
+ *     slot0 is NOP (n=0) but its dst field carries the next layer bit address
+ *     slot PROCESSOR_N-2 patches the src field of slot PROCESSOR_N-1
+ *     slot PROCESSOR_N-1 copies PROCESSOR_BITS from the next layer into the processor area
  */
 
 #ifndef COPYSPACE_H_
@@ -41,12 +37,12 @@
 
 /* -------------------- User-tunable knobs -------------------- */
 
-/* По умолчанию: 512 KiB */
+/* Default: 512 KiB */
 #ifndef VM_SPACE_BYTES
 #define VM_SPACE_BYTES (512u * 1024u)
 #endif
 
-/* По умолчанию: 64 слота */
+/* Default: 64 slots */
 #ifndef VM_PROCESSOR_N
 #define VM_PROCESSOR_N 64u
 #endif
@@ -79,11 +75,19 @@ typedef struct {
   bitaddr_t space_bits;
 } vm_err_t;
 
+/* Optional host-side hooks (instrumentation). VM core calls them if non-NULL. */
+typedef struct vm_hooks {
+  void *user;
+  void (*tick_begin)(void *user, size_t slots_cap);
+  void (*note_copy)(void *user, uint64_t dst, uint64_t n, uint64_t src);
+  void (*tick_end)(void *user);
+} vm_hooks_t;
 
+/* VM return codes */
 typedef enum {
-  VM_OK   = 0,   /* тик выполнен */
-  VM_HALT = 1,   /* останов по HALT */
-  VM_ERR  = -1   /* ошибка (I/O или выход за границы и т.п.) */
+  VM_OK   = 0,   /* tick completed */
+  VM_HALT = 1,   /* halted by MMIO.HALT */
+  VM_ERR  = -1   /* error (I/O, bounds, invariants, etc) */
 } vm_rc_t;
 
 /* -------------------- VM object -------------------- */
@@ -139,6 +143,8 @@ typedef struct vm {
 
   /* conventional workspace base (first free bit after MMIO) */
   bitaddr_t workspace_base;
+  vm_hooks_t hooks;
+
   /* diagnostics */
   int strict_align32; /* if set, enforce 32-bit alignment for VAR_AP/VAR_BP/VAR_RP (std7_fixed) */
   uint64_t tick_counter; /* increments per vm_tick() call that completes */
@@ -184,17 +190,17 @@ static inline bitaddr_t vm_proc_slot_field_ip(const vm_t *vm, unsigned slot, uns
 
 /* -------------------- Convenience: build a minimal boot layer with loader 3B --------------------
  *
- * Эта функция НЕ является "логикой VM"; это просто помощник, который записывает
- * копикод в область процессора.
+ * This function is not VM semantics. It is a convenience helper that writes copycode
+ * into the processor area.
  *
- * Конвенция loader-а 3B:
- *  - slot0: NOP (n=0), но в его dst поле лежит "next_layer_ptr" (битовый адрес слоя-образа)
- *  - patch_slot = PROCESSOR_N-2:
- *        copy ADDR_BITS, dst = (src-field of load_slot), src = (dst-field of slot0)
- *  - load_slot  = PROCESSOR_N-1:
- *        copy PROCESSOR_BITS, dst = PROCESSOR_START, src = (patched)
+ * Loader 3B convention:
+ * - slot0: NOP (n=0), but its dst field carries next_layer_ptr (bit address)
+ * - patch_slot = PROCESSOR_N-2:
+ *     copy ADDR_BITS, dst = (src-field of load_slot), src = (dst-field of slot0)
+ * - load_slot = PROCESSOR_N-1:
+ *     copy PROCESSOR_BITS, dst = PROCESSOR_START, src = (patched)
  *
- * После одного тика boot-слой загрузит слой по адресу next_layer_ptr.
+ * After one tick, the boot layer loads the layer at next_layer_ptr into the processor.
  */
 int vm_build_boot_loader_layer(vm_t *vm, bitaddr_t next_layer_ptr);
 

@@ -9,6 +9,7 @@
 // default: space-bytes=524288, processor-n=64, len-bytes=65536, pad-bytes=4096
 
 #include "space.h"
+#include "diag/vmrep_attach.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,6 +83,7 @@ int main(int argc, char **argv) {
 
   vm_t vm;
   if (vm_init(&vm, space_bytes, processor_n) != 0) die("vm_init failed");
+  vmrep_attach(&vm);
 
   // zeroed space
   memset(vm.space, 0, vm.space_bytes);

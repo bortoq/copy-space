@@ -1,5 +1,7 @@
 // vmrun.c — run a space.bin image on Copy-Space VM, optionally dump memory after run
 #include "space.h"
+#include "invariants.h"
+#include "diag/vmrep_attach.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -94,9 +96,18 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  vmrep_attach(&vm);
+
   vm.strict_align32 = env_enabled("COPYSPACE_VM_STRICT_ALIGN32");
 
-  vm_rc_t rc = vm_run(&vm, life, stdin, stdout);
+  vm_rc_t rc = VM_OK;
+  while (life--) {
+    rc = vm_tick(&vm, stdin, stdout);
+    if (rc != VM_OK) break;
+    if (vm.strict_align32) {
+      if (vm_invariants_strict_align32_check(&vm) != 0) { rc = VM_ERR; break; }
+    }
+  }
 
   if (dump_path) {
     if (dump_space(&vm, dump_path) != 0) {

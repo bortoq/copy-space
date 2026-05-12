@@ -32,8 +32,9 @@ VM_SRCS := \
 
 # optional vmrep module
 VMREP_SRC := $(wildcard src/vm/diag/vmrep.c)
+VMREP_ATTACH_SRC := $(wildcard src/vm/diag/vmrep_attach.c)
 ifneq ($(VMREP_SRC),)
-VM_SRCS += $(VMREP_SRC)
+VM_SRCS += $(VMREP_SRC) $(VMREP_ATTACH_SRC)
 endif
 
 # tools: build every src/tools/*.c into build/bin/<basename>

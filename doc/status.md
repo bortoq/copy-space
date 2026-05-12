@@ -22,8 +22,8 @@ References:
 
 ## Next (prioritized)
 
-- [~] VM runtime checks (optional): pointer alignment / invariants in runtime (not required for baseline)
-  - current state: opt-in runtime checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1 (implementation in src/vm/invariants.c)
+- [~] VM runtime checks (optional): pointer alignment / invariants (host-policy)
+  - current state: opt-in checks for VAR_AP/VAR_BP/VAR_RP: 32-bit alignment, bounds, processor/MMIO region rejection (null=0 allowed) via env COPYSPACE_VM_STRICT_ALIGN32=1 (implementation in src/vm/invariants.c; invoked by vmrun)
   - remaining: decide and implement additional invariants (bounds / region checks) if needed
 
 ------------------------------------------------------------
@@ -47,6 +47,10 @@ References:
 - [x] Extended benches (manual/nightly)
   - workflow: .github/workflows/bench_extended.yml (workflow_dispatch + weekly schedule)
   - artifacts: bench-extended-core, bench-extended-scheduler
+
+- [x] VM core decoupling v1: vmrep via VM hooks; invariants moved to host-policy
+  - Updated: src/vm/space.h, src/vm/space.c, src/vm/diag/vmrep_attach.*, src/tools/vmrun.c
+  - Covered by: make test, make tdd; CI main workflow
 
 
 

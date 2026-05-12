@@ -29,7 +29,7 @@ set(VM_SRCS
 )
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/src/vm/diag/vmrep.c")
-  list(APPEND VM_SRCS src/vm/diag/vmrep.c)
+  list(APPEND VM_SRCS src/vm/diag/vmrep.c src/vm/diag/vmrep_attach.c)
 endif()
 
 add_library(vmcore STATIC ${VM_SRCS})

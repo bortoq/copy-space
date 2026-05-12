@@ -1,15 +1,10 @@
-/* space.c — реализация VM и MMIO-handshake
+/* space.c — VM core implementation and MMIO handshake
  */
 
 #include "space.h"
-#include "diag/vmrep.h"
-#include "invariants.h"
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-
-/* vmrep moved to src/vm/diag/vmrep.c */
-
 
 /* -------- utilities: ceil_log2 and rounding -------- */
 
@@ -159,14 +154,14 @@ void vm_free(vm_t *vm) {
 
 /* -------- MMIO handshake service --------
  *
- * Семантика:
- *  - Устройство проверяет *_REQ в начале тика.
- *  - Если REQ=1:
- *      * очищает DONE/ERR/(EOF) и GOT
- *      * выполняет операцию (byte-aligned)
- *      * записывает GOT, выставляет DONE=1 и, при необходимости, EOF/ERR
- *      * сбрасывает REQ=0
- *  - DONE остаётся 1 до тех пор, пока программа не затрёт его копированием (если хочет).
+ * Semantics:
+ * - The device checks *_REQ at the start of the tick.
+ * - If REQ=1:
+ *     - clears DONE/ERR/(EOF) and GOT
+ *     - performs the operation (byte-aligned)
+ *     - writes GOT, sets DONE=1 and (if needed) EOF/ERR
+ *     - clears REQ=0
+ * - DONE remains 1 until the program overwrites it via copy (if it wants to).
  */
 
 static int service_in(vm_t *vm, FILE *in) {
@@ -275,11 +270,11 @@ vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
   if (service_out(vm, out) != 0) return VM_ERR;
   if (service_in(vm, in) != 0) return VM_ERR;
 
-  /* 2) HALT check after I/O (чтобы можно было "сначала вывести, потом остановиться") */
+  /* 2) HALT check after I/O (allows "print first, then stop") */
   if (vm_bit_get(vm, vm->mmio.halt)) { vm->tick_counter++; return VM_HALT; }
 
   /* 3) fetch-execute slots */
-  vmrep_tick_begin(vm->processor_n);
+  if (vm->hooks.tick_begin) vm->hooks.tick_begin(vm->hooks.user, vm->processor_n);
   for (unsigned i = 0; i < vm->processor_n; i++) {
     bitaddr_t ip = vm_proc_slot_ip(vm, i);
     vm_inst_t ins = vm_read_inst(vm, ip);
@@ -325,17 +320,14 @@ vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
       return VM_ERR;
     }
 
-    /* bitcpy uses size_t offsets; with 512KB это безопасно */
-    vmrep_note_copy((uint64_t)dst, (uint64_t)n);
+    /* bitcpy uses size_t offsets; with 512KB this is safe */
+    if (vm->hooks.note_copy) vm->hooks.note_copy(vm->hooks.user, (uint64_t)dst, (uint64_t)n, (uint64_t)src);
 
     bitcpy((size_t)n, vm->space, (size_t)src, vm->space, (size_t)dst);
   }
 
-  if (vm->strict_align32) {
-    if (vm_invariants_strict_align32_check(vm) != 0) return VM_ERR;
-  }
 
-  vmrep_tick_end();
+  if (vm->hooks.tick_end) vm->hooks.tick_end(vm->hooks.user);
 
 
   vm->tick_counter++;

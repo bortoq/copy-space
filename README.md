@@ -37,6 +37,10 @@ One-command pilot (CSV -> instance -> schedules -> reports):
 
   copyspace-pilot --csv examples/demands.csv --bw 256 --outdir tmp/pilot
 
+Hero example (shuffle/materialization-like, 8 slots):
+
+  copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+
 Partner-facing docs:
 - doc/partners/quickstart_pilot.md
 - doc/partners/pilot_intake.md

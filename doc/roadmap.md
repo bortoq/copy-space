@@ -161,6 +161,21 @@ Deliverables
 - Follow-ups triage
   - Move accepted follow-ups into doc/status.md Next (prioritized) only
 
+------------------------------------------------------------
+
+## Milestone 9 — Geek demo: Game of Life on VM/Forth0 (planned)
+
+Goal: provide a small, deterministic VM/Forth0 demo for low-level readers, without changing the scheduler v0 product path.
+
+Deliverables
+- Forth0 demo program
+  - file: src/forth0/demos/life.f0
+- Short doc page
+  - doc: doc/demos/life.md
+  - includes: how to run, what output to expect, and scope note (demo only)
+- Optional: smoke check
+  - test: a small deterministic run checked in CI or TDD (if it stays stable)
+
 ## Non-goals (current scope)
 
 - No topology or routing selection

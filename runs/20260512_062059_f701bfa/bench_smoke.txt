@@ -1,0 +1,33 @@
+# bench summary: tmp/bench_smoke.csv
+# rows=3 groups=3
+
+## bulkcopy mode= space_bytes=524288 slots=64 addr_bits=24
+- best uniq_dst: 8,192 bits/tick (1.00 KiB/tick)
+- best sum:      8,192 bits/tick (1.00 KiB/tick)
+- expected:      8192 bits/tick  (util=100.0%)
+- git_rev: f701bfa
+
+| rank | uniq_dst avg | util vs expected | expected_bits/tick | copies_total | ticks_total | seed | notes | git_rev |
+|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 1 | 8,192.000 | 100.0% | 8192 | 1 | 100 | - | LEN_BYTES=1024 LIFE=100 COPIES_TOTAL=1 EXPECTED_BITS_PER_TICK=8192 | f701bfa |
+
+## pack mode=pack space_bytes=524288 slots=64 addr_bits=24
+- best uniq_dst: 2,048 bits/tick (256.0 B/tick)
+- best sum:      2,048 bits/tick (256.0 B/tick)
+- expected:      2048 bits/tick  (util=100.0%)
+- git_rev: f701bfa
+
+| rank | uniq_dst avg | util vs expected | expected_bits/tick | copies_total | ticks_total | seed | notes | git_rev |
+|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 1 | 2,048.000 | 100.0% | 2048 | 16 | 100 | 1 | COPIES=16 CHUNK_BYTES=16 SRC_STRIDE_BYTES=4096 SEED=1 COPIES_TOTAL=16 EXPECTED_BITS_PER_TICK=2048 | f701bfa |
+
+## permute mode=random space_bytes=524288 slots=64 addr_bits=24
+- best uniq_dst: 2,048 bits/tick (256.0 B/tick)
+- best sum:      2,048 bits/tick (256.0 B/tick)
+- expected:      2048 bits/tick  (util=100.0%)
+- git_rev: f701bfa
+
+| rank | uniq_dst avg | util vs expected | expected_bits/tick | copies_total | ticks_total | seed | notes | git_rev |
+|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 1 | 2,048.000 | 100.0% | 2048 | 16 | 100 | 1 | COPIES=16 CHUNK_BYTES=16 MODE=random SEED=1 COPIES_TOTAL=16 EXPECTED_BITS_PER_TICK=2048 | f701bfa |
+

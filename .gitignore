@@ -57,4 +57,6 @@ tmp/plots/
 !examples/demands.csv
 
 # examples used by docs/demo
-!examples/shuffle8.csv
+!examples/shuffle16.csv
+
+!examples/ring15.csv

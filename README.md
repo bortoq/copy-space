@@ -17,23 +17,23 @@ What you get:
 
 ## Try it in 60 seconds (hero example)
 
-Shuffle/materialization-like workload (8 slots):
+Hero workload: odd ring (15 demands, non-trivial gap to lower bound):
 
   python3 -m venv .venv
   . .venv/bin/activate
   python -m pip install -e .
-  copyspace-pilot --csv examples/shuffle8.csv --bw 256 --outdir tmp/pilot_shuffle8 --plot
+  copyspace-pilot --csv examples/ring15.csv --bw 256 --outdir tmp/pilot_ring15 --plot
 
 Example output (expected shape):
 
-  baseline status=PASS ticks=128 lb=128 gap=0 gapr=0.000000 util=1.0000
-  greedy   status=PASS ticks=128 lb=128 gap=0 gapr=0.000000 util=1.0000
+  baseline status=PASS ticks=12288 lb=8192 gap=4096 gapr=0.500000 util=0.7143
+  greedy   status=PASS ticks=8778 lb=8192 gap=586 gapr=0.071533 util=0.9999
 
 What to open after the run:
-- tmp/pilot_shuffle8/report_baseline.json
-- tmp/pilot_shuffle8/report_greedy.json
-- tmp/pilot_shuffle8/plot_baseline.html
-- tmp/pilot_shuffle8/plot_greedy.html
+- tmp/pilot_ring15/report_baseline.json
+- tmp/pilot_ring15/report_greedy.json
+- tmp/pilot_ring15/plot_baseline.html
+- tmp/pilot_ring15/plot_greedy.html
 
 Bench history (smoke time series):
 - https://bortoq.github.io/copy-space/

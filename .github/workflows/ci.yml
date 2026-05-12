@@ -121,6 +121,26 @@ jobs:
             tmp/stress_smoke_ci/summary.json
             tmp/stress_smoke_ci/run.txt
 
+
+  packaging-sanity:
+    name: Packaging sanity (build + twine check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build dists and twine check
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          rm -rf dist build
+          python -m build
+          python -m twine check dist/*
+
   bench-smoke:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest

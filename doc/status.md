@@ -22,10 +22,6 @@ References:
 
 ## Next (prioritized)
 
-- [ ] CI: packaging sanity (build + twine check)
-  - current state: CI runs pip install -e . packaging smoke
-  - remaining: add a lightweight CI job that runs python -m build and twine check dist/*
-
 - [ ] PyPI: trusted publishing decision (OIDC)
   - current state: manual token-based publish documented in doc/pypi_publish.md
   - remaining: decide whether to enable trusted publishing; document the decision and minimal setup
@@ -33,6 +29,9 @@ References:
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
+
+- [x] CI: packaging sanity (build + twine check)
+  - CI job: packaging-sanity in .github/workflows/ci.yml
 
 - [x] Milestone 7: Audit v0 doc (stable interfaces and surfaces)
   - doc: doc/audit_v0.md

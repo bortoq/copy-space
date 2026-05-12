@@ -134,7 +134,7 @@ Deliverables
 
 ------------------------------------------------------------
 
-## Milestone 7 — Post-release audit and hardening (planned)
+## Milestone 7 — Post-release audit and hardening (done)
 
 Goal: make post-release quality and partner-facing surface area easier to review and maintain.
 
@@ -147,6 +147,19 @@ Deliverables
   - check: twine check dist/*
 - Trusted publishing decision
   - doc: update doc/pypi_publish.md with a short section: trusted publishing status (enabled or not) and rationale
+
+------------------------------------------------------------
+
+## Milestone 8 — Quality audit report and follow-ups (planned)
+
+Goal: produce a short, actionable report about code, docs, and CI alignment, with prioritized follow-ups.
+
+Deliverables
+- Audit report v0
+  - doc: doc/audit_report_v0.md
+  - includes: evidence (CI jobs and checks), drift checks (versions and references), and a prioritized follow-up list
+- Follow-ups triage
+  - Move accepted follow-ups into doc/status.md Next (prioritized) only
 
 ## Non-goals (current scope)
 

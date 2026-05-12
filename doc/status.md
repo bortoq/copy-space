@@ -22,13 +22,12 @@ References:
 
 ## Next (prioritized)
 
-- [ ] Milestone 8: Audit report v0 (quality and alignment)
-  - current state: inventory exists (doc/audit_v0.md); CI packaging sanity and trusted publishing path added
-  - remaining: create doc/audit_report_v0.md with findings, evidence, and prioritized follow-ups
-
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
+
+- [x] Milestone 8: Audit report v0 (quality and alignment)
+  - doc: doc/audit_report_v0.md
 
 - [x] PyPI: trusted publishing decision (OIDC) and workflow path
   - workflow: .github/workflows/publish_pypi.yml

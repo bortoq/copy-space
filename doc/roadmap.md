@@ -150,7 +150,7 @@ Deliverables
 
 ------------------------------------------------------------
 
-## Milestone 8 — Quality audit report and follow-ups (planned)
+## Milestone 8 — Quality audit report and follow-ups (done)
 
 Goal: produce a short, actionable report about code, docs, and CI alignment, with prioritized follow-ups.
 

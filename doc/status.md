@@ -22,13 +22,14 @@ References:
 
 ## Next (prioritized)
 
-- [ ] PyPI: trusted publishing decision (OIDC)
-  - current state: manual token-based publish documented in doc/pypi_publish.md
-  - remaining: decide whether to enable trusted publishing; document the decision and minimal setup
-
 ------------------------------------------------------------
 
 ## Recently completed (2026-05)
+
+- [x] PyPI: trusted publishing decision (OIDC) and workflow path
+  - workflow: .github/workflows/publish_pypi.yml
+  - doc: doc/pypi_publish.md
+  - Note: requires one-time PyPI trusted publisher configuration for bortoq/copy-space
 
 - [x] CI: packaging sanity (build + twine check)
   - CI job: packaging-sanity in .github/workflows/ci.yml

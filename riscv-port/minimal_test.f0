@@ -1,0 +1,21 @@
+include "fix_bitwise.f0"
+
+const TMP_CARRY (TESTG + 4800)
+const SCR_BYTE (TESTG + 4808)
+
+macro COPY_32(dst, src)
+  copybits 32 dst src
+endmacro
+
+const H_BASE  TESTG
+const TMP0    (TESTG + 4352)
+
+setbyte (TESTG + 0) 0x12
+setbyte (TESTG + 8) 0x34
+setbyte (TESTG + 16) 0x56
+setbyte (TESTG + 24) 0x78
+
+COPY_32(TMP0, H_BASE)
+ADD_32((H_BASE + 0), (H_BASE + 0), TMP0)
+
+HALT

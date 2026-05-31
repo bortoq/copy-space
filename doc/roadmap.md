@@ -1,183 +1,1880 @@
-# Roadmap (public)
+# Port Forth0 into space — план переноса (2026-05-30)
 
 _file: doc/roadmap.md_
 
-This roadmap matches the public partner-facing scope in doc/partners/partner_brief.md.
+## -1) Single-Goal Mode (приоритет проекта)
 
-Focus: validated scheduling plus independent validation and reproducible metrics for directed transfer demands
-(volume-based) under the STRICT1 resource model.
+**Главная цель репозитория:**
+- продемонстрировать запуск нетривиальных вычислений внутри адресного пространства Copy-Space VM.
 
-Primary user-facing use cases:
-- CI gating for schedule correctness plus performance regression limits
-- Benchmarking and regression tracking for scheduling strategies
+**Текущий основной путь:**
+- RISC-V C2 (`trace -> .f0 -> .tok -> VM`) и закрытие Узкого RV32I-MVP.
 
-See also: doc/status.md
+**Политика приоритизации:**
+1. VM core + диагностика + воспроизводимость.
+2. RV32I MVP (разделы 14.7-14.9).
+3. Демо вычислительной нагрузки в space.
 
-------------------------------------------------------------
+**Вторичные/отложенные направления (deferred до закрытия MVP):**
+- scheduler/pilot продуктовый трек,
+- LLVM backend integration,
+- FreeRTOS port,
+- FPGA prototype.
 
-## Principles (accepted)
+**Операционный профиль:**
+- критический gate: `scripts/tdd/run_rv32i_minimal.sh`
+- подробности: `doc/MINIMAL_PATH.md`
 
-Single source of truth
-- Contracts and schemas live in doc (for example doc/scheduler_io_v0.md).
-- README and partner docs should link to contracts rather than duplicating details.
-- CI should include small smoke checks for canonical entrypoints and critical doc sync.
+## 0) Термины и текущая архитектура
 
-Cross-platform direction
-Goal: user-facing workflows should not rely on /bin/sh plus coreutils.
-Approach: Python entrypoints for orchestration; native binaries for VM tools; portable native build and release artifacts.
+**Forth0** — это хост-компилятор (`forth0c`), написанный на C, который транслирует текстовые программы на языке `.f0` в бинарный поток токенов (`.tok`). Токены представляют собой 24-битные адреса слов (ART entries). Компиляция выполняется на хосте (вне VM), результат загружается в VM через stdin или in-space source.
 
-Bench in CI
-Benchmarks should be runnable in automation in a deterministic smoke mode (small, fixed seeds).
-If runtime becomes an issue, prefer nightly plus manual trigger rather than removing coverage.
+**Copy-Space VM** — бит-адресуемое пространство `space[]` размером 512 КБ (по умолчанию). Процессор состоит из `PROCESSOR_N = 64` слотов. Каждый слот содержит одну инструкцию `copy(n, dst, src)`. Один тик VM: (1) обслуживание MMIO (service_in/service_out), (2) выполнение слотов 0..PROCESSOR_N-1. Память бит-адресуемая: `bitaddr` — номер бита. Ширина адреса `ADDR_BITS` (24 бита, выровнена до 8). Ширина инструкции `INSTR_BITS = 3 * ADDR_BITS = 72` бита.
 
-------------------------------------------------------------
+**std7_fixed** — базовый образ VM, построенный утилитой `mkimage_std7_fixed`. Определяет:
+- `WORDS_BASE` — область, содержащую все слова (word pages), доступные в Forth0.
+- `ART` (Artifact Table) — ABI-таблица из 82 записей (ART_COUNT), каждая запись — `bitaddr` объекта в space.
+- `TESTSCR` — стандартная scratch-область (≥8 КБ), через `TESTG = ART[43] = TESTSCR_BASE = ART[63]`.
+- `POOL` — пул ячеек для in-space компиляции (128 ячеек по умолчанию).
 
-## Milestone 0 — Engineering baseline (done)
+**Загрузка слоёв (loader 3B)** — механизм chain-load: слот0 содержит NOP (n=0), его dst поле несёт `next_layer_ptr`; слот PROCESSOR_N-2 копирует ADDR_BITS из dst-поля слота0 в src-поле слота PROCESSOR_N-1; слот PROCESSOR_N-1 копирует PROCESSOR_BITS бит из next_layer_ptr в процессорную область. После одного тика происходит переход на следующий слой.
 
-- CI: make bins, make test, make tdd
-- Forth0-first regression tests executed via forth0c
-- Core docs (semantics, testing, memory layout, devices, ABI artifacts)
+**In-space source** — режим MMIO (`in_src_mode`, `in_src_addr`, `in_src_end` в MMIO). Когда `in_src_mode=1`, service_in читает данные не из stdin, а из памяти space по адресу `in_src_addr`, продвигая его на прочитанное число бит. Это позволяет загружать токены непосредственно из памяти VM.
 
-------------------------------------------------------------
+**Пул ячеек** — область памяти, организованная как односвязный список. Каждая ячейка: `[next_ptr (24 бита)][code_ptr (24 бита)]`, итого 48 бит = 6 байт, выровнена до 32 бит (8 байт с паддингом). Переменные: `FREE` (ART[73]) — указатель на голову свободного списка; `CUR` (ART[74]) — текущая выделенная ячейка; `NEXTFREE` (ART[75]) — next_ptr из CUR; `PREV_NEXT_FLD` (ART[76]) — адрес поля next_ptr предыдущей ячейки (для связывания); `TOKEN` (ART[77]) — буфер для читаемого токена.
 
-## Milestone 1 — MVP: validated scheduling v0 (done)
+**Формат токенов** — 24-битные адреса слов (совпадают с ART entry). Упакованы последовательно в памяти.
 
-Scope
-- Input: directed demands src_slot to dst_slot with bits_total
-- Model: tick scheduling under STRICT1
-- Output: schedule plus validator report and reproducible metrics
+**Текущие тесты:**
+- `test_compile_one.f0` — smoke-тест слова COMPILE_ONE: записывает токен HALT, выделяет ячейку из пула, верифицирует через дамп.
+- `test_compile_tokens.f0` — интеграция SETUP_INSPACE: записывает 3 токена HALT, вызывает SETUP_INSPACE, который настраивает MMIO и chain-load на BRANCH/DO/END. НЕ проверяет результат компиляции.
+- `test_sched_validate.f0` — вызов VALIDATE_SCHED и SCHED_INFO для проверки pre-computed valid_flag.
 
-Key artifacts
-- Scheduler I/O v0 contract: doc/scheduler_io_v0.md
-- STRICT1 model spec: doc/strict1_model_v0.md
-- Validator and metrics: copyspace-validate
-- Two strategies for comparison: copyspace-solve (baseline and greedy)
-- Demo runner: scripts/scheduler/demo_run.py
-- Reference benchmark pack (seeded): scripts/scheduler/tests/ref_pack
+## 1) Стратегия bootstrapping (4 фазы)
 
-------------------------------------------------------------
+**Фаза 0: Engineering baseline (текущее состояние)**
+- Стабилизировать существующие тесты: `test_compile_one.f0`, `test_compile_tokens.f0`, `test_sched_validate.f0`.
+- Документировать все блокеры и несоответствия.
+- Убедиться, что `make test` и `make tdd` проходят без регрессий.
+- Текущий охват: 21 тест (по данным `scripts/forth0/run_f0.sh`).
 
-## Milestone 2 — CI gating and pilot helpers (done)
+**Фаза 0.5: Блок-указатели (LT24P/ADD24P/STORE24RP)**
+- Имплементировать и протестировать примитивы LOAD24AP (ART[67]), LOAD24BP (ART[68]), STORE24RP (ART[69]).
+- Проверить требование выравнивания 32 бит (`strict_align32`).
+- Написать тесты: `test_add24p_via_prims.f0`, `test_ptrprims_padding.f0`.
 
-- Pilot intake and quickstart docs:
-  - doc/partners/pilot_intake.md
-  - doc/partners/quickstart_pilot.md
-- CI gate recipe for partners:
-  - doc/partners/ci_gate_recipe.md
-  - doc/partners/ci_gate_workflow_example.yml
-- One-command pilot runner:
-  - copyspace-pilot
+**Фаза 1: Шедулер в space**
+- Перенести валидацию расписания внутрь VM: VALIDATE_SCHED (ART[70]), SCHED_INFO (ART[71]).
+- Убрать хост-зависимость для проверки valid_flag.
 
-------------------------------------------------------------
+**Фаза 2: In-space token compiler**
+- Реализовать полный цикл компиляции внутри VM: SETUP_INSPACE → BRANCH → DO → END → HALT.
+- Три уровня тестов: unit (COMPILE_ONE), integration (SETUP_INSPACE+chain), system (полный цикл с верификацией).
 
-## Milestone 3 — Release and repo hygiene (done)
+**Фаза 3: Self-hosting (дальняя цель)**
+- forth0c работает целиком внутри VM: читает .f0 из space, компилирует токены, записывает результат.
+- На данном этапе только контурное описание; детальная проработка откладывается.
 
-Goal: make it easy to reference a stable version and accept pilot requests and contributions.
+## 2) Фаза 0.5: Блок-указатели и ADD24P
 
-Deliverables
-1) Release hygiene
-- Confirm the current released version and tags match pyproject.toml.
-- Publish a GitHub Release for the current version with short notes and quickstart commands.
+**Текущие примитивы (ART[67–69]):**
+- `LOAD24AP` (ART[67]): читает 24 бита из памяти по адресу `[*AP]` (косвенное чтение через указатель `VAR_AP`) и помещает в `VAR_A24`.
+- `LOAD24BP` (ART[68]): аналогично для `VAR_BP` → `VAR_B24`.
+- `STORE24RP` (ART[69]): записывает `VAR_SUM24` в память по адресу `[*RP]`.
 
-2) Issue templates
-- Pilot request: collect workload shape, constraints, and acceptance criteria
-- Bug report: collect instance, schedule, and validator report
+**Производные макросы (`src/forth0/lib/ptrprims.f0`):**
+- `LOAD24AP_TO_A24()` — вызов LOAD24AP.
+- `LOAD24BP_TO_B24()` — вызов LOAD24BP.
+- `STORE_SUM24_TO_RP()` — вызов STORE24RP.
+- `ADD24P_STEP()` — LOAD24AP_TO_A24 + LOAD24BP_TO_B24 + ADD24 + STORE_SUM24_TO_RP + INC_PTR32(VAR_AP) + INC_PTR32(VAR_BP) + INC_PTR32(VAR_RP).
 
-3) Contribution workflow
-- CONTRIBUTING.md: keep aligned with current CI and scripts
-- PR checklist: tests and doc sync expectations
+**Тесты:**
+- `test_add24p_via_prims.f0`: проверить LOAD24AP/LOAD24BP/STORE24RP через ADD24P_STEP.
+- `test_ptrprims_padding.f0`: проверить работу с выровненными и невыровненными указателями.
 
-------------------------------------------------------------
+**Требование выравнивания:**
+- `bitaddr % 32 == 0` для всех блок-указателей (VAR_AP, VAR_BP, VAR_RP). Это требование зафиксировано в `doc/forth0.md` и поддерживается флагом `strict_align32` в VM.
+- При включённом `strict_align32` VM возвращает `VM_E_ALIGN32` при попытке использовать невыровненный указатель.
 
-## Milestone 4 — Cross-platform UX (done)
+**Блокер: тест `test_ptrprims_padding` использует невыровненные указатели.**
+- Это противоречит требованию `strict_align32`.
+- Решение: документировать, что для работы с невыровненными указателями нужно отключать `strict_align32`. Сам тест должен явно указывать это в комментарии.
+- Альтернатива: сделать тест ожидающим ошибки (expect VM_E_ALIGN32) и проверять код ошибки.
 
-Goal: a user can run core pilot and bench workflows on Linux, macOS, and Windows without requiring shell scripts.
+**Проблема: ADD24P_STEP не проверяет переполнение SUM24.**
+- 24-битное сложение может переполниться (результат ≥ 2^24).
+- `ADD24` устанавливает `VAR_COUT` (перенос), но `ADD24P_STEP` его игнорирует.
+- Фиксируется как non-goal: для текущих объёмов данных (адреса < 2^24) переполнение не возникает. Если в будущем понадобится — добавить проверку `VAR_COUT` после ADD24.
 
-Current state
-- CI builds native tools via CMake on Linux, macOS, and Windows.
-- Native tool release artifacts exist.
+## 3) Фаза 1: Шедулер в пространстве (space)
 
-Remaining
-1) Python-first orchestration
-- Ensure user-facing flows have Python entrypoints (pilot, demo, bench smoke mode).
-- Keep shell scripts as optional developer conveniences.
+**Текущие слова:**
+- `VALIDATE_SCHED` (ART[70]): читает 1 бит `valid_flag` из `TESTG + 96`. Если флаг = 1, устанавливает `halt = 1`.
+- `SCHED_INFO` (ART[71]): читает 24 бита из `TESTG + 0 → VAR_N` (NUM_TICKS), `TESTG + 24 → VAR_DST` (NUM_CHUNKS), `TESTG + 48 → VAR_SRC` (SLOTS).
 
-2) Documentation hygiene
-- Make it explicit which interfaces are stable for external users:
-  - copyspace-* entrypoints
-  - doc contracts and schemas
+**Тест: `test_sched_validate.f0`**
+- Pipeline: (1) сгенерировать schedule .f0 через `sched_to_f0.py`, (2) включить его, (3) вызвать VALIDATE, (4) вызвать SCHED_INFO, (5) скопировать поля заголовка в OUT_BASE для верификации.
 
-3) CI coverage
-- Add or extend CI checks that run the Python-first flows on at least one platform profile.
+**Проблема: VALIDATE_SCHED читает только 1 бит valid_flag, не выполняет полную проверку STRICT1.**
+- `valid_flag` вычисляется на хосте (`sched_to_f0.py`) и записывается в TESTG+96.
+- VM только проверяет флаг — если он установлен, останавливается с ошибкой.
 
-------------------------------------------------------------
+**Блокер: полная валидация STRICT1 требует O(N·T) операций.**
+- Для каждого тика T нужно проверить все пары чанков N на конфликт слотов.
+- В худшем случае: N ≈ 32 чанка на тик, T ≈ 1000 тиков → 32·1000 = 32000 checks.
+- На VM (64 слота) это может не влезть в один слой. Потребуется многопроходная валидация.
 
-## Milestone 5 — Bench and regression signals (done)
+**Решение:**
+- Оставить `valid_flag` как хост-вычисленный (в `sched_to_f0.py`).
+- In-space проверка только флага: если валидация на хосте пройдена → valid_flag=0 → VALIDATE_SCHED не останавливает VM.
+- Если валидация на хосте не пройдена → valid_flag=1 → VM останавливается.
 
-Goal: deterministic, automated signals for bench-level regressions with bounded runtime.
+**Анализ сложности полной STRICT1-валидации in-space:**
+- Для каждого тика: для каждой пары чанков проверить `{src,dst} ∩ {src',dst'} = ∅`.
+- Количество операций: Σ_{tick} C(N_tick, 2). Для N=32 чанков на тик: 496 checks на тик.
+- T=100 тиков → ~50000 checks. T=1000 → ~500000 checks.
+- Каждый check на VM занимает несколько слотов (сравнение, условный переход).
+- 50000 checks при 64 слотах/тик → ~800 тиков только на валидацию.
+- Вывод: полная STRICT1-валидация in-space возможна, но требует значительного времени.
+- Компромисс: хост вычисляет valid_flag, VM его проверяет; полная валидация остаётся на хосте.
 
-Delivered
-- CI includes a deterministic bench-smoke job (skipped on pull_request).
-- Regression signal policy: doc/bench_regression_policy.md
-- Optional extended runs: .github/workflows/bench_extended.yml (workflow_dispatch + weekly schedule)
+## 4) Фаза 2: In-space token compiler
 
-------------------------------------------------------------
+**Архитектура:**
 
-## Milestone 6 — Scheduler scalability signals (done)
+`COMPILE_ONE` (ART[72]) — базовое слово, выделяет одну ячейку из пула и записывает в неё токен. Алгоритм (12 слотов):
+1. Читает адрес токена из `VAR_N` (косвенно).
+2. Читает токен (24 бита) из `[*VAR_N]` → `VAR_TOKEN`.
+3. `CUR = FREE` (извлекает голову свободного списка).
+4. Читает `next_ptr` из `[*CUR]` → `VAR_NEXTFREE`.
+5. `FREE = NEXTFREE` (обновляет голову свободного списка).
+6. Записывает `VAR_CUR → [*PREV_NEXT_FLD]` (связывает предыдущую ячейку с новой).
+7. Записывает `VAR_TOKEN → [*CUR]` (сохраняет токен в ячейке).
+8. `PREV_NEXT_FLD = CUR + 32` (обновляет указатель на next_ptr для следующей итерации).
 
-Goal: catch regressions related to large instances and long schedules without slowing PR CI.
+`SETUP_INSPACE` (ART[81]) — слово инициализации in-space компиляции. Алгоритм (8 слотов + chain-load):
+1. Копирует `VAR_SRC_ADDR → mmio.in_src_addr`.
+2. Копирует `VAR_SRC_END → mmio.in_src_end`.
+3. Копирует адрес `VAR_TOKEN` из data area → `mmio.in_dst` (куда читать токены).
+4. Копирует `ADDR_BITS` из data area → `mmio.in_len` (сколько бит читать за раз).
+5. Устанавливает `in_src_mode = 1`.
+6. Устанавливает `in_req = 1`.
+7. Chain-load на страницу BRANCH (через слоты PROCESSOR_N-2, PROCESSOR_N-1).
 
-Deliverables
-- Add reproducible stress smoke for scheduler v0 (solve plus validate) with bounded runtime.
-- Keep artifacts small (prefer reports and summaries over huge schedule JSON files).
-- Add explicit CI coverage (job name and trigger policy).
+`BRANCH` — страница-диспетчер (чтение следующего токена):
+- Слот0: NOP с `dst = do_base` (адрес страницы DO).
+- Слот1: устанавливает бит `slot0.dst` из `mmio.in_eof`. Если EOF → следующий загруженный слой будет END, иначе DO.
+- Слоты PROCESSOR_N-2, PROCESSOR_N-1: chain-load на выбранную страницу.
 
-------------------------------------------------------------
+`DO` — страница компиляции одного токена (11 слотов + chain-load):
+- Слот0: NOP с `dst = branch_img` (обратно на BRANCH для следующего токена).
+- Слоты 1-9: те же операции, что в COMPILE_ONE (выделение ячейки, запись токена, связывание).
+- Слот10: `in_req = 1` (запрос следующего токена).
+- Слоты PROCESSOR_N-2, PROCESSOR_N-1: chain-load на BRANCH (цикл).
 
-## Milestone 7 — Post-release audit and hardening (done)
+`END` — страница завершения (3 слота):
+- Записывает `halt_cell → [*PREV_NEXT_FLD]` (терминатор списка).
+- Устанавливает `halt = 1` (остановка VM).
 
-Goal: make post-release quality and partner-facing surface area easier to review and maintain.
+**Пул ячеек:**
+- `POOL_BASE` (ART[78]) — базовый адрес пула.
+- Размер ячейки: 48 бит (6 байт) + 16 бит паддинг = 64 бита (8 байт) для выравнивания 32 бит.
+- `FREE` (ART[73]) — указатель на первую свободную ячейку.
+- `CUR` (ART[74]) — текущая выделенная ячейка.
+- `NEXTFREE` (ART[75]) — следующая свободная после CUR.
+- `PREV_NEXT_FLD` (ART[76]) — адрес поля next_ptr предыдущей ячейки.
+- `TOKEN` (ART[77]) — прочитанный токен (24 бита).
 
-Deliverables
-- Audit v0 doc: inventory of stable interfaces and surfaces
-  - doc: doc/audit_v0.md
-  - includes: CLI entrypoints, contracts/schemas, environment variables, file formats, compatibility notes
-- Packaging sanity in CI (release-adjacent)
-  - build: python -m build
-  - check: twine check dist/*
-- Trusted publishing decision
-  - doc: update doc/pypi_publish.md with a short section: trusted publishing status (enabled or not) and rationale
+**Проблема 1: SETUP_INSPACE использует последние 2 слота (patch+load) — конфликт с другими словами.**
+- Механизм chain-load использует слоты PROCESSOR_N-2 и PROCESSOR_N-1 для загрузки следующего слоя.
+- Если другое слово также использует эти слоты, возникает конфликт.
+- Решение: зафиксировать в документации, что слоты PROCESSOR_N-2 и PROCESSOR_N-1 зарезервированы для chain-load и не должны использоваться словами для других целей.
 
-------------------------------------------------------------
+**Проблема 2: COMPILE_ONE не проверяет FREE==0 (истощение пула).**
+- Если пул исчерпан, `CUR = FREE = 0` (нулевой указатель), и последующие операции чтения из `[*CUR]` будут читать из начала space (processor area), что приведёт к неопределённому поведению.
+- Решение: добавить проверку `FREE != 0` перед выделением ячейки. Если `FREE == 0` → HALT с кодом `VM_E_POOL_EXHAUSTED = 4`.
+- Сложность: проверка требует дополнительных слотов. Если COMPILE_ONE уже использует 12 из 64 слотов, добавление проверки может не влезть в одну страницу.
+- Альтернатива: сделать отдельную страницу-обработчик ошибки, на которую chain-load при FREE==0.
 
-## Milestone 8 — Quality audit report and follow-ups (done)
+**Проблема 3: DO-END цикл не имеет обратной связи.**
+- SETUP_INSPACE chain-load на BRANCH, BRANCH→DO, DO→...→END→HALT.
+- Управление не возвращается к вызвавшему коду.
+- Это особенность архитектуры (однонаправленный chain-load).
+- Для возврата управления после компиляции нужно: (1) END не устанавливает HALT, а chain-load на следующую страницу; (2) передать управление через цепочку страниц.
+- Текущее поведение (END→HALT) корректно для автономной компиляции.
 
-Goal: produce a short, actionable report about code, docs, and CI alignment, with prioritized follow-ups.
+**Проблема 4: TOKEN читается из in-space source в COMPILE_ONE и снова в DO — семантика дублируется.**
+- COMPILE_ONE читает токен из `[*VAR_N]` (адрес задаётся через LITN).
+- DO читает токен из `mmio.in_dst` (через in-space source, установленный SETUP_INSPACE).
+- Это разные механизмы: COMPILE_ONE предназначен для ручного вызова (с предварительно установленным VAR_N), DO — для автоматического цикла.
+- Дублирование оправдано: COMPILE_ONE — низкоуровневый примитив для отладки и unit-тестов, DO — оптимизированная версия для цикла.
 
-Deliverables
-- Audit report v0
-  - doc: doc/audit_report_v0.md
-  - includes: evidence (CI jobs and checks), drift checks (versions and references), and a prioritized follow-up list
-- Follow-ups triage
-  - Move accepted follow-ups into doc/status.md Next (prioritized) only
+**Проблема 5: нет теста на полный цикл SETUP_INSPACE → компиляция → проверка результата.**
+- `test_compile_tokens.f0` вызывает SETUP_INSPACE, но не проверяет, что ячейки созданы.
+- Необходим тест уровня 3 (см. ниже).
 
-------------------------------------------------------------
+**Три уровня тестов:**
 
-## Milestone 9 — Geek demo: Game of Life on VM/Forth0 (done)
+**Уровень 1 (unit): отдельные слова.**
+- `test_compile_one.f0`: проверяет COMPILE_ONE изолированно. Записывает токен, вызывает COMPILE_ONE, копирует VAR_CUR в TESTG, HALT. Верификация: проверить, что VAR_CUR != 0 и указывает на ячейку с токеном HALT.
+- `test_setup_inspace.f0` (не существует, нужно создать): проверяет SETUP_INSPACE изолированно. Настраивает VAR_SRC_ADDR/VAR_SRC_END, вызывает SETUP_INSPACE, проверяет что `in_src_mode=1` и `in_src_addr` продвинулся.
 
-Goal: provide a small, deterministic VM/Forth0 demo for low-level readers, without changing the scheduler v0 product path.
+**Уровень 2 (интеграция): SETUP_INSPACE + BRANCH + DO + END.**
+- `test_compile_tokens.f0`: записывает 3 токена HALT, вызывает SETUP_INSPACE. Верификация: проверить после останова, что пул содержит 3 ячейки с токенами HALT.
+- **Недостаток текущего теста:** не проверяет результат. Нужно модифицировать: после компиляции, скопировать ячейки в TESTG и проверить через дамп.
 
-Deliverables
-- Forth0 demo program
-  - file: src/forth0/demos/life.f0
-- Short doc page
-  - doc: doc/demos/life.md
-  - includes: how to run, what output to expect, and scope note (demo only)
-- Optional: smoke check
-  - test: a small deterministic run checked in CI or TDD (if it stays stable)
+**Уровень 3 (системный): полный цикл с верификацией.**
+- НЕ СУЩЕСТВУЕТ. Нужно создать `test_compile_full_cycle.f0`.
+- Сценарий:
+  1. Записать N токенов (N < pool_cells) в область TESTG+200.
+  2. Инициализировать пул (POOL_BASE, FREE).
+  3. Установить VAR_SRC_ADDR, VAR_SRC_END.
+  4. Вызвать SETUP_INSPACE.
+  5. После HALT: скопировать цепочку ячеек в TESTG+400.
+  6. Проверить: количество ячеек = N, каждая содержит ожидаемый токен.
+- Дополнительно: тест на истощение пула (N > pool_cells → ожидаемый HALT с VM_E_POOL_EXHAUSTED).
 
-## Non-goals (current scope)
 
-- No topology or routing selection
-- No address-level allocation or validation inside endpoints (src_bit or dst_bit)
-- No global optimality claims
+## Фаза 3: Self-hosting (детальный план)
+
+**Цель:** forth0c работает целиком внутри VM: читает .f0 из space, компилирует токены, записывает результат.
+
+### Архитектура self-hosting компилятора
+
+```
+Source .f0 (bytes in space)
+    │
+    ▼
+[LEXER] → word string (characters)
+    │
+    ▼
+[SYMBOL LOOKUP] → ART address (24 bits) or DIRECTIVE flag
+    │
+    ▼
+[COMPILER] → emit token(s) to Output area
+```
+
+### Минимальное подмножество .f0
+
+**Поддерживаем:** word calls, immediate args, comments, `const`, `set24`, `copybits`, `emit`, numbers
+**НЕ поддерживаем:** `macro`, `for`, `if`, `include`, `page`/`endpage`
+
+Покрывает ~80% использования .f0 (тесты, простые программы).
+
+### Фазы реализации
+
+| Фаза | Срок | Содержание |
+|------|------|------------|
+| 3.0 | 1-2 нед | Symbol Table генерация в mkimage |
+| 3.1 | 2-3 нед | Lexer: busy-wait loop (MVP) |
+| 3.2 | 1-2 нед | Symbol Lookup (linear scan) |
+| 3.3 | 2-3 нед | Expression Evaluator (recursive descent) |
+| 3.4 | 3-4 нед | Compiler Core (MAIN_LOOP + COMPILE_WORD) |
+| 3.5 | 2-3 нед | Directive Handlers (const, set24, copybits, emit) |
+| 3.6 | 1-2 нед | Интеграционный тест (сравнение с хост forth0c) |
+| 3.7 | 2-3 нед | Bulk read оптимизация лексера (буфер 256-1024 байт) |
+| 3.8 | 2-3 нед | Двухпроходная компиляция (bootstrap) |
+| **Итого** | **16-24 нед** | **4-6 месяцев** |
+
+### Решения блокеров
+
+**Блокер 1: Исходник ~1 МБ > 512 КБ space**
+- Решение: двухпроходная компиляция
+- Хост forth0c компилирует self-hosting компилятор → .tok (~6 КБ)
+- .tok загружается в space через in-space source
+- Self-hosting компилятор запускается и компилирует остальной код
+
+**Блокер 2: Busy-wait лексер: ~32-64 байт/сек**
+- Решение: двухэтапная оптимизация
+- Этап 1 (MVP): busy-wait loop через chain-load (~2-3 тика/байт)
+- Этап 2 (Production): bulk read буфер 256-1024 байт (~100x быстрее)
+- Одно чтение in_req заполняет буфер → лексер работает из буфера без MMIO
+
+### Ключевые технические вызовы
+
+1. **Busy-wait лексер** — решается через bulk read буфер
+2. **MUL24/DIV24** — требуют 4 страницы (240 слотов)
+3. **Рекурсия в EXPR** — через pool ячеек (глубина ≤ 10)
+4. **Размер исходника** — решается двухпроходной компиляцией
+5. **Нет conditional branch** — каждая проверка = отдельная страница
+
+## 5) Файловая система — критерии подключения
+
+**Текущее состояние:**
+- Код .f0 загружается с хоста через stdin (режим legacy) или через in-space source (память VM).
+- Нет постоянного хранения: результаты теряются между запусками VM.
+- `service_out` выводит данные на stdout хоста (через FILE*).
+
+**Когда FS нужна:**
+- Для чтения/записи более 1 файла за один запуск VM.
+- Для сохранения результатов между запусками.
+- Для программ, использующих `include` (директиву .f0) — FS нужна на compile-time, чтобы читать включаемые файлы из space.
+
+**Когда НЕ нужна:**
+- Встроенные тесты (smoke checks), демо (life.f0).
+- Любая программа, которая умещается в один .f0 файл + in-space source.
+
+**Критерий A: include-зависимость.**
+- Если программа использует `include` — FS нужна на compile-time внутри VM.
+- До Фазы 3 (self-hosting) все include обрабатываются на хосте (forth0c), поэтому FS не нужна.
+
+**Критерий B: объём вывода.**
+- Если программа пишет отчёт >1 MB — FS нужна на run-time (stdout может не справиться).
+- Для тестов (вывод <1 KB) stdout достаточен.
+
+**Критерий C: self-hosting.**
+- До Фазы 3 FS не нужна — хост обеспечивает весь I/O.
+- В Фазе 3 forth0c должен читать .f0 файлы из space — тогда FS становится обязательной.
+
+**Решение: отложить файловую систему до Фазы 3.**
+- Пока in-space source (чтение токенов из памяти) достаточно для всех задач Фазы 1 и Фазы 2.
+- Файловая система — отдельный Milestone, не входящий в текущий план bootstrapping.
+
+## 6) График и метрики
+
+**Фаза 0 (1 неделя):**
+- Стабилизация существующих тестов (test_compile_one, test_compile_tokens, test_sched_validate).
+- Документирование всех блокеров (doc/roadmap.md, doc/stability.md).
+- Проверка: `make test`, `make tdd` проходят без ошибок.
+
+**Фаза 0.5 (1 неделя):**
+- Реализация LOAD24AP, LOAD24BP, STORE24RP (уже существует в ART[67-69]).
+- Написание тестов `test_add24p_via_prims.f0`, `test_ptrprims_padding.f0`.
+- Документирование проблемы выравнивания ptrprims_padding.
+- Фиксация non-goal по переполнению SUM24.
+
+**Фаза 1 (1 неделя):**
+- Интеграция VALIDATE_SCHED и SCHED_INFO (уже существует в ART[70-71]).
+- Написание интеграционного теста `test_sched_validate.f0`.
+- Документирование компромисса: valid_flag вычисляется на хосте, VM только проверяет.
+
+**Фаза 2 (2 недели):**
+- Разработка тестов уровня 1 (COMPILE_ONE unit).
+- Разработка тестов уровня 2 (SETUP_INSPACE + chain интеграция).
+- Разработка тестов уровня 3 (полный цикл).
+- Исправление проблемы FREE==0 (VM_E_POOL_EXHAUSTED).
+- Создание теста на истощение пула.
+- Создание теста на неожиданный EOF (VM_E_TOKEN_EOF) и неизвестный токен (VM_E_INVALID_TOKEN).
+
+**Фаза 3 (4 недели, дальняя цель):**
+- Проработка архитектуры self-hosting forth0c внутри VM.
+- Реализация файловой системы.
+- Перенос компилятора.
+
+**Метрики:**
+- Количество проходящих тестов: сейчас 21 тест, цель 25+ после Фазы 2.
+- Покрытие слов: 0/3 слова в Фазе 0, 3/3 к Фазе 2 (COMPILE_ONE, SETUP_INSPACE, BRANCH/DO/END).
+- Время компиляции: хост <10 мс, in-space <100 мс (на std7_fixed, 64 слота, 128 ячеек пула).
+- Размер пула: ~128 ячеек (POOL_BASE + 128 * 64 бит = POOL_BASE + 8192 бит = ~1 КБ).
+
+## 7) Критерии готовности (DoD)
+
+**Фаза 0:**
+- Все существующие тесты проходят (`make test`, `make tdd`).
+- `doc/roadmap.md` актуален и содержит все идентифицированные блокеры.
+- Нет регрессий относительно предыдущего коммита.
+
+**Фаза 0.5:**
+- `test_add24p_via_prims.f0` проходит: проверяет LOAD24AP/LOAD24BP/STORE24RP.
+- `test_ptrprims_padding.f0` проходит: документирует проблему выравнивания.
+- Проблема `strict_align32` документирована в `doc/forth0.md` и `doc/roadmap.md`.
+
+**Фаза 1:**
+- `test_sched_validate.f0` проходит: VALIDATE_SCHED проверяет valid_flag.
+- SCHED_INFO корректно читает NUM_TICKS, NUM_CHUNKS, SLOTS.
+- Документировано, что полная STRICT1-валидация остаётся на хосте.
+
+**Фаза 2:**
+- Уровень 1: `test_compile_one.f0` проходит (COMPILE_ONE unit).
+- Уровень 2: `test_compile_tokens.f0` проходит (SETUP_INSPACE интеграция).
+- Уровень 3: `test_compile_full_cycle.f0` проходит (полный цикл с верификацией).
+- Тест истощения пула проходит (ожидаемый VM_E_POOL_EXHAUSTED).
+- Тест неожиданного EOF проходит (ожидаемый VM_E_TOKEN_EOF).
+- Пул не истощается при N ≤ pool_cells (тест с >64 токенов).
+- Все новые коды ошибок (4, 5, 6) корректно возвращаются и диагностируются.
+
+**Для каждого коммита:**
+- `make test` проходит.
+- `make tdd` проходит.
+- commit message содержит метку фазы: `[phase-0]`, `[phase-0.5]`, `[phase-1]`, `[phase-2]`, `[phase-3]`.
+
+**Для каждого PR:**
+- CI проходит без ошибок.
+- Нет регрессий в scheduler-bench.
+- `doc/roadmap.md` обновлён при необходимости.
+
+## 8) Обработка ошибок (коды ошибок)
+
+**Существующие коды (space.h, `vm_err_kind_t`):**
+- `VM_E_NONE = 0` — успех.
+- `VM_E_SRC_BOUNDS = 1` — выход src за границы space.
+- `VM_E_DST_BOUNDS = 2` — выход dst за границы space.
+- `VM_E_ALIGN32 = 3` — невыровненный 32-битный указатель (strict_align32).
+
+**Новые коды (нужно добавить в space.h):**
+- `VM_E_POOL_EXHAUSTED = 4` — пул ячеек исчерпан (FREE == 0). COMPILE_ONE/DO должны проверять FREE перед выделением.
+- `VM_E_TOKEN_EOF = 5` — неожиданный конец токенов (EOF до END). Если in-space source исчерпан, а END ещё не обработан.
+- `VM_E_INVALID_TOKEN = 6` — неизвестный токен (не DO и не END). Если BRANCH читает токен, который не является ни DO (продолжить), ни END (закончить).
+
+**Обработка:**
+- При `VM_E_*` выше 3 — HALT с кодом ошибки, записанным в `TESTG + 0` (первые 24 бита TESTSCR) для диагностики.
+- Хост-обёртка (run_f0.sh) читает TESTG+0 после останова и выводит сообщение об ошибке.
+- Для `VM_E_POOL_EXHAUSTED` дополнительно: записать в TESTG+24 адрес последней успешно выделенной ячейки (CUR) для упрощения отладки.
+- Для `VM_E_TOKEN_EOF`: записать в TESTG+24 количество успешно скомпилированных токенов.
+
+**Где добавлять проверки:**
+- `COMPILE_ONE` (words_compile.c): после чтения FREE, перед использованием CUR. Если FREE == 0 → HALT с VM_E_POOL_EXHAUSTED.
+- `DO` (words_tokcomp.c): аналогичная проверка после CUR = FREE.
+- `BRANCH` (words_tokcomp.c): после чтения токена, проверить что это DO или END. Если неизвестный токен → HALT с VM_E_INVALID_TOKEN.
+- `service_in` (space.c): при in_src_mode и EOF (src_addr >= end_addr) — не устанавливать HALT, а вернуть EOF. Обработка EOF — задача BRANCH.
+
+## 9) Стратегия отката
+
+**Принципы:**
+- Каждый коммит атомарный, связан с одной задачей.
+- commit message содержит метку фазы: `[phase-0]`, `[phase-0.5]`, `[phase-1]`, `[phase-2]`, `[phase-3]`.
+- Критические коммиты помечаются `[bootstrap]` для быстрого поиска при git bisect.
+
+**Процедура отката:**
+- Стандартный откат: `git revert <commit>`.
+- Если тесты не проходят после коммита: stop-the-line, fix или revert в течение 1 рабочего дня.
+- Для revert используется `git revert --no-edit` для автоматического сообщения.
+
+**Управление ветками:**
+- Крупные изменения (Фаза 2, 3): feature branch → код-ревью → merge в main → delete branch.
+- Мелкие изменения (Фаза 0.5): можно коммитить напрямую в main, если тесты проходят.
+- Если feature branch расходится с main: rebase на main перед merge.
+
+**Поиск регрессий:**
+- `git log --oneline --grep="[bootstrap]"` — найти все bootstrap-коммиты.
+- `git bisect start` + `git bisect good/bad` — бинарный поиск регрессии.
+- Критерий good: `make test && make tdd` проходит.
+
+## 10) Риски
+
+**1. Истощение пула.**
+- COMPILE_ONE при FREE == 0 пишет в нулевой указатель, что приводит к повреждению processor area.
+- Статус: НЕ РЕШЕНО. Нужно добавить проверку FREE == 0 и код VM_E_POOL_EXHAUSTED.
+- Воздействие: высокое, critical.
+- Митигация: добавить проверку до Фазы 2.
+
+**2. Размер слоя.**
+- Сложные слова (COMPILE_ONE: 12 слотов) могут не влезть в PROCESSOR_N = 64 слотов.
+- SETUP_INSPACE: 8 слотов + chain-load. BRANCH: 4 слота. DO: 11 слотов + chain-load. END: 3 слота.
+- Все текущие слова укладываются в 64 слота.
+- Риск: если добавить проверки ошибок (FREE==0, проверка токена), слоты могут закончиться.
+- Митигация: при нехватке слотов — разбить слово на две страницы с chain-load между ними.
+
+**3. Перезапись.**
+- SETUP_INSPACE использует слоты PROCESSOR_N-2, PROCESSOR_N-1 для chain-load (loader 3B).
+- Если другое слово также использует эти слоты, возникает перезапись.
+- Статус: частично решено документацией (слоты PROCESSOR_N-2 и PROCESSOR_N-1 зарезервированы).
+- Митигация: добавить assert в mkimage, проверяющий что слово не использует зарезервированные слоты.
+
+**4. Тест ptrprims_padding: невыровненные указатели.**
+- `strict_align32` может быть отключён (strict_align32 = 0) для тестов.
+- Статус: НЕ РЕШЕНО. Нужно явное решение: (a) отключать strict_align32 для теста, (b) ожидать VM_E_ALIGN32.
+- Воздействие: среднее, тест может не работать с включённым strict_align32.
+- Митигация: документировать и сделать тест явно ожидающим ошибку или отключающим strict_align32.
+
+**5. Отсутствие интеграционного теста.**
+- `test_compile_tokens.f0` не проверяет результат компиляции (не читает созданные ячейки).
+- Статус: НЕ РЕШЕНО. Нужен тест уровня 3.
+- Воздействие: высокое — регрессии могут остаться незамеченными.
+
+**6. in_src_mode leak.**
+- Если `in_src_mode` установлен (1), последующие вызовы service_in будут читать из space, а не из stdin.
+- После завершения in-space компиляции, `in_src_mode` может остаться = 1.
+- Если следующий слой ожидает stdin, он получит данные из space (неопределённое поведение).
+- Митигация: END должен сбрасывать `in_src_mode = 0` перед HALT.
+
+**7. Размер POOL.**
+- 128 ячеек * 64 бита = 1024 байта (8192 бита).
+- Для больших .f0 программ (например, life.f0) может не хватить.
+- Расход: каждая инструкция в .f0 → один токен → одна ячейка.
+- life.f0: ~200 строк → ~50-100 токенов → ~50-100 ячеек.
+- Для тестов 128 ячеек достаточно. Для self-hosting (Фаза 3) потребуется больше (до 1024+).
+- Митигация: сделать pool_cells параметром mkimage, проверить что POOL не пересекается с TESTSCR.
+
+## 11) Milestone 10 — Упрощение эмулятора после bootstrap
+
+После успешного self-hosting (Фаза 3) эмулятор можно существенно упростить.
+
+**Удалить stdin-режим (legacy):**
+- `in_src_mode = 0` — весь код legacy stdin (fread из FILE*) можно удалить.
+- `vm_run()` и `vm_tick()` перестают принимать `FILE *in`.
+- Все тесты переходят на in-space mode.
+
+**Удалить service_in/service_out:**
+- Заменить на прямой доступ к space: MMIO для ввода/вывода больше не нужен, код пишет напрямую в space.
+- `fwrite` и `fflush` из service_out убираются.
+
+**Упростить MMIO:**
+- Оставить только: `halt`, `in_src_mode`, `in_src_addr`, `in_src_end`.
+- Удалить: `in_req`, `in_done`, `in_eof`, `in_err`, `in_dst`, `in_len`, `in_got`, `out_req`, `out_done`, `out_err`, `out_src`, `out_len`, `out_got`.
+- Размер MMIO сокращается с ~200 бит до ~50 бит.
+
+**Удалить loader 3B:**
+- Заменить на прямой chain-load: SETUP_INSPACE как единственный entry point.
+- Новый API: `vm_run_inspace(vm, token_addr, token_end)` → compile + execute.
+- `vm_build_boot_loader_layer()` убирается.
+
+**Упростить vm_tick:**
+- Убрать hooks (tick_begin, note_copy, tick_end).
+- Убрать fread/fwrite из service_in/service_out.
+- vm_tick становится чистой функцией: копирование данных по слотам.
+
+**Новый API:**
+```c
+vm_rc_t vm_run_inspace(vm_t *vm, bitaddr_t token_addr, bitaddr_t token_end);
+```
+- Настраивает in_src_mode = 1, in_src_addr = token_addr, in_src_end = token_end.
+- Chain-load на SETUP_INSPACE.
+- Выполняет до HALT.
+- Возвращает VM_OK или VM_ERR.
+
+**Риск: упрощение может сломать существующие тесты.**
+- `test_sched_validate.f0` использует legacy stdin для загрузки schedule.
+- Некоторые тесты могут явно или неявно зависеть от service_in/service_out.
+
+**План миграции:**
+1. Добавить `vm_run_inspace` как параллельный API (не удаляя старый `vm_run`).
+2. Перевести все существующие тесты на in-space mode (подавать данные через space, а не через stdin).
+3. После полного перехода тестов — удалить старый `vm_run`.
+4. Верификация: `make test && make tdd` проходят.
+
+## 12) Связь с документацией проекта
+
+**doc/forth0.md:**
+- Текущий фокус: хост-компиляция (forth0c → .tok).
+- Дополнить: раздел об in-space компиляции (SETUP_INSPACE, BRANCH/DO/END, пул ячеек).
+- Обновить alignment contract: добавить примечание о `strict_align32`.
+
+
+**doc/memory_layout.md:**
+- Добавить гарантии для POOL_BASE (ART[78]) после Фазы 2.
+- Указать, что POOL не пересекается с TESTSCR.
+- Добавить размер пула (N cells * 64 бит).
+
+**doc/abi_artifacts.md:**
+- ART[67-81] уже описаны (генерируется из artifacts.h).
+- При добавлении новых слов (например, обработчиков ошибок) — ART_COUNT увеличивается.
+- Обновлять при каждом добавлении.
+
+**doc/stability.md:**
+- .f0 v0 стабилен (surface syntax).
+- Зафиксировать in-space формат: цепочка ячеек (next_ptr + code_ptr), пул, переменные FREE/CUR/NEXTFREE/PREV_NEXT_FLD/TOKEN.
+
+**doc/scheduler_io_v0.md:**
+- valid_flag в TESTG+96 — хост-вычислен, VM только проверяет.
+- Ссылка на `doc/roadmap.md` для деталей in-space валидации.
+
+**doc/glossary.md:**
+- Добавить термины: "in-space compilation", "pool cell", "chain-load", "token compiler", "loader 3B".
+- Определения должны быть краткими и ссылаться на doc/roadmap.md.
+
+**doc/testing.md:**
+- Добавить три уровня тестов in-space: unit (уровень 1), integration (уровень 2), system (уровень 3).
+- Описать процедуру верификации: дамп space → проверка ячеек → проверка токенов.
+
+---
+
+## 13) Фаза 3: Self-hosting — детальный план
+
+_файл: doc/roadmap.md, добавлено 2026-05-30_
+
+### 13.0) Цель и ограничения
+
+**Цель:** forth0c (компилятор .f0 → .tok) работает целиком внутри Copy-Space VM.
+Читает .f0 исходный текст из space, компилирует в 24-битные токены (ART-адреса), записывает результат в space.
+
+**Ключевое отличие от Фазы 2:**
+- Фаза 2: BRANCH/DO/END читает **предкомпилированные токены** (24-битные значения) из space
+- Фаза 3: forth0c читает **текст .f0** (байты) из space и **сам** разрешает имена в токены
+
+**Ограничения VM:**
+- Единственная инструкция: `copy(n, dst, src)` — копирование N бит
+- 64 слота на тик (PROCESSOR_N = 64)
+- Нет ALU (но есть ADD24, EQ24, LT24, BAND/BOR/BNOT/BXOR через самомодифицирующийся код)
+- Память бит-адресуемая, 512 КБ
+
+**Что уже работает (Фаза 2):**
+- In-space source: чтение байтов из space через MMIO (in_src_mode=1, in_len=8)
+- BRANCH/DO/END цикл компиляции токенов
+- Пул ячеек для результата
+- Ариметика: ADD24, EQ24, LT24
+
+### 13.1) Архитектура self-hosting компилятора
+
+**Общая схема:**
+
+```
+Space layout:
+┌─────────────────────────────────────────────────────────┐
+│ Processor (64 slots)                                    │
+├─────────────────────────────────────────────────────────┤
+│ MMIO                                                    │
+├─────────────────────────────────────────────────────────┤
+│ Workspace (переменные компилятора)                      │
+├─────────────────────────────────────────────────────────┤
+│ ART таблица (82 записи × 24 бита = 1968 бит)           │
+├─────────────────────────────────────────────────────────┤
+│ Symbol Table (имена → ART адреса)                       │
+├─────────────────────────────────────────────────────────┤
+│ Pool (128+ ячеек × 64 бита)                             │
+├─────────────────────────────────────────────────────────┤
+│ Source .f0 (текст, байты)                               │
+├─────────────────────────────────────────────────────────┤
+│ Output tokens (результат компиляции)                    │
+├─────────────────────────────────────────────────────────┤
+│ Test Scratch (TESTSCR)                                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Поток данных:**
+
+```
+Source .f0 (bytes in space)
+    │
+    ▼
+[LEXER] ──→ word string (characters)
+    │
+    ▼
+[SYMBOL LOOKUP] ──→ ART address (24 bits) or DIRECTIVE flag
+    │
+    ▼
+[COMPILER] ──→ emit token(s) to Output area
+    │
+    ▼
+Output tokens (24-bit ART addresses in space)
+```
+
+**Страницы компилятора (64 слота каждая):**
+
+| Страница | Назначение | Сложность |
+|----------|------------|-----------|
+| SETUP_FORTH0C | Инициализация: настроить in-space source для чтения текста | Низкая |
+| MAIN_LOOP | Главный цикл: читай слово → ищи → компилируй | Средняя |
+| LEXER | Лексер: чтение символов, пропуск пробелов/комментариев | Высокая |
+| LOOKUP | Поиск в таблице символов | Средняя |
+| COMPILE_WORD | Компиляция одного слова (токен + immediate) | Средняя |
+| DIRECTIVE | Обработчик директив (set24, copybits, emit, const) | Высокая |
+| EXPR | Вычисление выражений | Высокая |
+| OUTPUT | Запись результата в output buffer | Низкая |
+| ERROR | Обработка ошибок | Низкая |
+
+### 13.2) Таблица символов (Symbol Table)
+
+**Проблема:** Текущая ART — это index→address (ART[0]=head_cell, ART[4]=word_setup, ...).
+Для self-hosting нужен reverse lookup: name→address.
+
+**Решение:** Хост-инструмент `mkimage` генерирует **Symbol Table** в space:
+
+```
+Symbol Table Format:
+┌──────────────────────────────────────────┐
+│ sym_count: 24 bits (количество символов) │
+├──────────────────────────────────────────┤
+│ For each symbol:                         │
+│   addr: 24 bits (ART address)           │
+│   name_len: 8 bits (длина имени)        │
+│   name: name_len bytes (имя, без \0)    │
+│   padding to 32-bit boundary            │
+└──────────────────────────────────────────┘
+```
+
+**Размер:** ~82 символа × (3+1+~10+padding) ≈ ~1.5 КБ
+
+**Новые ART записи:**
+- `ART_SYM_TABLE_BASE` (ART[82]) — базовый адрес таблицы символов
+- `ART_SYM_TABLE_SIZE` (ART[83]) — размер в битах
+- `ART_COMPILER_BASE` (ART[84]) — базовый адрес страниц компилятора
+
+**Обновление syms.inc:** Добавить все имена из g_syms[] в Symbol Table.
+Формат генерации: mkimage пишет Symbol Table в space при построении std7_fixed.
+
+### 13.3) Лексер (LEXER page)
+
+**Вход:** in-space source (текст .f0, in_len=8)
+**Выход:** слово (идентификатор/число/строка) в буфере
+
+**Алгоритм:**
+
+```
+skip_whitespace:
+  loop:
+    read byte from source (in_req=1, wait in_done)
+    if EOF → return TK_EOF
+    if byte == '\n' → line++
+    if byte == ' ' or '\t' or '\r' or '\n' → continue
+    if byte == '#' or '\' → skip to end of line → continue
+    break (found first non-whitespace)
+
+read_token:
+  if byte == '"':
+    read string until '"'
+    return TK_STR
+
+  if byte is digit:
+    read number (decimal or 0x hex)
+    return TK_NUM
+
+  if byte is alpha or '_':
+    read identifier (alphanumeric, _, [, ])
+    return TK_ID
+
+  if byte in '+-*/(),':
+    return TK_OP
+
+  error: unexpected character
+```
+
+**Реализация на Copy-VM:**
+
+Каждое чтение байта:
+1. Записать in_req = 1
+2. Ждать in_done = 1 (busy-wait: читать in_done в цикле)
+3. Прочитать 8 бит из in_dst (или из in_got → получить количество)
+4. Если in_eof = 1 → EOF
+
+**Проблема busy-wait:** VM не имеет "ждать" инструкции. Читать in_done можно через:
+```
+loop:
+  copy 1 bit from mmio.in_done → scratch_bit
+  if scratch_bit == 0 → goto loop (через BRANCH)
+  ... continue ...
+```
+
+Это требует conditional branch, которого нет в текущей VM!
+
+**Решение проблемы busy-wait:**
+
+**Вариант A:** Использовать встроенный in_req/in_done handshake как в BRANCH/DO/END:
+- Каждый тик VM проверяет in_done после выполнения слотов
+- Если in_done=0, следующий тик снова выполнит LEXER страницу
+- LEXER читает in_done в начале: если 0 → chain-load обратно на себя (NOP с loop)
+
+**Вариант B:** Добавить "wait" примитив в VM:
+- Новая MMIO регистра: `in_wait` (1 бит)
+- Если in_wait=1, VM не выполняет слоты до in_done=1
+- Это требует изменений в space.c
+
+**Вариант C:** Разбить LEXER на "чанки":
+- Каждый чанк обрабатывает один байт
+- После чтения байта → chain-load на обработку
+- Busy-wait реализуется через цепочку page→page→page...
+
+**Рекомендация:** Вариант A (самый простой, не требует изменений VM).
+LEXER страница chain-load на саму себя пока in_done=0.
+
+**Сложность:** ~50-60 слотов (помещается в одну страницу).
+
+### 13.4) Поиск символов (LOOKUP page)
+
+**Вход:** слово (идентификатор) в буфере, Symbol Table в space
+**Выход:** ART адрес (24 бита) или 0 (не найден), флаг "это директива"
+
+**Алгоритм (linear scan):**
+
+```
+sym_ptr = SYM_TABLE_BASE + 24 (после sym_count)
+sym_count = read 24 bits from SYM_TABLE_BASE
+
+for i = 0 to sym_count-1:
+  addr = read 24 bits from sym_ptr
+  name_len = read 8 bits from sym_ptr+24
+  match = compare buffer with sym_ptr+32, length=name_len
+  if match and buffer[name_len] is terminator:
+    return addr  // найден!
+  sym_ptr += 32 + name_len + padding
+
+return 0  // не найден
+```
+
+**Сравнение строк:**
+
+```
+compare(buffer, sym_name, len):
+  for i = 0 to len-1:
+    b1 = read byte from buffer+i
+    b2 = read byte from sym_name+i
+    if b1 != b2: return 0
+  return 1
+```
+
+**Оптимизация:** Сравнивать по 8 байт за раз (если выровнено).
+
+**Сложность:** ~30-40 слотов.
+
+### 13.5) Вычисление выражений (EXPR page)
+
+**Вход:** строка выражения в буфере
+**Выход:** 24-битное значение
+
+**Подмножество .f0 выражений для self-hosting:**
+- Числа: `123`, `0xFF`, `0b1010`
+- Операции: `+`, `-`, `*`, `/`
+- Скобки: `(...)`
+- Символы: `HALT`, `TESTG`, `VAR_N` (ART lookup)
+- Нет: `eq`, `ne`, `lt`, `gt`, `le`, `ge` (упрощение)
+
+**Алгоритм (recursive descent):**
+
+```
+expr = term (('+' | '-') term)*
+term = factor (('*' | '/') factor)*
+factor = NUMBER | SYMBOL | '(' expr ')' | ('+' | '-') factor
+```
+
+**Реализация на Copy-VM:**
+
+Рекурсия через стек ячеек (POOL):
+- Каждый вызов expr/term/factor выделяет ячейку из пула
+- Сохраняет адрес возврата и состояние
+- По завершении → возврат через chain-load
+
+**Альтернатива (без рекурсии):** Итеративный парсер с явным стеком.
+Стек операций хранится в фиксированной области workspace.
+
+**Сложность:** ~40-50 слотов (без рекурсии) или ~20 слотов + рекурсивные вызовы.
+
+### 13.6) Компилятор слов (COMPILE_WORD page)
+
+**Вход:** слово (идентификатор) + его ART адрес
+**Выход:** токен(ы) записаны в output buffer
+
+**Алгоритм:**
+
+```
+// Слово уже найдено, addr = ART адрес
+// Записываем токен
+write 24-bit addr to output_ptr
+output_ptr += 24
+
+// Проверяем, нужно ли immediate значение
+if word_needs_imm(addr):
+  // Парсим выражение
+  imm_value = parse_expr()
+  write 24-bit imm_value to output_ptr
+  output_ptr += 24
+```
+
+**Список слов с immediate аргументом:**
+- LITN, LITD, LITS, LITIP
+- LITAP, LITBP, LITRP
+
+**Реализация:** Таблица (массив) ART адресов слов с immediate. Linear scan.
+
+**Сложность:** ~20-30 слотов.
+
+### 13.7) Обработчик директив (DIRECTIVE page)
+
+**Директива** — это не ART слово, а ключевое слово .f0, которое требует особой обработки.
+
+**Список директив для self-hosting:**
+
+| Директива | Описание | Сложность |
+|-----------|----------|-----------|
+| `const NAME VALUE` | Определение константы | Низкая |
+| `set24 DST VAL` | Записать 24 бита | Низкая |
+| `copybits N DST SRC` | Копировать N бит | Низкая |
+| `emit VAL` | Записать значение | Низкая |
+| `setbit DST VAL` | Установить 1 бит | Низкая |
+| `setbyte DST VAL` | Записать 1 байт | Низкая |
+| `macro` / `endmacro` | Определение макроса | Высокая |
+| `for` / `endfor` | Цикл компиляции | Высокая |
+| `if` / `else` / `endif` | Условная компиляция | Средняя |
+| `include` | Включение файла | Высокая |
+| `page` / `endpage` / `instr` | Определение страниц | Средняя |
+
+**Решение:** Для минимального self-hosting поддерживаем только:
+- `const`, `set24`, `copybits`, `emit`, `setbit`, `setbyte`
+- Пропускаем: `macro`, `for`, `if`, `include`, `page`/`endpage`
+
+Это покрывает ~80% использования .f0 (тесты, простые программы).
+
+**Реализация:**
+
+```
+// DIRECTIVE страница
+// Слово уже прочитано, нужно проверить является ли оно директивой
+
+if str_eq(word, "const"):
+  parse_and_define_const()
+elif str_eq(word, "set24"):
+  parse set24 arguments, emit LITN+LITD+LITS+COPY tokens
+elif str_eq(word, "copybits"):
+  parse arguments, emit LITN+LITD+LITS+COPY tokens
+elif str_eq(word, "emit"):
+  parse argument, emit value
+elif str_eq(word, "setbit"):
+  parse arguments, emit LITN+LITD+LITS+COPY tokens (1 bit)
+elif str_eq(word, "setbyte"):
+  parse arguments, emit 8× setbit
+else:
+  error: unknown directive
+```
+
+**Сложность:** ~50-60 слотов.
+
+### 13.8) Главный цикл (MAIN_LOOP page)
+
+**Алгоритм:**
+
+```
+setup_inspace(source_addr, source_end, in_len=8)
+
+main_loop:
+  word = read_next_word()        // LEXER
+  if word == TK_EOF: goto done
+
+  addr = symbol_lookup(word)     // LOOKUP
+  if addr != 0:
+    compile_word(addr)           // COMPILE_WORD
+    goto main_loop
+
+  if is_directive(word):
+    handle_directive(word)       // DIRECTIVE
+    goto main_loop
+
+  error: unknown word
+
+done:
+  write terminator to output
+  halt
+```
+
+**Цепочка page'ей:**
+
+```
+SETUP_FORTH0C → MAIN_LOOP → LEXER → MAIN_LOOP
+                   │
+                   ├─→ LOOKUP → COMPILE_WORD → MAIN_LOOP
+                   │
+                   └─→ DIRECTIVE → MAIN_LOOP
+```
+
+Каждый переход — это chain-load (loader 3B).
+
+**Сложность:** ~30-40 слотов.
+
+### 13.9) Инициализация (SETUP_FORTH0C page)
+
+**Алгоритм:**
+
+```
+// Настраиваем in-space source для чтения .f0 текста
+copy VAR_SRC_ADDR → mmio.in_src_addr
+copy VAR_SRC_END  → mmio.in_src_end
+
+// Устанавливаем in_len = 8 (читаем по 1 байту)
+// Нужно записать значение 8 в临时 область
+data_area: [8 in 24 bits]
+copy data_area → mmio.in_len
+
+// Настраиваем in_dst = scratch_byte (куда читать)
+copy scratch_byte_addr → mmio.in_dst
+
+// Устанавливаем in_src_mode = 1
+copy CONST1 → mmio.in_src_mode
+
+// Инициализируем output_ptr = OUTPUT_BASE
+copy OUTPUT_BASE → VAR_OUTPUT_PTR
+
+// Инициализируем const table (пустая или предустановленная)
+// ...
+
+// Chain-load на MAIN_LOOP
+chain_load(MAIN_LOOP)
+```
+
+**Сложность:** ~15-20 слотов.
+
+### 13.10) Оценка размера
+
+| Компонент | Страниц | Слотов | Память |
+|-----------|---------|--------|--------|
+| SETUP_FORTH0C | 1 | ~15 | ~1 КБ |
+| MAIN_LOOP | 1 | ~30 | ~1 КБ |
+| LEXER | 1 | ~55 | ~1 КБ |
+| LOOKUP | 1 | ~35 | ~1 КБ |
+| COMPILE_WORD | 1 | ~25 | ~1 КБ |
+| DIRECTIVE | 1 | ~55 | ~1 КБ |
+| EXPR | 1-2 | ~40 | ~1-2 КБ |
+| OUTPUT | 1 | ~10 | ~1 КБ |
+| Symbol Table | - | - | ~2 КБ |
+| Const Table | - | - | ~1 КБ |
+| Variables | - | - | ~0.5 КБ |
+| **Итого** | **8-9** | **~300** | **~12-14 КБ** |
+
+**Помещается в 512 КБ?** Да, с большим запасом.
+
+**Помещается в WORDS_BASE (128 страниц)?** Да (нужно 8-9 страниц из 128).
+
+### 13.11) Фазы реализации
+
+#### Фаза 3.0: Symbol Table генерация (1-2 недели)
+
+**Шаги:**
+1. Добавить `std7_fixed_write_symbol_table()` в `src/mkimage/std7_fixed/artifacts.c`
+2. Формат: count(24) + [addr(24) + name_len(8) + name(N)] × sym_count
+3. Добавить ART[82]=SYM_TABLE_BASE, ART[83]=SYM_TABLE_SIZE
+4. Обновить syms.inc: добавить SYM_TABLE_BASE, SYM_TABLE_SIZE
+5. Тест: dump symbol table, проверить что имена корректны
+
+**Критерий:** mkimage генерирует symbol table, dump показывает правильные имена и адреса.
+
+**Сложность:** Низкая (генерация на хосте, не требует изменений VM).
+
+#### Фаза 3.1: Lexer в Forth0 (2-3 недели)
+
+**Шаги:**
+1. Реализовать чтение байта из in-space source (через in_req/in_done handshake)
+2. Реализовать skip_whitespace (пробелы, \t, \r, \n)
+3. Реализовать skip_comment (# и \ до \n)
+4. Реализовать read_identifier (alpha + alphanumeric + _ + [ + ])
+5. Реализовать read_number (decimal + 0x hex)
+6. Реализовать read_string ("..." с escapes)
+7. Реализовать识别 операторов (+-*/(),)
+
+**Тесты:**
+- `test_lexer_simple.f0`: "HALT" → TK_ID "HALT"
+- `test_lexer_number.f0`: "123" → TK_NUM 123
+- `test_lexer_comment.f0`: "# comment\nHALT" → TK_ID "HALT"
+- `test_lexer_string.f0`: `"hello"` → TK_STR "hello"
+
+**Критерий:** LEXER страница корректно токенизирует простые входные данные.
+
+**Сложность:** Высокая (busy-wait loop, побайтовое чтение).
+
+#### Фаза 3.2: Symbol Lookup в Forth0 (1-2 недели)
+
+**Шаги:**
+1. Реализовать чтение Symbol Table из space
+2. Реализовать compare_bytes(buf, sym, len)
+3. Реализовать linear scan по Symbol Table
+4. Реализовать возврат ART адреса или 0
+
+**Тесты:**
+- `test_lookup_found.f0`: lookup "HALT" → ART[7] (word_halt)
+- `test_lookup_not_found.f0`: lookup "NONEXISTENT" → 0
+- `test_lookup_all.f0`: проверить все 82 символа
+
+**Критерий:** LOOKUP корректно находит все символы из ART.
+
+**Сложность:** Средняя.
+
+#### Фаза 3.3: Expression Evaluator в Forth0 (2-3 недели)
+
+**Шаги:**
+1. Реализовать число (парсинг decimal/hex)
+2. Реализовать_SYMBOL lookup (имя → значение через const table)
+3. Реализовать арифметику (+, -, *, /) через ADD24 и циклы
+4. Реализовать рекурсивный descent (expr → term → factor)
+5. Реализовать скобки (...)
+
+**Проблема:** Умножение и деление на Copy-VM.
+- ADD24 есть (ART[46])
+- MUL24 и DIV24 нужно реализовать
+- MUL24: итеративное сложение (N × M = M + M + ... + M, N раз)
+- DIV24: итеративное вычитание
+
+**Реализация MUL24:**
+```
+mul24(a, b):
+  result = 0
+  while b > 0:
+    if b & 1: result = result + a
+    a = a + a
+    b = b >> 1
+  return result
+```
+Это ~24 итерации × ~10 слотов = ~240 слотов (не влезает в одну страницу!).
+Разбить на 4 страницы по 60 слотов.
+
+**Тесты:**
+- `test_expr_number.f0`: "123" → 123
+- `test_expr_add.f0`: "1+2" → 3
+- `test_expr_mul.f0`: "3*4" → 12
+- `test_expr_paren.f0`: "(1+2)*3" → 9
+- `test_expr_symbol.f0`: "HALT" → ART[7]
+
+**Критерий:** EXPR корректно вычисляет арифметические выражения.
+
+**Сложность:** Высокая (arith requires many pages).
+
+#### Фаза 3.4: Compiler Core в Forth0 (3-4 недели)
+
+**Шаги:**
+1. Реализовать COMPILE_WORD: запись токена + immediate
+2. Реализовать word_needs_imm check (таблица LITN/LITD/LITS/LITIP/LITAP/LITBP/LITRP)
+3. Реализовать MAIN_LOOP: read → lookup → compile/directive
+4. Реализовать OUTPUT: запись в output buffer
+5. Реализовать обработку TK_EOF
+
+**Тесты:**
+- `test_compile_halt.f0`: "HALT" → один токен ART[7]
+- `test_compile_litn.f0`: "LITN 42" → два токена (LITN + 42)
+- `test_compile_multi.f0`: "HALT HALT HALT" → три токена
+
+**Критерий:** Компилятор корректно компилирует простые .f0 программы.
+
+**Сложность:** Средняя.
+
+#### Фаза 3.5: Directive Handlers в Forth0 (2-3 недели)
+
+**Шаги:**
+1. Реализовать const: добавление в const table (workspace area)
+2. Реализовать set24: LITN + LITD + LITS + COPY токены
+3. Реализовать copybits: LITN + LITD + LITS + COPY токены
+4. Реализовать emit: LITN + значение
+5. Реализовать setbit: copybits с n=1
+6. Реализовать setbyte: 8× setbit
+
+**Тесты:**
+- `test_directive_const.f0`: "const X 42" + "LITN X" → LITN + 42
+- `test_directive_set24.f0`: "set24 (TESTG+0) 0xFF" → LITN+LITD+LITS+COPY
+- `test_directive_copybits.f0`: "copybits 24 dst src" → LITN+LITD+LITS+COPY
+
+**Критерий:** Директивы корректно генерируют токены.
+
+**Сложность:** Средняя.
+
+#### Фаза 3.6: Интеграционный тест (1-2 недели)
+
+**Шаги:**
+1. Записать .f0 программу в space (текст)
+2. Запустить self-hosting компилятор
+3. Сравнить output с ожидаемым (хост forth0c)
+4. Проверить: byte-for-byte match
+
+**Тестовая программа:**
+```
+# test_selfhost.f0
+set24 (TESTG + 200) 0x42
+set24 (TESTG + 224) 0xFF
+HALT
+```
+
+**Верификация:**
+1. Запустить хост forth0c на этой программе → .tok файл
+2. Запустить self-hosting компилятор → output в space
+3. Сравнить оба результата
+
+**Критерий:** Output self-hosting компилятора совпадает с хост forth0c.
+
+**Сложность:** Низкая (verification script).
+
+#### Фаза 3.7: Self-hosting bootstrapping (2-3 недели)
+
+**Шаги:**
+1. Записать исходный код самого self-hosting компилятора в space
+2. Запустить self-hosting компилятор на себе
+3. Проверить: результат идентичен исходному
+
+**Это классический bootstrap test:** компилятор компилирует сам себя.
+
+**Проблема:** Self-hosting компилятор не поддерживает макросы, includes, page/endpage.
+Поэтому его исходный код должен быть написан только с подмножеством .f0:
+- const, set24, copybits, emit
+- Без macro, for, if, include
+
+**Решение:** Написать self-hosting компилятор на "минимальном .f0":
+- Все страницы определены через set24/copybits (как в .f0 тестах)
+- Без page/endpage/instr (это хост-специфичные директивы)
+
+**Критерий:** Self-hosting компилятор успешно компилирует свой собственный исходник.
+
+**Сложность:** Высокая (требует тщательного проектирования исходного кода).
+
+### 13.12) Критерии готовности Фазы 3
+
+**Фаза 3.0:**
+- `mkimage` генерирует symbol table в space
+- ART[82]=SYM_TABLE_BASE, ART[83]=SYM_TABLE_SIZE
+- Dump symbol table показывает правильные имена
+
+**Фаза 3.1:**
+- LEXER страница корректно токенизирует "HALT", "123", "# comment", `"str"`
+- busy-wait loop работает (in_done check)
+
+**Фаза 3.2:**
+- LOOKUP находит все 82 символа
+- LOOKUP возвращает 0 для несуществующих имен
+
+**Фаза 3.3:**
+- EXPR вычисляет "1+2", "3*4", "(1+2)*3", "HALT"
+- MUL24 и DIV24 работают корректно
+
+**Фаза 3.4:**
+- Компилятор компилирует "HALT" → один токен
+- Компилятор компилирует "LITN 42" → два токена
+- Компилятор обрабатывает EOF
+
+**Фаза 3.5:**
+- const определяет константу, последующий LITN использует её
+- set24 генерирует правильную последовательность токенов
+- copybits генерирует правильную последовательность токенов
+
+**Фаза 3.6:**
+- Output self-hosting компилятора совпадает с хост forth0c для тестовой программы
+- Тестовый скрипт проверяет byte-for-byte match
+
+**Фаза 3.7:**
+- Self-hosting компилятор успешно компилирует свой собственный исходник
+- Результат идентичен исходному
+
+### 13.13) Риски Фазы 3
+
+**1. Busy-wait в лексере.**
+- VM не имеет "ждать" инструкции
+- Busy-wait через chain-load на саму себя: LEXER → LEXER → ... пока in_done=0
+- Каждая итерация — один тик VM (~64 инструкции)
+- Чтение одного байта: ~1-2 тика (если in_done устанавливается быстро)
+- Скорость: ~32-64 байта/тик = ~2000-4000 байт/сек (медленно, но работает)
+- **Митигация:** для .f0 файлов <10 КБ время компиляции <5 секунд
+
+**2. Рекурсия в expression evaluator.**
+- Copy-VM не имеет стека вызовов
+- Рекурсия через pool ячеек: каждый вызов выделяет ячейку
+- Глубина рекурсии ограничена размером пула (~128 ячеек)
+- **Митигация:** expression depth ≤ 10 (реалистично для .f0)
+
+**3. Умножение/деление.**
+- MUL24 требует ~24 итерации × ~10 слотов = ~240 слотов
+- Не влезает в одну страницу (64 слота)
+- **Митигация:** разбить на 4 страницы с chain-load
+
+**4. Константы (const table).**
+- const table хранится в workspace area
+- Формат: [count:24] + [name_len:8 + name:N + value:24] × count
+- Поиск: linear scan
+- **Митигация:** для ~20 констант скорость достаточна
+
+**5. Размер .f0 исходников.**
+- Self-hosting компилятор: ~300 страниц × ~64 слота = ~19200 слотов
+- В .f0 формате: ~19200 × ~5 слов/слот = ~100000 слов
+- Каждое слово ~10 символов → ~1 МБ текста
+- **Проблема:** space = 512 КБ, не хватает места!
+- **Митигация:** компилятор не может компилировать себя напрямую (source > space)
+- **Решение:** двухпроходная компиляция:
+  1. Хост компилирует self-hosting компилятор → .tok файл
+  2. .tok файл загружается в space как "pre-compiled image"
+  3. Self-hosting компилятор загружается из .tok (как текущий BRANCH/DO/END)
+  4. Затем компилирует целевой .f0 из space
+
+**6. Отсутствие conditional branch.**
+- Нет инструкции "if X==0 goto ..."
+- Conditional реализуется через chain-load на разные страницы
+- Пример: if FREE==0 → chain-load на PAGE_POOL_EXHAUSTED, иначе → PAGE_CONTINUE
+- **Митигация:** все conditional требуют отдельные page'и
+
+### 13.14) Стратегия минимизации (MVP)
+
+Для первого working self-hosting компилятора最大限度地 упрощаем:
+
+**Поддерживаемый .f0:**
+- Word calls (ART имена): `HALT`, `LITN`, `COPY`, ...
+- Immediate arguments: `LITN 42`, `LITD (TESTG+0)`
+- Comments: `# ...`, `\ ...`
+- const: `const NAME VALUE`
+- set24: `set24 DST VAL`
+- copybits: `copybits N DST SRC`
+- emit: `emit VAL`
+- Numbers: decimal, 0x hex
+
+**НЕ поддерживаем:**
+- macro / endmacro
+- for / endfor
+- while / endwhile
+- if / else / endif
+- include
+- page / endpage / instr
+- on / off
+- word_page
+- string literals (кроме комментариев)
+
+**Это покрывает:** все существующие .f0 тесты (test_compile_one, test_compile_tokens, test_compile_full_cycle, test_add24, test_sched_validate, ...) за исключением тех, которые используют макросы/циклы/условия.
+
+**Обход ограничений:** Многие .f0 тесты используют макросы и for/endfor. Для self-hosting их нужно переписать на "минимальном .f0" (с ручной разверткой макросов).
+
+### 13.15) График Фазы 3
+
+| Подфаза | Срок | Описание |
+|---------|------|----------|
+| 3.0 | 1-2 нед | Symbol Table генерация |
+| 3.1 | 2-3 нед | Lexer в Forth0 |
+| 3.2 | 1-2 нед | Symbol Lookup |
+| 3.3 | 2-3 нед | Expression Evaluator (включая MUL24/DIV24) |
+| 3.4 | 3-4 нед | Compiler Core (MAIN_LOOP + COMPILE_WORD) |
+| 3.5 | 2-3 нед | Directive Handlers (const, set24, copybits, emit) |
+| 3.6 | 1-2 нед | Интеграционный тест |
+| 3.7 | 2-3 нед | Self-hosting bootstrapping |
+| **Итого** | **14-22 нед** | **3.5-5.5 месяцев** |
+
+### 13.16) Dependency Graph
+
+```
+3.0 (Symbol Table)
+  └─→ 3.2 (Symbol Lookup)
+        └─→ 3.4 (Compiler Core)
+
+3.1 (Lexer)
+  └─→ 3.4 (Compiler Core)
+
+3.3 (Expression Evaluator)
+  └─→ 3.5 (Directive Handlers)
+        └─→ 3.4 (Compiler Core)
+
+3.4 (Compiler Core)
+  └─→ 3.6 (Integration Test)
+        └─→ 3.7 (Bootstrap)
+```
+
+**Параллельная работа:** 3.0, 3.1, 3.3 можно делать одновременно.
+3.2 зависит от 3.0. 3.5 зависит от 3.3. 3.4 зависит от 3.0-3.5.
+
+---
+
+## 14) План C2: Гибридный порт RISC-V (Python-эмулятор + генерация .f0)
+
+_файл: doc/roadmap.md, добавлено 2026-05-31_
+
+### 14.0) Цель и подход
+
+**Цель:** Исполнить RISC-V программы внутри Copy-Space VM, генерируя .f0-файл, который эмулирует поведение RV32I инструкций через copy-примитивы (ADD24, BAND/BOR/BXOR/BNOT, copybits).
+
+**Гибридный подход (C2):** Python-эмулятор (`riscv_emulator.py`, 105 строк, RV32I) исполняет RISC-V программу и собирает **trace** — последовательность всех выполненных инструкций. Затем `riscv_trace_to_f0.py` транслирует trace в .f0-файл, который при запуске в Copy-Space VM воспроизводит те же операции.
+
+**Почему гибридный?**
+- .f0 v0 не имеет runtime control flow (условных переходов во время исполнения)
+- Трассировка в Python позволяет обойти это: ветвления резолвятся в эмуляторе, .f0 получает уже развёрнутый линейный trace
+- Python-эмулятор уже готов и верифицирован — остаётся генерация .f0
+
+### 14.1) Компоненты
+
+| Файл | Статус | Описание |
+|------|--------|----------|
+| `riscv_emulator.py` | ✅ Готов (105 строк) | Эмулятор RV32I на Python: fetch, decode, execute всех инструкций |
+| `riscv_to_f0.py` | ❌ Нужно создать (~150-200 строк) | Эмиттеры .f0-макросов для каждой RV32I инструкции: генерирует copy-последовательности |
+| `riscv_trace_to_f0.py` | ❌ Нужно создать (~80-100 строк) | Tracer: эмулирует программу → собирает trace (список (pc, instr, rd, rs1, rs2, imm)) → вызывает `riscv_to_f0.py` для каждой инструкции → генерирует .f0 |
+| `run_riscv_f0.sh` | ❌ Нужно создать | Скрипт: (1) запустить tracer → .f0, (2) `forth0c` → .tok, (3) `run_f0.sh` → исполнение в VM |
+
+**`riscv_to_f0.py` — структура эмиттеров:**
+- Для каждой RV32I инструкции: функция `emit_<instr>(rd, rs1, rs2/imm) → str (.f0 код)`
+- Эмиттеры используют макросы из `riscv_as_copies.f0` или прямые copy-примитивы
+- 32-битные операции (add, sub) эмулируются через 24-битную арифметику с переносами
+
+**`riscv_trace_to_f0.py` — алгоритм:**
+1. Загрузить RISC-V программу (ELF или raw binary) в эмулятор
+2. Выполнять по одной инструкции, записывая в trace: `(pc, instr_bits, rd, rs1, rs2, imm_val, mem_addr, mem_val)`
+3. После завершения (или после N инструкций): пройти по trace и для каждой записи вызвать эмиттер
+4. Собрать .f0 с прологом (регистры → space) + тела (операции) + эпилог (halt)
+
+### 14.2) Покрытие инструкций RV32I
+
+**Реализовано в эмуляторе (`riscv_emulator.py`):**
+
+| Категория | Инструкции | Кол-во |
+|-----------|------------|--------|
+| OP-IMM | addi, slti, sltiu, xori, ori, andi | 6 |
+| OP (register) | add, sub, sll, slt, sltu, xor, srl, sra, or, and | 10 |
+| LOAD | lb, lw | 2 |
+| STORE | sw | 1 |
+| BRANCH | beq, bne | 2 |
+| **Всего** | | **21** |
+
+**Категории lowering-стратегий:**
+
+**1. Прямые copybits (andi, ori, xori, xor, or, and):**
+- `andi rd, rs1, imm` → `copybits 32 rd_region rs1_region` + `BAND 32 result imm`  
+- Все инструкции с BAND/BOR/BXOR работают через соответствующий примитив
+
+**2. Требуют 32-битной арифметики поверх 24-битной (addi, add, sub, slti, slt):**
+- 32-битное сложение: разбить на lo (24 бита) + hi (8 бит) + каскад переносов
+- `add rd, rs1, rs2`:
+  ```
+  \ 32-bit add: rd = rs1 + rs2
+  \ Step 1: low 24 bits
+  copybits 24 VAR_A24 rs1_region      ; A24 = rs1[23:0]
+  copybits 24 VAR_B24 rs2_region      ; B24 = rs2[23:0]
+  \ ADD24 читает VAR_A24, VAR_B24, пишет VAR_SUM24, VAR_COUT
+  word_ADD24                            ; SUM24 = A24 + B24 (low 24), COUT = carry
+  copybits 24 rd_region VAR_SUM24      ; rd[23:0] = SUM24
+
+  \ Step 2: high 8 bits with carry
+  copybits 8 VAR_A24 rs1_region+24     ; A24 = rs1[31:24]
+  copybits 8 VAR_B24 rs2_region+24     ; B24 = rs2[31:24]
+  \ Inject carry from Step 1 into LSB of B24:
+  setbit (VAR_B24 + 0) VAR_COUT        ; B24[0] = COUT (add carry)
+  word_ADD24                            ; SUM24 = A24 + carry_injected_B24
+  copybits 8 rd_region+24 VAR_SUM24    ; rd[31:24] = SUM24 (low 8 bits)
+  ```
+- `sub rd, rs1, rs2`:
+  ```
+  \ 32-bit sub: rd = rs1 - rs2
+  \ Используем дополнение до двух: -rs2 = NOT(rs2) + 1
+
+  \ Step 1: compute -rs2[23:0]
+  copybits 24 VAR_A24 rs2_region
+  BNOT VAR_A24                           ; A24 = ~rs2[23:0]
+  setbit (VAR_B24 + 0) CONST1           ; B24 = 1 (для +1)
+  word_ADD24                             ; SUM24 = ~rs2[23:0] + 1 = -rs2[23:0]
+
+  \ Step 2: low 24 bits: rs1[23:0] + (-rs2[23:0])
+  copybits 24 VAR_A24 rs1_region
+  copybits 24 VAR_B24 VAR_SUM24          ; B24 = -rs2[23:0]
+  word_ADD24                             ; SUM24 = lo, COUT = borrow
+  copybits 24 rd_region VAR_SUM24
+
+  \ Step 3: high 8 bits with borrow
+  copybits 8 VAR_A24 rs1_region+24
+  copybits 8 VAR_B24 rs2_region+24
+  BNOT VAR_B24                           ; B24 = ~rs2[31:24]
+  setbit (VAR_B24 + 0) VAR_COUT         ; + borrow from low part
+  word_ADD24
+  copybits 8 rd_region+24 VAR_SUM24
+  ```
+
+**3. Через copybits со сдвигом (sll, srl, sra):**
+- `sll rd, rs1, rs2`:
+  ```
+  \ sll: очистить rd, затем скопировать со сдвигом
+  BAND rd_region ZERO_MASK              ; rd = 0 (обнуление младших shift бит)
+  copybits (32 - shift) rd_region+shift rs1_region
+  ```
+- Сдвиг реализуется как выборка N-битного поля из регистра по смещению
+- Для переменного сдвига (через rs2) — сдвиг должен быть раскрыт в trace
+- Обнуление rd перед сдвигом гарантирует, что младшие shift бит равны 0
+
+**4. Load/Store (lb, lw, sw):**
+- `sw rs2, offset(rs1)` → `copybits 32 mem[rs1+offset] rs2_region`
+- `lw rd, offset(rs1)` → `copybits 32 rd_region mem[rs1+offset]`
+
+**5. Ветвления (beq, bne):**
+- В .f0 v0 нет runtime control flow
+- Ветвления резолвятся в Python-эмуляторе: trace содержит только тот путь, который был выполнен
+- Если ветвление не выполнено (not taken) — соответствующий блок не входит в trace
+- Результат: .f0 всегда линейный, все ветвления уже развёрнуты
+
+### 14.3) План работ
+
+| День | Задача | Критерий |
+|------|--------|----------|
+| 1 | Эмиттеры для базовых инструкций: addi, add, sub, lw, sw | `riscv_to_f0.py` генерирует .f0 для `addi x1, x0, 42; add x2, x1, x1; sw x2, 0(x0)` |
+| 2 | Эмиттеры для остальных: sll, slt, xor, srl, or, and, beq, bne | Все 21 инструкции имеют эмиттеры |
+| 3 | Tracer + генератор .f0: `riscv_trace_to_f0.py` | Простая программа (addi + sw) → .f0 → .tok → VM исполнение |
+| 4 | Интеграция + тесты на простых программах | `run_riscv_f0.sh` проходит 3+ тестов без ветвлений |
+| 5 | Тесты на программах с ветвлениями | beq/bne trace корректно разворачивается в линейный .f0 |
+
+**Детализация Дня 1:**
+
+- Создать `riscv_to_f0.py` с функциями:
+  ```python
+  def emit_addi(rd, rs1, imm):
+      return (
+          f"\\ addi x{rd}, x{rs1}, {imm}\n"
+          f"\\ Step 1: low 24 bits\n"
+          f"copybits 24 VAR_A24 reg{rs1}\n"
+          f"set24 VAR_B24 {imm}\n"
+          f"word_ADD24                    ; SUM24 = A24 + B24, COUT = carry\n"
+          f"copybits 24 reg{rd} VAR_SUM24 ; rd[23:0] = low 24 bits\n"
+          f"\\ Step 2: high 8 bits with carry\n"
+          f"setbyte (VAR_A24) {imm >> 24 & 0xff}  ; sign-extend\n"
+          f"copybits 8 VAR_B24 reg{rs1}+24\n"
+          f"setbit (VAR_B24 + 0) VAR_COUT ; inject carry from step 1\n"
+          f"word_ADD24\n"
+          f"copybits 8 reg{rd}+24 VAR_SUM24 ; rd[31:24] = result high\n"
+      )
+  ```
+- Макросы для 32-битной аддиции как copy-последовательности
+
+**Детализация Дня 2:**
+
+- Эмиттеры для shift: `emit_sll(rd, rs1, shamt)` → copybits со смещением
+- Эмиттеры для set-less-than: `emit_slt(rd, rs1, rs2)` → ADD24 с инвертированием (rs2 → NOT(rs2)+1 → сложение с rs1) + знаковый флаг
+- Эмиттеры для bitwise: `emit_xor(rd, rs1, rs2)` → copybits + BXOR
+
+**Детализация Дня 3:**
+
+- Создать `riscv_trace_to_f0.py`:
+  ```python
+  def trace_to_f0(program_bytes, max_instr=1000):
+      emu = RISCVEmulator()
+      emu.load_program(program_bytes)
+      trace = []
+      for _ in range(max_instr):
+          if emu.pc >= len(emu.memory) - 4: break
+          instr = emu.fetch()
+          trace.append((emu.pc - 4, instr, ...))
+          emu.execute(instr)
+      return generate_f0(trace)
+  ```
+- Пролог: инициализация регистров в space (32 регистра × 32 бита = 1024 бита)
+- Эпилог: копирование регистров в OUT_BASE для верификации + HALT
+
+**Детализация Дня 4-5:**
+
+- Тесты из `riscv_emulator.py` (demo-программа: addi + add + sw)
+- Программа с ветвлением: `addi x1, x0, 1; addi x2, x0, 1; beq x1, x2, 4; addi x3, x0, 0; addi x3, x0, 1`
+- Проверка: результат через `run_f0.sh --expect-hex <expected>`
+
+### 14.4) Критерии готовности (DoD)
+
+**Компоненты:**
+- `riscv_to_f0.py` — эмиттеры для всех 21 инструкции (из `riscv_emulator.py`)
+- `riscv_trace_to_f0.py` — tracer + сборка .f0
+- `run_riscv_f0.sh` — полный пайплайн
+
+**Тесты (сквозные):**
+
+1. **Базовый:** `addi x1, x0, 42; add x2, x1, x1; sw x2, 0(x0)`
+   - Trace → .f0 → forth0c → .tok → VM → результат x2=84, mem[0]=84
+
+2. **С ветвлением (beq taken):**
+   ```
+   addi x1, x0, 1
+   addi x2, x0, 1
+   beq x1, x2, 8        # taken → прыжок на +8
+   addi x3, x0, 0       # не выполняется
+   addi x4, x0, 1       # target
+   ```
+   - Trace должен содержать только 4 инструкции (beq взят, addi x3 пропущен)
+   - .f0 воспроизводит только выполненные инструкции
+
+3. **С ветвлением (bne taken):**
+   ```
+   addi x1, x0, 1
+   addi x2, x0, 2
+   bne x1, x2, 8        # taken (1 != 2)
+   ```
+
+4. **Сдвиг:** `addi x1, x0, 8; sll x2, x1, x0_2` → x2 = 32
+5. **Load/Store:** lw после sw — проверка roundtrip
+
+**Формат верификации:**
+```bash
+scripts/forth0/run_f0.sh --expect-hex <expected_output_hex>
+```
+
+Все тесты проходят без ошибок VM.
+
+### 14.5) Риски
+
+**1. 32-битная арифметика поверх 24-битной.**
+- ADD24 оперирует 24 битами. 32-битное сложение требует разбиения на 24+8 бит с переносом.
+- Код для add/sub будет в 3-5 раз длиннее, чем для and/or/xor.
+- **Митигация:** повторно использовать carry-chain паттерн из существующих тестов.
+
+**2. Ветвления — только конкретный path (concrete trace).**
+- Trace содержит только один execution path — тот, по которому пошла программа при данных входных данных.
+- Если программа должна выполнить все ветки (для полного тестирования), нужно несколько запусков с разными данными.
+- **Митигация:** C2 — это concrete execution, не символический. Для coverage нужно N запусков.
+
+**3. Размер .tok файла.**
+- Каждая инструкция в trace → ~10-30 строк .f0 → ~3-6 токенов → развёрнутый trace может быть большим.
+- Пример: 100 инструкций × 20 строк = 2000 строк .f0.
+- .tok может быть больше самой RISC-V программы в 10-100x.
+- **Митигация:** сжимать trace — убирать дублирующиеся setup-операции (повторная запись регистра в space).
+
+**4. Нет RV32M (mul/div).**
+- Текущий эмулятор не поддерживает M extension. Умножение/деление нужно эмулировать через итеративные сложения/вычитания (как в Фазе 3 для self-hosting).
+- **Митигация:** C2 фокусируется на RV32I. M extension — отдельная задача.
+
+**5. Поддержка памяти.**
+- lw/sw работают с фиксированными адресами.
+- Динамическое выделение памяти (через sbrk/malloc) не поддерживается в .f0 v0.
+- **Митигация:** вся память RISC-V программы отображается на фиксированные адреса в space.
+
+### 14.6) Связь с другими фазами
+
+**Фаза 3 (self-hosting):**
+- C2 не зависит от Фазы 3. Python-эмулятор работает вне VM.
+- C2 может быть реализован параллельно с Фазами 1-3.
+
+**Расширения Forth0 после C2:**
+- Если trace-подход окажется узким местом, можно добавить в .f0/VM:
+  - `COND_BRANCH` — примитив условного ветвления (сравнить 2 регистра, перейти по адресу)
+  - `HW_RETURN_STACK` — аппаратный стек возврата для циклов и вложенных вызовов
+- Это позволит запускать RISC-V интерпретатор **напрямую** в VM (C3 — нативный порт)
+
+**Milestone 10 (упрощение эмулятора):**
+- После C2: Python-эмулятор становится ненужным (если RISC-V работает на VM)
+- Но C2 может остаться как инструмент генерации тестов для последующих фаз
+
+**Порт RISC-V (C1 → C2 → C3):**
+| Фаза | Описание | Статус |
+|------|----------|--------|
+| C1 | Python-эмулятор RV32I | ✅ Готов |
+| C2 | Гибрид: trace → .f0 (данный план) | 🚧 В работе |
+| C3 | Нативный интерпретатор в .f0 (все 32 инструкции, decode + execute) | 🔮 Future |
+
+**Зависимости:**
+- C2 не зависит от Фазы 3 (self-hosting) — может выполняться параллельно
+- C2 использует `forth0c` (хост-компилятор) для .f0 → .tok
+- C3 (нативный интерпретатор) потребует условных переходов в VM — это блокер для .f0 v0
+
+### 14.7) Узкий RV32I-MVP (полный план реализации)
+
+**Цель MVP**
+- Сделать узкий, воспроизводимый запуск RV32I-программ в Copy-Space VM через C2-путь с проверкой эквивалентности против Python-эталона.
+
+**Границы MVP**
+1. Только RV32I без M/A/F/D/C, без CSR/interrupt/exception-model.
+2. Вход: заранее подготовленные небольшие bare-metal бинарники.
+3. Память: фиксированная карта, без виртуальной памяти и системных вызовов.
+4. Done: тест-набор проходит, pipeline стабилен, лимиты размера/тиков соблюдены.
+
+**Инструкции MVP (минимально полезный набор)**
+1. ALU: ADD, SUB, XOR, OR, AND, SLL, SRL, SRA, SLT, SLTU.
+2. Immediate: ADDI, XORI, ORI, ANDI, SLLI, SRLI, SRAI, SLTI, SLTIU, LUI, AUIPC.
+3. Branch/Jump: BEQ, BNE, BLT, BGE, BLTU, BGEU, JAL, JALR.
+4. Memory: LW, SW, LB, LBU, LH, LHU, SB, SH.
+5. Stop-протокол: детерминированное завершение (halt marker / tick budget).
+
+**Фаза 0. Контракт и метрики**
+1. Зафиксировать spec в doc/rv32i_mvp.md и синхронизировать с doc/roadmap.md.
+2. Ввести бюджеты: max .tok size, max compile ticks, max run ticks.
+3. Точность: допуск 0 (бит-в-бит по pc/regs/mem).
+4. Зафиксировать тест-набор из 10-20 небольших программ.
+
+**Фаза 1. Инфраструктура (снижение инфраструктурной сложности)**
+1. Добавить режим forth0c --compact (не default).
+2. Добавить chunked compile для больших .tok в pipeline.
+3. Добавить big-compile профиль image/layout.
+4. Расширить vmrun-диагностику: счётчики/горячие точки/удобный crash-report.
+
+**Фаза 2. Эталонная верификация**
+1. Реализовать step-by-step diff harness между Python RV32I и VM.
+2. Сравнивать после каждого instruction-step: pc, x0..x31, изменённые адреса памяти.
+3. На первом расхождении сохранять минимальный repro trace.
+
+**Фаза 3. Декодер и микрокоды**
+1. Изолировать decode (opcode/funct3/funct7) в отдельный модуль.
+2. Сделать переиспользуемые микрокоды для классов: R-type ALU, I-type ALU, Load/Store, Branch/Jump.
+3. Уменьшить копипасту генерации через шаблоны.
+
+**Фаза 4. Поэтапное включение инструкций**
+1. Wave A: ADDI, ADD, SUB, XOR, OR, AND, LUI.
+2. Wave B: shifts + comparisons.
+3. Wave C: LW/SW (с проверками alignment/sign-extension).
+4. Wave D: branches + JAL/JALR.
+5. Wave E: LB/LBU/LH/LHU/SB/SH.
+6. После каждой wave: full diff-tests + size/tick gate.
+
+**Фаза 5. Стабилизация**
+1. Убрать hot spots по профилю.
+2. Делать только точечные оптимизации по данным профайлера.
+3. Заморозить MVP-контракт и regression suite в CI.
+
+**Критерии готовности MVP**
+1. Все программы из MVP-набора проходят 1:1 дифф-верификацию.
+2. Нет нестабильных VM_ERR в compile/run для MVP-набора.
+3. Соблюдены бюджеты .tok/compile ticks/run ticks.
+4. Результат повторяем на 3+ прогонах подряд.
+
+**Главные риски и контроль**
+1. Ошибки decode/branch: закрывать step-diff harness.
+2. Взрыв размера: закрывать compact + chunked.
+3. Низкая производительность: закрывать профилированием и точечными оптимизациями.
+4. Регрессии: закрывать wave-gates и CI-порогами.
+
+**Порядок работ**
+1. Фаза 0-1 (сначала стабильный pipeline).
+2. Фаза 2 (верификация до расширения функционала).
+3. Фаза 3-4 (инструкции волнами).
+4. Фаза 5 (стабилизация и заморозка MVP).
+
+### 14.8) Рекомендуемый выход: staged-план с ранним доказательством корректности
+
+**Зачем этот план**
+- Снизить риск регрессий и VM_ERR, не блокируя прогресс по RV32I-MVP.
+- Сначала зафиксировать рабочий коридор (Wave A + проверки), затем масштабировать покрытие.
+
+**Этап 1 — Wave A как эталонный базис**
+1. Зафиксировать обязательный минимум: `addi/add/sub/xor/or/and/lui`.
+2. Собрать небольшой стабильный набор программ только под Wave A.
+3. Включить обязательные CI-гейты по функциональности и повторяемости.
+
+**Этап 2 — Минимальный step-diff формат**
+1. Ввести лёгкий формат снимков на шаг: `pc, rd, value, mem_write`.
+2. Сравнивать Python-trace и VM-поведение на каждом instruction-step.
+3. На первом расхождении сохранять компактный repro-артефакт.
+
+**Этап 3 — Контракт эмиттеров инструкций**
+1. Для каждой инструкции зафиксировать входы, выходы, side effects, edge-cases.
+2. Добавить table-driven тесты против Python reference.
+3. Запретить расширение покрытия, пока не пройдены тесты контракта текущей волны.
+
+**Этап 4 — Size/perf guard с первого дня**
+1. Добавить лимиты в CI: `trace_len`, `.f0 lines`, `.tok bytes`, `compile ticks`, `run ticks`.
+2. Сделать сбор профиля обязательным при выходе за budget.
+3. Любое расширение RV32I принимать только при соблюдении budget-гейтов.
+
+**Этап 5 — Поэтапное расширение Wave B → E**
+1. Для каждой новой волны: реализация → diff-тесты → size/perf гейты.
+2. Не начинать следующую волну при незакрытых расхождениях текущей.
+3. После Wave E выполнить 3+ повторных прогона всего MVP-набора.
+
+**Критерии успеха staged-плана**
+1. Wave A стабилен и воспроизводим в CI.
+2. Каждая следующая волна добавляется без регрессий в предыдущих.
+3. Нет “слепых” расхождений: каждое падение воспроизводится через repro-артефакт.
+4. MVP закрывается управляемо, без накопления скрытого техдолга в pipeline.
+
+### 14.9) План закрытия оставшихся блокеров MVP (пункты 1-4)
+
+**Цель**
+- Убрать технические ограничения, мешающие полному завершению Узкого RV32I-MVP.
+
+**1) Полноценный VM step-debug API (высокая сложность)**
+1.1. Добавить режим трассировки в `vmrun` с шаговыми событиями: `pc`, изменённые регистры, записи памяти.  
+1.2. Зафиксировать минимальный формат артефакта (`jsonl` или компактный `json`) и стабильный контракт полей.  
+1.3. Сделать bridge-скрипт сравнения `VM trace` vs `Python reference trace` (первое расхождение + repro bundle).  
+1.4. Включить этот diff в отдельный TDD/CI gate для Wave A.
+
+**2) Расширение покрытия Waves B-E (средне-высокая сложность)**
+2.1. Wave B: `sll/srl/sra`, `slt/sltu`, `slti/sltiu`, `slli/srli/srai`.  
+2.2. Wave C: `lw/sw` + проверки выравнивания/границ/знакового поведения.  
+2.3. Wave D: `beq/bne/blt/bge/bltu/bgeu`, `jal/jalr`.  
+2.4. Wave E: `lb/lbu/lh/lhu/sb/sh`.  
+2.5. Для каждой wave: реализация → step-diff → staged-run → TDD gate.
+
+**3) Жёсткий tick-budget gate (средняя сложность)**
+3.1. Начать парсить `compile/run ticks` из логов `vmrun` в staged-runner.  
+3.2. Ввести пороги `max_compile_ticks` и `max_run_ticks` как обязательный fail-критерий.  
+3.3. Добавить профильный отчёт при нарушении бюджета (кейс, trace_len, f0_lines, tok_bytes, ticks).  
+3.4. Зафиксировать пороги в `doc/rv32i_mvp.md` и синхронизировать с CI.
+
+**4) Доводка семантики `riscv_to_f0.py` (средняя/местами высокая сложность)**
+4.1. Для каждой инструкции оформить таблицу контракта: входы, выходы, side effects, edge-cases.  
+4.2. Добавить table-driven тесты на эмиттеры и golden-cases на уровне trace→f0.  
+4.3. Приоритетно закрыть рискованные зоны: branch offsets, sign/zero extension, load/store адресация.  
+4.4. Любую правку эмиттера принимать только после прохождения step-diff + staged gates.
+
+**Порядок выполнения (рекомендуемый)**
+1. Сначала пункт 3 (tick-gates) + 4 (семантика), чтобы стабилизировать текущий контур.  
+2. Параллельно начать пункт 2 (Waves B-E) по одному wave за итерацию.  
+3. Пункт 1 (VM step-debug API) вести как отдельный трек; после готовности сделать его обязательным deep-check gate.
+
+**Критерии завершения 14.9**
+1. Есть автоматический `VM vs Python` step-diff gate (минимум для Wave A, далее для B-E).  
+2. Waves A-E проходят staged-run и TDD без регрессий.  
+3. Tick budgets enforce-ятся как fail-критерий и соблюдаются на MVP-наборе.  
+4. Контракты эмиттеров и тесты покрывают все инструкции MVP-объёма.
+
+**Статус реализации (2026-05-31):**
+- Пункт 1: добавлен `vmrun --trace-jsonl` + TDD `test_vmrun_trace_jsonl.sh`; step-diff gate работает через `rv32i_step_diff.py`.
+- Пункт 2: staged-run расширен до Wave A-E кейсов (`run_staged_plan.sh`, `build_wave_a_cases.py`), повторяемость 3 прогона.
+- Пункт 3: в staged-run включены жёсткие budget gates по `tok_bytes`, `compile_ticks`, `run_ticks`.
+- Пункт 4: добавлен контракт `doc/riscv_emitter_contract.md` и TDD gate `test_rv32i_emitter_contract.sh`.
+
+## 15) SHA-256 в Copy-Space VM (демонстрация)
+
+### 15.0) Цель и подход
+Compute SHA-256("abc") inside Copy-Space VM. Output 32-byte hash to TESTG.
+Expected: `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`
+
+**Подход:** Прямая генерация .f0 через Python-скрипт `sha256_to_f0.py` (не через RISC-V trace).
+Причина: существующие XOR/AND/OR эмиттеры в RISC-V порту работают только на 1 бит (BA/BB → BR), а не на 32 бита.
+
+### 15.1) Ключевые архитектурные решения
+
+**Бит-последовательные 32-битные операции**
+В VM есть только 1-битные BAND/BOR/BXOR. 32-битные XOR/AND/OR эмулируются через `for`-цикл 0..31:
+```
+macro BITWISE_XOR_32(dst, src1, src2)
+  for i 0 31
+    copybits 1 BA (src1 + i)
+    copybits 1 BB (src2 + i)
+    word_BXOR
+    copybits 1 (dst + i) BR
+  endfor
+endmacro
+```
+
+**Ротации через offset copybits** (2 строки):
+```
+copybits n dst (src + (32-n))
+copybits (32-n) (dst + n) src
+```
+
+**32-битное сложение** через carry-chain (ADD24 на младших 24 бита + ADD24 на старших 8 бит + перенос) — паттерн уже доказан в RISC-V порте.
+
+**Все 64 раунда unrolled** — `for/endfor` раскрывается на этапе компиляции.
+
+### 15.2) План работ (4 фазы)
+
+| Фаза | Задача | Ресурс |
+|------|--------|--------|
+| 0 | `fix_bitwise.f0` — библиотека 32-битных XOR/AND/OR/NOT/ROTR/SHR | Coder |
+| 1 | Разметка памяти SHA_H/W/TMP в TESTG | Architect |
+| 2 | `sha256_to_f0.py` — генератор .f0 для произвольного сообщения | Coder |
+| 3 | Генерация + компиляция + запуск + верификация хеша | Coder + Auditor |
+
+**Фаза 0 — fix_bitwise.f0:**
+- Макросы: BITWISE_XOR_32, BITWISE_AND_32, BITWISE_OR_32, BITWISE_NOT_32
+- Макросы: ROTR_32(n), SHR_32(n)
+- Тест: XOR(0x12345678, 0xABCDEF01) → TESTG → verify
+
+**Фаза 1 — разметка памяти:**
+- SHA_H_BASE: H[0..7] × 32 бита = 32 байта
+- SHA_W_BASE: W[0..63] × 32 бита = 256 байт
+- SHA_TMP_BASE: a,b,c,d,e,f,g,h,T1,T2 = 9 × 32 бита = 36 байт
+- SHA_K_BASE: K[0..63] × 32 бита = 256 байт (константы, записываются setbyte)
+- Всего ~580 байт в TESTG (8 КБ свободно)
+
+**Фаза 2 — sha256_to_f0.py:**
+- Алгоритм:
+  1. Python-эталон SHA-256 (для верификации выхода)
+  2. Эмиссия .f0: пролог (H[0..7] = IV) → блок сообщения (padding) → W[0..15] → W[16..63] (через σ1+σ0) → 64 раунда → финал (H += IV) → вывод в TESTG → HALT
+- Все for-циклы раскрываются в compile-time
+- Каждый раунд использует макросы из fix_bitwise.f0
+
+**Фаза 3 — запуск и верификация:**
+```
+python3 sha256_to_f0.py --message "abc" --out demo.f0
+scripts/forth0/run_f0.sh --in demo.f0 --expect-hex ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+```
+
+### 15.3) Оценка размера
+
+| Компонент | .f0 source | Примечание |
+|-----------|-----------|------------|
+| Макросы bitwise | ~30 строк | 5 макросов |
+| Константы K[0..63] | ~256 строк | setbyte × 256 |
+| Message schedule (48 итер.) | ~4800 строк | for + макросы |
+| 64 раунда | ~15000 строк | for + макросы |
+| Пролог/эпилог | ~50 строк | |
+| **Итого** | **~20,000 строк** | |
+| **Оценочный .tok** | ~800 KB - 2 MB | |
+
+### 15.4) Верификация
+
+| Тест | Ожидание |
+|------|----------|
+| SHA-256("abc") | `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad` |
+
+### 15.5) Риски
+
+| Риск | Вероятность | Митигация |
+|------|------------|-----------|
+| XOR/AND/OR эмиттеры в RISC-V порту неправильные (1-bit) | Высокая | Используем прямой .f0, не RISC-V |
+| .tok превышает лимиты компиляции | Средняя | Прогрессивное тестирование; размер консервативный |
+| VM-тиков не хватает | Низкая | LIFE_RUN=20M, оценка < 2M |
+| for/endfor не работает с макросами | Низкая | Доказано в life.f0 |
+
+### 15.6) Статус
+
+| Компонент | Статус |
+|-----------|--------|
+| fix_bitwise.f0 | ✅ Готово |
+| sha256_to_f0.py | ✅ Готово |
+| Демо SHA-256("abc") | 🚧 Блокер |
+| run_f0.sh --expect-hex PASS | 🚧 Блокер |
+
+**Текущий блокер (2026-05-31):**
+- `forth0c` генерирует для SHA-демо `.tok` ~3 MB (`prog.tok`), после чего compile-stage в VM падает с bounds-ошибкой:
+  `VM_ERR: tick=65542 slot=3 n=24 dst=7800 src=5522771 kind=1 space_bits=4194304`.
+- Причина: macro/for раскрываются на этапе `forth0c`, поэтому компактность `.f0` не уменьшает фактический токен-поток в VM.
+- Следующий шаг: отдельная оптимизация формата/подачи token-stream для больших программ (chunked input / packed token format / уменьшение expansion в forth0c).

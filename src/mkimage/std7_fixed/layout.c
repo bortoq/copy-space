@@ -23,7 +23,7 @@ int std7_fixed_compute_layout(const vm_t *vm,
   std7_layout_t L;
   L.step_bits = step_bits;
 
-  L.words_region_pages = 128;
+  L.words_region_pages = 160;
   L.words_region_bits = (bitaddr_t)L.words_region_pages * step_bits;
 
   if (L.words_region_bits + 1024u > vm->space_bits) {

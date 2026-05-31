@@ -64,7 +64,10 @@ typedef enum {
   VM_E_NONE = 0,
   VM_E_SRC_BOUNDS = 1,
   VM_E_DST_BOUNDS = 2,
-  VM_E_ALIGN32 = 3
+  VM_E_ALIGN32 = 3,
+  VM_E_POOL_EXHAUSTED = 4,
+  VM_E_TOKEN_EOF = 5,
+  VM_E_INVALID_TOKEN = 6
 } vm_err_kind_t;
 
 typedef struct {
@@ -79,7 +82,7 @@ typedef struct {
 typedef struct vm_hooks {
   void *user;
   void (*tick_begin)(void *user, size_t slots_cap);
-  void (*note_copy)(void *user, uint64_t dst, uint64_t n, uint64_t src);
+  void (*note_copy)(void *user, unsigned slot, uint64_t dst, uint64_t n, uint64_t src);
   void (*tick_end)(void *user);
 } vm_hooks_t;
 
@@ -114,6 +117,11 @@ typedef struct vm_mmio_layout {
 
   /* Control */
   bitaddr_t halt;     /* 1 bit */
+
+  /* In-space source (reads from space memory instead of stdin) */
+  bitaddr_t in_src_mode;  /* 1 bit: 0=stdin, 1=space memory */
+  bitaddr_t in_src_addr;  /* ADDR_BITS: source address in space (when in_src_mode=1) */
+  bitaddr_t in_src_end;   /* ADDR_BITS: end address (exclusive, when in_src_mode=1) */
 
   bitaddr_t end;      /* 1 past end */
 } vm_mmio_layout_t;

@@ -5,7 +5,7 @@ LIFE_COMPILE="${LIFE_COMPILE:-20000000}"
 LIFE_RUN="${LIFE_RUN:-20000000}"
 
 usage() {
-  echo "usage: $0 --in prog.f0 [--dump-testg N] [--expect-hex HEX] [--keep]" >&2
+  echo "usage: $0 --in prog.f0 [--dump-testg N] [--expect-hex HEX] [--keep] [--pool-cells N]" >&2
   exit 2
 }
 
@@ -13,6 +13,7 @@ IN=""
 DUMP_N=64
 EXPECT_HEX=""
 KEEP=0
+POOL_CELLS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -20,6 +21,7 @@ while [ $# -gt 0 ]; do
     --dump-testg) DUMP_N="${2:-}"; shift 2;;
     --expect-hex) EXPECT_HEX="${2:-}"; shift 2;;
     --keep) KEEP=1; shift 1;;
+    --pool-cells) POOL_CELLS="${2:-}"; shift 2;;
     *) usage;;
   esac
 done
@@ -62,7 +64,10 @@ after="$tmp/after.bin"
 testg_off="$tmp/testg.byte"
 testg_bin="$tmp/testg.bin"
 
-build/bin/mkimage_std7_fixed --out "$std7" >/dev/null 2>"$tmp/mkimage.stderr"
+MKIMAGE_OPTS="--out $std7"
+[ -n "$POOL_CELLS" ] && MKIMAGE_OPTS="$MKIMAGE_OPTS --pool-cells $POOL_CELLS"
+build/bin/mkimage_std7_fixed $MKIMAGE_OPTS >/dev/null 2>"$tmp/mkimage.stderr"
+[ -n "$POOL_CELLS" ] && echo "[f0run] pool-cells=$POOL_CELLS"
 
 build/bin/forth0c --image "$std7" --in "$IN" --out "$tok" \
   1>/dev/null 2>"$tmp/forth0c.stderr"

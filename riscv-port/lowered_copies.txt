@@ -1,0 +1,9 @@
+addi x1, x0, 42 lowered to:
+   ('copybits', 'reg0', 'ALU_A', 32)
+   ('copybits', 'imm_42', 'ALU_B', 32)
+   ('copybits', 'ALU_result', 'reg1', 32)
+
+add x3, x1, x2 lowered to:
+   ('copybits', 'reg1', 'ALU_A', 32)
+   ('copybits', 'reg2', 'ALU_B', 32)
+   ('copybits', 'ALU_result', 'reg3', 32)

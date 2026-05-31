@@ -1,0 +1,26 @@
+include "fix_bitwise.f0"
+
+const TMP_CARRY (TESTG + 4800)
+const SCR_BYTE (TESTG + 4808)
+
+const H_BASE  TESTG
+const W_BASE  (TESTG + 256)
+const TMP4    (TESTG + 4480)
+
+setbyte (W_BASE + 14*32 + 0) 0x61
+setbyte (W_BASE + 14*32 + 8) 0x62
+setbyte (W_BASE + 14*32 + 16) 0x63
+setbyte (W_BASE + 14*32 + 24) 0x80
+
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+SHR_32(10, TMP4, (W_BASE + 14*32))
+
+HALT

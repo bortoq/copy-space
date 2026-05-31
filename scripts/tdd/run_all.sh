@@ -4,33 +4,20 @@ set -eu
 fail=0
 
 tests="
-scripts/tdd/test_vmrep_tools.sh
-scripts/tdd/test_vmerr_diag.sh
-scripts/tdd/test_scratch_abi.sh
-scripts/tdd/test_scratch_artifacts.sh
-scripts/tdd/test_memory_layout_guarantees.sh
-scripts/tdd/test_term0_desc_abi.sh
-scripts/tdd/test_fail_bundle.sh
-scripts/tdd/test_art_doc_sync.sh
 scripts/tdd/test_forth0c.sh
-scripts/tdd/test_forth0c_strict.sh
+scripts/tdd/test_vmerr_diag.sh
 scripts/tdd/test_vmrun_strict_align32.sh
-scripts/tdd/test_forth0_bitops.sh
-scripts/tdd/test_forth0_2a.sh
-scripts/tdd/test_forth0_ptr32.sh
-scripts/tdd/test_forth0_ptrprims.sh
-scripts/tdd/test_forth0_add24p.sh
-scripts/tdd/test_forth0_lt24p.sh
-scripts/tdd/test_forth0_life_demo.sh
+scripts/tdd/test_vmrun_trace_jsonl.sh
+scripts/tdd/test_rv32i_mvp_trace.sh
+scripts/tdd/test_rv32i_staged_plan.sh
+scripts/tdd/test_rv32i_emitter_contract.sh
 "
 
 for t in $tests; do
   echo
   echo "[tdd] RUN $t"
-
   rc=0
   if sh "$t"; then rc=0; else rc=$?; fi
-
   if [ "$rc" -eq 0 ]; then
     echo "[tdd] OK  $t"
   else

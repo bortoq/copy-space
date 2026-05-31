@@ -135,7 +135,7 @@ int vm_invariants_strict_align32_check(vm_t *vm) {
   /* std7_fixed legacy: ART base is computed relative to workspace_base */
   const bitaddr_t ART = align8_bits(vm->workspace_base + 512u);
 
-  const bitaddr_t need_end = ART + (bitaddr_t)(61u) * (bitaddr_t)width;
+  const bitaddr_t need_end = ART + (bitaddr_t)(100u) * (bitaddr_t)width;
   if (need_end > vm->space_bits) {
     return invariant_fail(
       vm,

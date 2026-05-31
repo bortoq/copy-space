@@ -1,0 +1,29 @@
+# test_sched_validate.f0 — runtime validation of schedule using VALIDATE word
+#
+# Pipeline:
+#   1. Generate schedule .f0 with sched_to_f0.py
+#   2. Include it to set up schedule data in TESTG
+#   3. Call VALIDATE (reads valid flag, halts if non-zero)
+#   4. Call SCHED_INFO (reads header into VAR_N/DST/SRC)
+#   5. Copy header fields to OUT_BASE for verification
+#
+# NOTE: copybits uses LITN which overwrites VAR_N, so we copy
+#       directly from TESTG offsets rather than via variables.
+
+const OUT_BASE (TESTG + 1024)
+
+# Step 1: schedule data is already in TESTG (from generated .f0)
+
+# Step 2: runtime validation
+VALIDATE
+
+# Step 3: read schedule info into variables
+SCHED_INFO
+
+# Step 4: copy header fields directly from TESTG to output area
+copybits 24 (OUT_BASE + 0) (TESTG + 0)    # NUM_TICKS
+copybits 24 (OUT_BASE + 24) (TESTG + 24)  # NUM_CHUNKS
+copybits 24 (OUT_BASE + 48) (TESTG + 48)  # SLOTS
+copybits 24 (OUT_BASE + 72) (TESTG + 72)  # BW
+
+HALT

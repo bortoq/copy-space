@@ -88,6 +88,30 @@ typedef struct std7_addrs_t {
   bitaddr_t word_load24bp;    /* ART[68] */
   bitaddr_t word_store24rp;   /* ART[69] */
 
+  /* scheduler words: 70..71 */
+  bitaddr_t word_validate_sched;  /* ART[70] */
+  bitaddr_t word_sched_info;      /* ART[71] */
+
+  /* compile words: 72 */
+  bitaddr_t word_compile_one;     /* ART[72] */
+
+  /* token compiler variables: 73..77 */
+  bitaddr_t var_free;             /* ART[73] */
+  bitaddr_t var_cur;              /* ART[74] */
+  bitaddr_t var_nextfree;         /* ART[75] */
+  bitaddr_t var_prev_next_field;  /* ART[76] */
+  bitaddr_t var_token;            /* ART[77] */
+
+  /* pool base: 78 */
+  bitaddr_t pool_base;            /* ART[78] */
+
+  /* in-space source variables: 79..80 */
+  bitaddr_t var_src_addr;         /* ART[79] */
+  bitaddr_t var_src_end;          /* ART[80] */
+
+  /* setup inspace word: 81 */
+  bitaddr_t word_setup_inspace;   /* ART[81] */
+
 } std7_addrs_t;
 
 #endif

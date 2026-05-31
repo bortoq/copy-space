@@ -1,0 +1,54 @@
+\ Integrated BusyBox + Minimal Filesystem for Copy-Space / Forth0
+
+include "src/forth0/lib/std.f0"
+include "riscv-port/minimal-fs.f0"
+
+\ === BusyBox commands with FS ===
+
+: cmd_echo ( -- )
+    ." echo not implemented in this demo" cr
+;
+
+: cmd_ls ( -- )
+    ls-fs
+;
+
+: cmd_cat ( name len -- )
+    cat-file
+;
+
+: cmd_touch ( name len -- )
+    touch
+;
+
+: cmd_write ( data len name len -- )
+    write
+;
+
+\ === Command dispatcher ===
+
+: dispatch ( c-addr len -- )
+    2dup s" ls"   compare 0= if 2drop cmd_ls   exit then
+    2dup s" cat"  compare 0= if cmd_cat  exit then
+    2dup s" touch" compare 0= if cmd_touch exit then
+    2dup s" write" compare 0= if cmd_write exit then
+    ." Unknown command: " type cr
+;
+
+\ === Shell ===
+
+: prompt ( -- )
+    ." busybox-fs> "
+;
+
+: busybox-fs ( -- )
+    fs-init
+    ." BusyBox + FS ready" cr
+    begin
+        prompt
+    again
+;
+
+: main ( -- )
+    busybox-fs
+;

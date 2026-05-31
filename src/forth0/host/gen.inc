@@ -45,3 +45,31 @@ static void do_set24(pstate_t *ps, FILE *out, uint64_t base_bitaddr, uint64_t u2
   do_setbyte(ps, out, base_bitaddr + 1u*8u, b1);
   do_setbyte(ps, out, base_bitaddr + 2u*8u, b2);
 }
+
+/* Generic set-N-bits: write val to dst at bit granularity */
+static void do_set_bits(pstate_t *ps, FILE *out, bitaddr_t dst, uint64_t val, unsigned nbits) {
+  unsigned full_bytes = nbits / 8u;
+  for (unsigned i = 0; i < full_bytes; i++) {
+    unsigned shift = (full_bytes - 1u - i) * 8u;
+    do_setbyte(ps, out, dst + (uint64_t)i * 8u, (val >> shift) & 0xFFu);
+  }
+  unsigned rem = nbits % 8u;
+  if (rem > 0) {
+    unsigned shift = nbits - rem;
+    for (unsigned i = 0; i < rem; i++) {
+      unsigned bit = (unsigned)((val >> (shift + (rem - 1u - i))) & 1u);
+      do_setbit(ps, out, dst + (uint64_t)full_bytes * 8u + (uint64_t)i, (int)bit);
+    }
+  }
+}
+
+/* Write one processor instruction slot at page_addr+slot*instr_bits */
+static void do_instr(pstate_t *ps, FILE *out, bitaddr_t page_addr, unsigned slot) {
+  bitaddr_t slot_addr = page_addr + (bitaddr_t)slot * (bitaddr_t)ps->vm->instr_bits;
+  uint64_t n   = parse_expr(ps);
+  uint64_t dst = parse_expr(ps);
+  uint64_t src = parse_expr(ps);
+  do_set_bits(ps, out, slot_addr + (bitaddr_t)ps->vm->off_n,   n,   ps->vm->n_bits);
+  do_set_bits(ps, out, slot_addr + (bitaddr_t)ps->vm->off_dst, dst, ps->vm->addr_bits);
+  do_set_bits(ps, out, slot_addr + (bitaddr_t)ps->vm->off_src, src, ps->vm->addr_bits);
+}

@@ -1,0 +1,31 @@
+\ RISC-V RV32I minimal port for Copy-Space (Forth0 version)
+\ Stage 2: Forth0 implementation skeleton
+
+include "src/forth0/lib/std.f0"
+
+: riscv-fetch ( pc -- instr )
+    4 copybits
+;
+
+: riscv-execute ( instr -- )
+    dup 0x7f and
+    case
+        0x13 of  \ OP-IMM
+            ...
+        endof
+        0x33 of  \ OP
+            ...
+        endof
+        \ add more opcodes here
+    endcase
+;
+
+: riscv-run ( cycles -- )
+    0 do
+        pc fetch riscv-execute
+    loop
+;
+
+\ Example usage in Forth0:
+\ 42 0 0 addi   \ would be compiled to proper tokens
+\ This is a high-level sketch — real implementation needs full decoder

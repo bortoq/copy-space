@@ -7,8 +7,9 @@ static void vmrep_hook_tick_begin(void *user, size_t slots_cap) {
   vmrep_tick_begin(slots_cap);
 }
 
-static void vmrep_hook_note_copy(void *user, uint64_t dst, uint64_t n, uint64_t src) {
+static void vmrep_hook_note_copy(void *user, unsigned slot, uint64_t dst, uint64_t n, uint64_t src) {
   (void)user;
+  (void)slot;
   (void)src;
   vmrep_note_copy(dst, n);
 }

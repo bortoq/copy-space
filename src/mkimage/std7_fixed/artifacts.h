@@ -89,7 +89,43 @@ typedef enum {
   ART_WORD_LOAD24BP  = 68,
   ART_WORD_STORE24RP = 69,
 
-  ART_COUNT = 70
+  /* scheduler words */
+  ART_WORD_VALIDATE_SCHED = 70,
+  ART_WORD_SCHED_INFO     = 71,
+
+  /* compile words */
+  ART_WORD_COMPILE_ONE    = 72,
+
+  /* token compiler variables (exposed for COMPILE_ONE callers) */
+  ART_VAR_FREE             = 73,
+  ART_VAR_CUR              = 74,
+  ART_VAR_NEXTFREE         = 75,
+  ART_VAR_PREV_NEXT_FLD    = 76,
+  ART_VAR_TOKEN            = 77,
+
+  ART_POOL_BASE            = 78,
+
+  /* in-space source variables */
+  ART_VAR_SRC_ADDR         = 79,
+  ART_VAR_SRC_END          = 80,
+
+  /* setup inspace word */
+  ART_WORD_SETUP_INSPACE   = 81,
+  ART_SYM_TABLE_BASE        = 82,
+  ART_SYM_TABLE_END         = 83,
+
+  /* 84..92: 32-bit gate words + scratch */
+  ART_WORD_BNOT32 = 84,
+  ART_WORD_BAND32 = 85,
+  ART_WORD_BOR32  = 86,
+  ART_WORD_BXOR32 = 87,
+  ART_SCR_OPA     = 88,
+  ART_SCR_OPB     = 89,
+  ART_SCR_OPR     = 90,
+  ART_SCR_X0      = 91,
+  ART_SCR_X1      = 92,
+
+  ART_COUNT = 93
 } std7_art_idx_t;
 
 /* Writes standard artifacts table. Leaves unspecified/reserved indices unchanged. */

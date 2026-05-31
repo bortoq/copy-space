@@ -97,6 +97,11 @@ static void vm_compute_mmio_layout(vm_t *vm) {
   /* Control */
   vm->mmio.halt = p; p += 1;
 
+  /* In-space source */
+  vm->mmio.in_src_mode = p; p += 1;
+  vm->mmio.in_src_addr = p; p += vm->addr_bits;
+  vm->mmio.in_src_end  = p; p += vm->addr_bits;
+
   /* round MMIO end up to next byte boundary for nicer workspace */
   vm->mmio.end = (p + 7u) & ~(bitaddr_t)7u;
   vm->workspace_base = vm->mmio.end;
@@ -194,6 +199,27 @@ static int service_in(vm_t *vm, FILE *in) {
     return 0;
   }
 
+  /* Check in-space source mode */
+  if (vm_bit_get(vm, vm->mmio.in_src_mode)) {
+    uint64_t src_raw = vm_read_uint(vm, vm->mmio.in_src_addr, vm->addr_bits);
+    uint64_t end_raw = vm_read_uint(vm, vm->mmio.in_src_end,  vm->addr_bits);
+    bitaddr_t src_addr = (bitaddr_t)src_raw;
+    bitaddr_t end_addr = (bitaddr_t)end_raw;
+
+    if (src_addr + bl > end_addr || src_addr >= end_addr) {
+      /* EOF: no more data in buffer */
+      vm_bit_set(vm, vm->mmio.in_eof, 1);
+    } else {
+      bitcpy((size_t)bl, vm->space, (size_t)src_addr, vm->space, (size_t)bd);
+      vm_write_uint(vm, vm->mmio.in_got, vm->n_bits, (uint64_t)bl);
+      vm_write_uint(vm, vm->mmio.in_src_addr, vm->addr_bits, (uint64_t)(src_addr + bl));
+    }
+    vm_bit_set(vm, vm->mmio.in_done, 1);
+    vm_bit_set(vm, vm->mmio.in_req, 0);
+    return 0;
+  }
+
+  /* Legacy: read from stdin */
   size_t nbytes = (size_t)(bl >> 3);
   size_t byte_dst = (size_t)(bd >> 3);
 
@@ -321,7 +347,7 @@ vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
     }
 
     /* bitcpy uses size_t offsets; with 512KB this is safe */
-    if (vm->hooks.note_copy) vm->hooks.note_copy(vm->hooks.user, (uint64_t)dst, (uint64_t)n, (uint64_t)src);
+    if (vm->hooks.note_copy) vm->hooks.note_copy(vm->hooks.user, i, (uint64_t)dst, (uint64_t)n, (uint64_t)src);
 
     bitcpy((size_t)n, vm->space, (size_t)src, vm->space, (size_t)dst);
   }

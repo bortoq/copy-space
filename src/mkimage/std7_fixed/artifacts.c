@@ -92,4 +92,28 @@ void std7_fixed_write_artifacts(vm_t *vm, bitaddr_t ART, const std7_addrs_t *A) 
   artw(vm, ART, ART_WORD_LOAD24AP,  A->word_load24ap);
   artw(vm, ART, ART_WORD_LOAD24BP,  A->word_load24bp);
   artw(vm, ART, ART_WORD_STORE24RP, A->word_store24rp);
+
+  /* scheduler words */
+  artw(vm, ART, ART_WORD_VALIDATE_SCHED, A->word_validate_sched);
+  artw(vm, ART, ART_WORD_SCHED_INFO,     A->word_sched_info);
+
+  /* compile words */
+  artw(vm, ART, ART_WORD_COMPILE_ONE,    A->word_compile_one);
+
+  /* token compiler variables */
+  artw(vm, ART, ART_VAR_FREE,            A->var_free);
+  artw(vm, ART, ART_VAR_CUR,             A->var_cur);
+  artw(vm, ART, ART_VAR_NEXTFREE,        A->var_nextfree);
+  artw(vm, ART, ART_VAR_PREV_NEXT_FLD,   A->var_prev_next_field);
+  artw(vm, ART, ART_VAR_TOKEN,           A->var_token);
+
+  /* pool base */
+  artw(vm, ART, ART_POOL_BASE,           A->pool_base);
+
+  /* in-space source variables */
+  artw(vm, ART, ART_VAR_SRC_ADDR,        A->var_src_addr);
+  artw(vm, ART, ART_VAR_SRC_END,         A->var_src_end);
+
+  /* setup inspace word */
+  artw(vm, ART, ART_WORD_SETUP_INSPACE,  A->word_setup_inspace);
 }

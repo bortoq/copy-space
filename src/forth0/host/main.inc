@@ -1,5 +1,6 @@
 /* main.inc — forth0c entrypoint TU (included by src/tools/forth0c.c). */
 
+#define _GNU_SOURCE
 #include "space.h"
 #include "mkimage/std7_fixed/artifacts.h"
 
@@ -63,6 +64,18 @@ typedef struct {
   unsigned art_count;
   consttab_t consts;
   macrotab_t macros;
+
+  /* page definition state */
+  bitaddr_t page_addr;   /* current page bitaddr, 0 if not in page */
+  unsigned  page_slot;   /* next slot index within page */
+
+  /* conditional compilation stack */
+#define IF_STACK_MAX 64
+  int   if_stack[IF_STACK_MAX]; /* 1=compiling, 0=skipping */
+  int   if_depth;               /* current nesting depth, -1 = no if */
+
+  /* toggles */
+  unsigned flags;        /* bitmask of enabled toggles */
 } pstate_t;
 
 static token_t p_peek(pstate_t *ps) {
@@ -105,6 +118,16 @@ int main(int argc, char **argv) {
   bitaddr_t W = vm.workspace_base;
   bitaddr_t ART = (W + 512u + 7u) & ~(bitaddr_t)7u;
 
+  /* compute WORDS_BASE + STEP same as mkimage std7_fixed */
+  unsigned bsel = 0;
+  while (((bitaddr_t)1u << bsel) < (bitaddr_t)vm.processor_bits) bsel++;
+  if (bsel >= vm.addr_bits) { fprintf(stderr, "forth0c: cannot determine STEP\n"); vm_free(&vm); return 1; }
+  bitaddr_t STEP = (bitaddr_t)1u << bsel;
+  bitaddr_t words_region_pages = 144;  // was 128, now 144 for 32-bit gate words (slots 128-140)
+  bitaddr_t words_region_bits = (bitaddr_t)words_region_pages * STEP;
+  bitaddr_t align_bits = (bitaddr_t)1u << (bsel + 1u);
+  bitaddr_t WORDS_BASE = (vm.space_bits - words_region_bits) & ~(align_bits - 1u);
+
   /* report TESTG(byte) for harness */
   uint64_t testg = art_read(&vm, ART, (unsigned)ART_TESTG);
   fprintf(stderr, "TESTG(byte)=%u\n", (unsigned)(testg / 8u));
@@ -138,7 +161,25 @@ int main(int argc, char **argv) {
   /* built-in consts */
   const_set(&ps.consts, "ADDR_BITS", (uint64_t)vm.addr_bits);
   const_set(&ps.consts, "ADDR_BYTES", (uint64_t)(vm.addr_bits/8u));
+  const_set(&ps.consts, "N_BITS", (uint64_t)vm.n_bits);
+  const_set(&ps.consts, "INSTR_BITS", (uint64_t)vm.instr_bits);
+  const_set(&ps.consts, "PROCESSOR_N", (uint64_t)vm.processor_n);
+  const_set(&ps.consts, "PROCESSOR_BITS", (uint64_t)vm.processor_bits);
   const_set(&ps.consts, "WORKSPACE_BASE", (uint64_t)vm.workspace_base);
+  const_set(&ps.consts, "SPACE_BITS", (uint64_t)vm.space_bits);
+  const_set(&ps.consts, "STEP", (uint64_t)STEP);
+  const_set(&ps.consts, "WORDS_BASE", (uint64_t)WORDS_BASE);
+  const_set(&ps.consts, "WORDS_PAGES", (uint64_t)words_region_pages);
+  const_set(&ps.consts, "OFF_N", (uint64_t)vm.off_n);
+  const_set(&ps.consts, "OFF_DST", (uint64_t)vm.off_dst);
+  const_set(&ps.consts, "OFF_SRC", (uint64_t)vm.off_src);
+  const_set(&ps.consts, "ART_BASE", (uint64_t)ART);
+
+  /* page/if state */
+  ps.page_addr = 0;
+  ps.page_slot = 0;
+  ps.if_depth = -1;
+  ps.flags = 0;
 
   compile_stream(&ps, out);
 

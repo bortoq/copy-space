@@ -103,13 +103,17 @@ void write_page_end(vm_t *vm, bitaddr_t img_end, bitaddr_t halt_cell,
   nop_fill_image(vm, img_end);
   bitaddr_t A = vm->addr_bits;
   const unsigned S_PATCH_DST=1, S_WRITE=2, S_SETHALT=3;
+
+  /* --- Data area: store literal halt_cell address past processor area --- */
+  bitaddr_t data = (img_end + vm->processor_bits + 7u) & ~(bitaddr_t)7u;
+  vm_write_uint(vm, data, A, (uint64_t)halt_cell);
+
   bitaddr_t write_dst = vm_proc_slot_field_ip(vm, S_WRITE, vm->off_dst);
   vm_write_inst(vm, img_end + (bitaddr_t)S_PATCH_DST*(bitaddr_t)vm->instr_bits,
                 (vm_inst_t){ .n=A, .dst=(uint64_t)write_dst, .src=(uint64_t)var_prev_next_field });
+  /* S_WRITE: copy literal halt_cell address from data -> [PREV_NEXT_FLD] */
   vm_write_inst(vm, img_end + (bitaddr_t)S_WRITE*(bitaddr_t)vm->instr_bits,
-                (vm_inst_t){ .n=A, .dst=0, .src=(uint64_t)halt_cell });
+                (vm_inst_t){ .n=A, .dst=0, .src=(uint64_t)data });
   vm_write_inst(vm, img_end + (bitaddr_t)S_SETHALT*(bitaddr_t)vm->instr_bits,
                 (vm_inst_t){ .n=1, .dst=(uint64_t)vm->mmio.halt, .src=(uint64_t)(const1_base+50) });
 }
-
-

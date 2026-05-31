@@ -102,4 +102,40 @@ void write_word_eq24p_micro(vm_t *vm,
                                    bitaddr_t OUT_EQ);
 void write_cell(vm_t *vm, bitaddr_t cell_base, bitaddr_t code_ptr, bitaddr_t next_ptr);
 
+/* scheduler words */
+void write_word_validate_sched(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                                bitaddr_t testg, bitaddr_t const1_base);
+void write_word_sched_info(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                            bitaddr_t testg,
+                            bitaddr_t var_n, bitaddr_t var_dst,
+                            bitaddr_t var_src);
+
+/* compile words */
+void write_word_compile_one(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                             bitaddr_t var_n, bitaddr_t var_token,
+                             bitaddr_t var_free, bitaddr_t var_cur,
+                             bitaddr_t var_nextfree, bitaddr_t var_prev_next_field,
+                             bitaddr_t const1_base);
+
+/* setup inspace word */
+void write_word_setup_inspace(vm_t *vm, bitaddr_t img, bitaddr_t branch_img,
+                               bitaddr_t var_src_addr, bitaddr_t var_src_end,
+                               bitaddr_t var_token,
+                               bitaddr_t const1_base);
+
+/* 32-bit gate words (multi-page, with page stride) */
+void write_word_bnot32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                        bitaddr_t OPA, bitaddr_t OPR,
+                        bitaddr_t CONST1, bitaddr_t CONST0);
+void write_word_band32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                        bitaddr_t OPA, bitaddr_t OPB, bitaddr_t OPR,
+                        bitaddr_t CONST0);
+void write_word_bor32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                       bitaddr_t OPA, bitaddr_t OPB, bitaddr_t OPR,
+                       bitaddr_t CONST1, bitaddr_t CONST0);
+void write_word_bxor32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                        bitaddr_t OPA, bitaddr_t OPB, bitaddr_t OPR,
+                        bitaddr_t X0, bitaddr_t X1,
+                        bitaddr_t CONST1, bitaddr_t CONST0);
+
 #endif

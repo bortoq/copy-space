@@ -1,0 +1,23 @@
+# test_compile_tokens.f0 — in-space token compilation via SETUP_INSPACE
+#
+# Places 3 tokens (HALT) in TESTG area, then calls SETUP_INSPACE
+# which triggers in-space compilation into cells.
+
+# === Step 1: Write 3 tokens at TESTG+200 ===
+set24 (TESTG + 200) HALT
+set24 (TESTG + 200 + 24) HALT
+set24 (TESTG + 200 + 48) HALT
+
+# === Step 2: Set up in-space source parameters ===
+# IMPORTANT: set24 uses LITN internally, clobbering VAR_N.
+# VAR_SRC_ADDR and VAR_SRC_END must be set AFTER all set24.
+set24 VAR_SRC_ADDR (TESTG + 200)
+set24 VAR_SRC_END (TESTG + 200 + 72)
+
+# === Step 3: Call SETUP_INSPACE ===
+# This configures MMIO for in-space mode (reads from memory instead of stdin),
+# sets in_req=1, and chain-loads the BRANCH page.
+# The BRANCH/DO loop then compiles the 3 tokens from TESTG into cells.
+SETUP_INSPACE
+
+# (not reached — SETUP_INSPACE does not return)

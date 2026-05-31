@@ -56,6 +56,10 @@ static void clear_mmio(vm_t *vm) {
   vm_write_uint(vm, vm->mmio.out_got, vm->n_bits, 0);
 
   vm_bit_set(vm, vm->mmio.halt, 0);
+
+  vm_bit_set(vm, vm->mmio.in_src_mode, 0);
+  vm_write_uint(vm, vm->mmio.in_src_addr, vm->addr_bits, 0);
+  vm_write_uint(vm, vm->mmio.in_src_end, vm->addr_bits, 0);
 }
 
 static void install_boot_load(vm_t *vm, uint64_t next_img) {

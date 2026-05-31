@@ -21,8 +21,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include "syms.h"
+/* sym table globals (defined in syms.c) */
+extern const sym_table_entry_t g_syms[];
+extern const unsigned g_syms_count;
 
 static bitaddr_t align8(bitaddr_t x) { return (x + 7u) & ~(bitaddr_t)7u; }
+static bitaddr_t align32(bitaddr_t x){ return (x + 31u) & ~(bitaddr_t)31u; }
 static bitaddr_t align64(bitaddr_t x){ return (x + 63u) & ~(bitaddr_t)63u; }
 // static bitaddr_t align_pow2(bitaddr_t x, bitaddr_t p2){ return (x + (p2-1)) & ~(p2-1); }
 
@@ -108,6 +113,10 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   bitaddr_t VAR_PREV_NEXT_FLD = P; P = align8(VAR_PREV_NEXT_FLD + vm.addr_bits);
   bitaddr_t VAR_TOKEN         = P; P = align8(VAR_TOKEN + vm.addr_bits);
 
+  // in-space source vars
+  bitaddr_t VAR_SRC_ADDR      = P; P = align8(VAR_SRC_ADDR + vm.addr_bits);
+  bitaddr_t VAR_SRC_END       = P; P = align8(VAR_SRC_END + vm.addr_bits);
+
   // 2a fixed operands/results
   bitaddr_t VAR_A24   = align8(P); P = align8(VAR_A24   + 24u);
   bitaddr_t VAR_B24   = align8(P); P = align8(VAR_B24   + 24u);
@@ -130,6 +139,13 @@ int std7_fixed_legacy_main(int argc, char **argv) {
 
   // test region
   bitaddr_t TESTG = align8(P + 256); P = align8(TESTG + 64);
+
+  // 32-bit gate word scratch operands
+  bitaddr_t SCR_OPA = align32(P); P = align32(SCR_OPA + 32);
+  bitaddr_t SCR_OPB = align32(P); P = align32(SCR_OPB + 32);
+  bitaddr_t SCR_OPR = align32(P); P = align32(SCR_OPR + 32);
+  bitaddr_t SCR_X0 = P++;
+  bitaddr_t SCR_X1 = P++;
 
   // cells
   bitaddr_t CELLS_BASE = align64(P + 1024);
@@ -180,8 +196,8 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   bitaddr_t WORD_BOR     = WORDS_BASE + 17*STEP;
   bitaddr_t WORD_BXOR    = WORDS_BASE + 18*STEP;
 
-  // Pad so DO/END alignment remains stable
-  (void)(WORDS_BASE + 19*STEP);
+  // SETUP_INSPACE word (replaces former pad)
+  bitaddr_t WORD_SETUP_INSPACE = WORDS_BASE + 19*STEP;
 
   // Token compiler pages (stable)
   bitaddr_t DO_BASE      = WORDS_BASE + 20*STEP;
@@ -204,6 +220,17 @@ int std7_fixed_legacy_main(int argc, char **argv) {
 
   // NEW 2b word EQ24P uses free block 104..127 (24 pages)
   bitaddr_t WORD_EQ24P   = WORDS_BASE + 104*STEP;
+
+  // 32-bit gate words (blocks 128..141)
+  bitaddr_t WORD_BNOT32 = WORDS_BASE + 128*STEP;
+  bitaddr_t WORD_BAND32 = WORDS_BASE + 130*STEP;
+  bitaddr_t WORD_BOR32  = WORDS_BASE + 132*STEP;
+  bitaddr_t WORD_BXOR32 = WORDS_BASE + 135*STEP;
+
+  // scheduler words (slots 29..31)
+  bitaddr_t WORD_VALIDATE_SCHED = WORDS_BASE + 29*STEP;
+  bitaddr_t WORD_SCHED_INFO     = WORDS_BASE + 30*STEP;
+  bitaddr_t WORD_COMPILE_ONE    = WORDS_BASE + 31*STEP;
 
   // build core word pages
   write_next_page(&vm, NEXT_IMG, VAR_IP, VAR_CODE, VAR_NEXT, CONST1);
@@ -238,9 +265,15 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   write_word_bor(&vm, WORD_BOR, NEXT_IMG, BA, BB, BR, CONST1, CONST0);
   write_word_bxor(&vm, WORD_BXOR, NEXT_IMG, BA, BB, BR, X0, X1, CONST1, CONST0);
 
+  write_word_bnot32(&vm, WORD_BNOT32, NEXT_IMG, SCR_OPA, SCR_OPR, CONST1, CONST0);
+  write_word_band32(&vm, WORD_BAND32, NEXT_IMG, SCR_OPA, SCR_OPB, SCR_OPR, CONST0);
+  write_word_bor32(&vm, WORD_BOR32,  NEXT_IMG, SCR_OPA, SCR_OPB, SCR_OPR, CONST1, CONST0);
+  write_word_bxor32(&vm, WORD_BXOR32, NEXT_IMG, SCR_OPA, SCR_OPB, SCR_OPR,
+                     SCR_X0, SCR_X1, CONST1, CONST0);
+
   // static cells
   write_cell(&vm, HEAD_CELL, WORD_NOP, HALT_CELL);
-  write_cell(&vm, HALT_CELL, WORD_HALT, HALT_CELL);
+  write_cell(&vm, HALT_CELL, WORD_HALT, 0);
 
   // init freelist
   for (unsigned i=0; i<pool_cells; i++) {
@@ -316,6 +349,22 @@ int std7_fixed_legacy_main(int argc, char **argv) {
                            X0, X1, CONST1, CONST0,
                            VAR_EQ);
   }
+
+  // build scheduler word pages (use TESTSCR_BASE — .f0 TESTG == TESTSCR_BASE)
+  write_word_validate_sched(&vm, WORD_VALIDATE_SCHED, NEXT_IMG, TESTSCR_BASE, CONST1);
+  write_word_sched_info(&vm, WORD_SCHED_INFO, NEXT_IMG, TESTSCR_BASE, VAR_N, VAR_DST, VAR_SRC);
+
+  // build compile word pages
+  write_word_compile_one(&vm, WORD_COMPILE_ONE, NEXT_IMG,
+                          VAR_N, VAR_TOKEN,
+                          VAR_FREE, VAR_CUR, VAR_NEXTFREE, VAR_PREV_NEXT_FLD,
+                          CONST1);
+
+  // build setup inspace word page
+  write_word_setup_inspace(&vm, WORD_SETUP_INSPACE, BRANCH_IMG,
+                            VAR_SRC_ADDR, VAR_SRC_END,
+                            VAR_TOKEN,
+                            CONST1);
 
   // artifact: keep previous indices unchanged, append new at the end
   /* devices/bus: build TERM0 structures after pool (byte-aligned) */
@@ -404,7 +453,52 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   A.word_load24bp  = WORD_LOAD24BP;
   A.word_store24rp = WORD_STORE24RP;
 
+  /* scheduler words */
+  A.word_validate_sched = WORD_VALIDATE_SCHED;
+  A.word_sched_info     = WORD_SCHED_INFO;
+
+  /* compile words */
+  A.word_compile_one    = WORD_COMPILE_ONE;
+
+  /* token compiler variables */
+  A.var_free             = VAR_FREE;
+  A.var_cur              = VAR_CUR;
+  A.var_nextfree         = VAR_NEXTFREE;
+  A.var_prev_next_field  = VAR_PREV_NEXT_FLD;
+  A.var_token            = VAR_TOKEN;
+
+  /* in-space source variables */
+  A.var_src_addr         = VAR_SRC_ADDR;
+  A.var_src_end          = VAR_SRC_END;
+
+  /* setup inspace word */
+  A.word_setup_inspace   = WORD_SETUP_INSPACE;
+
+  /* pool base */
+  A.pool_base            = POOL_BASE;
+
   std7_fixed_write_artifacts(&vm, ART, &A); // }}
+  /* Write Symbol Table to test scratch area */
+  bitaddr_t sym_table_end = std7_fixed_write_symbol_table(
+      &vm, TESTSCR_BASE, g_syms, g_syms_count);
+  /* Store sym table base/end in ART entries 82 and 83 */
+  vm_write_uint(&vm,
+      ART + (bitaddr_t)ART_SYM_TABLE_BASE * (bitaddr_t)vm.addr_bits,
+      vm.addr_bits, (uint64_t)TESTSCR_BASE);
+  vm_write_uint(&vm,
+      ART + (bitaddr_t)ART_SYM_TABLE_END * (bitaddr_t)vm.addr_bits,
+      vm.addr_bits, (uint64_t)sym_table_end);
+
+  /* 32-bit gate word ART entries (84..92) */
+  vm_write_uint(&vm, ART + ART_WORD_BNOT32 * vm.addr_bits, vm.addr_bits, WORD_BNOT32);
+  vm_write_uint(&vm, ART + ART_WORD_BAND32 * vm.addr_bits, vm.addr_bits, WORD_BAND32);
+  vm_write_uint(&vm, ART + ART_WORD_BOR32  * vm.addr_bits, vm.addr_bits, WORD_BOR32);
+  vm_write_uint(&vm, ART + ART_WORD_BXOR32 * vm.addr_bits, vm.addr_bits, WORD_BXOR32);
+  vm_write_uint(&vm, ART + ART_SCR_OPA     * vm.addr_bits, vm.addr_bits, SCR_OPA);
+  vm_write_uint(&vm, ART + ART_SCR_OPB     * vm.addr_bits, vm.addr_bits, SCR_OPB);
+  vm_write_uint(&vm, ART + ART_SCR_OPR     * vm.addr_bits, vm.addr_bits, SCR_OPR);
+  vm_write_uint(&vm, ART + ART_SCR_X0      * vm.addr_bits, vm.addr_bits, SCR_X0);
+  vm_write_uint(&vm, ART + ART_SCR_X1      * vm.addr_bits, vm.addr_bits, SCR_X1);
 
   // INIT compilation: token -> VAR_TOKEN, len=ADDR_BITS, IN_REQ=1, load BRANCH
   nop_fill_processor(&vm);

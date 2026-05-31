@@ -4,34 +4,32 @@ _file: doc/README.md_
 
 All documentation is written in simple English.
 
-This repo has two layers:
-- Scheduler v0 toolkit (pilot-facing, recommended)
-- DPF VM and toolchain (under the hood)
+This repo is currently operated in single-goal mode:
+- demonstrate non-trivial in-space computation
+- close RV32I MVP on top of Copy-Space VM
+
+See:
+- doc/MINIMAL_PATH.md
 
 ------------------------------------------------------------
 
-## Start here (pilot path, recommended)
+## Start here (single-goal path)
 
-1) Partner brief
-- doc/partners/partner_brief.md
+1) Minimal path and priorities
+- doc/MINIMAL_PATH.md
 
-2) Pilot quickstart (one command)
-- doc/partners/quickstart_pilot.md
+2) RV32I MVP contract
+- doc/rv32i_mvp.md
 
-3) Pilot intake (what we need from you)
-- doc/partners/pilot_intake.md
+3) Roadmap (active sections 14.7-14.9)
+- doc/roadmap.md
 
-4) CI gate recipe (copy-paste workflow)
-- doc/partners/ci_gate_recipe.md
-- doc/partners/ci_gate_workflow_example.yml
-
-5) Scheduler contracts (source of truth)
-- doc/scheduler_io_v0.md
-- doc/strict1_model_v0.md
+4) Emitter contract
+- doc/riscv_emitter_contract.md
 
 ------------------------------------------------------------
 
-## Engineering docs (for contributors)
+## Engineering docs
 
 6) Overview (two-layer model)
 - doc/overview.md
@@ -55,7 +53,7 @@ This repo has two layers:
 
 ------------------------------------------------------------
 
-## VM and toolchain docs (under the hood)
+## VM and toolchain docs
 
 12) Forth0 workflow and syntax
 - doc/forth0.md

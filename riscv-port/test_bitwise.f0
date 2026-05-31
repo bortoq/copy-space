@@ -1,0 +1,23 @@
+# test_bitwise.f0 — Test 32-bit XOR via fix_bitwise library
+#
+# Tests BITWISE_XOR_32 with 0x12345678 XOR 0xABCDEF01.
+# Result stored at TESTG+0 and verified with --expect-hex.
+
+include "fix_bitwise.f0"
+
+# Operand A = 0x12345678 at (TESTG + 32)
+setbyte (TESTG + 32) 0x78
+setbyte (TESTG + 40) 0x56
+setbyte (TESTG + 48) 0x34
+setbyte (TESTG + 56) 0x12
+
+# Operand B = 0xABCDEF01 at (TESTG + 64)
+setbyte (TESTG + 64) 0x01
+setbyte (TESTG + 72) 0xEF
+setbyte (TESTG + 80) 0xCD
+setbyte (TESTG + 88) 0xAB
+
+# Compute XOR → (TESTG + 0)
+BITWISE_XOR_32(TESTG + 0, TESTG + 32, TESTG + 64)
+
+HALT

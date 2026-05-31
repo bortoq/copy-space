@@ -68,11 +68,21 @@ static uint64_t parse_expr(pstate_t *ps) {
   uint64_t v = parse_term(ps);
   for (;;) {
     token_t t = p_peek(ps);
-    if (!(t.k == TK_OP && (t.op == '+' || t.op == '-'))) break;
-    p_take(ps);
-    uint64_t rhs = parse_term(ps);
-    if (t.op == '+') v = v + rhs;
-    else v = v - rhs;
+    if (t.k == TK_OP && (t.op == '+' || t.op == '-')) {
+      p_take(ps);
+      uint64_t rhs = parse_term(ps);
+      if (t.op == '+') v = v + rhs; else v = v - rhs;
+      continue;
+    }
+    if (t.k == TK_ID) {
+      if (str_ieq(t.s, "eq")) { p_take(ps); v = (v == parse_expr(ps)) ? 1 : 0; continue; }
+      if (str_ieq(t.s, "ne")) { p_take(ps); v = (v != parse_expr(ps)) ? 1 : 0; continue; }
+      if (str_ieq(t.s, "lt")) { p_take(ps); v = (v <  parse_expr(ps)) ? 1 : 0; continue; }
+      if (str_ieq(t.s, "gt")) { p_take(ps); v = (v >  parse_expr(ps)) ? 1 : 0; continue; }
+      if (str_ieq(t.s, "le")) { p_take(ps); v = (v <= parse_expr(ps)) ? 1 : 0; continue; }
+      if (str_ieq(t.s, "ge")) { p_take(ps); v = (v >= parse_expr(ps)) ? 1 : 0; continue; }
+    }
+    break;
   }
   return v;
 }

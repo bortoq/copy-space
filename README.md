@@ -1,76 +1,44 @@
-# Copy-Space — validated scheduling toolkit for deterministic data movement
+# Copy-Space — in-space computation demo platform (single-goal mode)
 
 [![CI](https://github.com/bortoq/copy-space/actions/workflows/ci.yml/badge.svg)](https://github.com/bortoq/copy-space/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/bortoq/copy-space)](https://github.com/bortoq/copy-space/releases)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue)](pyproject.toml)
 
-Copy-Space produces conflict-free schedules for directed data transfer demands under a deterministic resource model (STRICT1).
-It also provides an independent validator report with reproducible metrics.
+Primary goal: demonstrate non-trivial computation running inside Copy-Space address space.
+RISC-V porting (`trace -> .f0 -> .tok -> VM`) is the active path to that goal.
 
-What you get:
-- Correctness: schedule validation under STRICT1 (coverage + bandwidth + model constraints)
-- A lower bound on required ticks (lower_bound_ticks) and a normalized gap metric (gap_to_lower_bound)
-- Reproducible metrics suitable for CI gating and regression tracking
+Current focus:
+- VM core stability and diagnostics
+- RV32I MVP staged gates and repeatability
+- end-to-end in-space computation demos
 
-------------------------------------------------------------
-
-## Try it in 60 seconds (hero example)
-
-Hero workload: odd ring (15 demands, non-trivial gap to lower bound):
-
-  python3 -m venv .venv
-  . .venv/bin/activate
-  python -m pip install -e .
-  copyspace-pilot --csv examples/ring15.csv --bw 256 --outdir tmp/pilot_ring15 --plot
-
-Example output (expected shape):
-
-  baseline status=PASS ticks=12288 lb=8192 gap=4096 gapr=0.500000 util=0.7143
-  greedy   status=PASS ticks=8778 lb=8192 gap=586 gapr=0.071533 util=0.9999
-
-What to open after the run:
-- tmp/pilot_ring15/report_baseline.json
-- tmp/pilot_ring15/report_greedy.json
-- tmp/pilot_ring15/plot_baseline.html
-- tmp/pilot_ring15/plot_greedy.html
-
-Bench history (smoke time series):
-- https://bortoq.github.io/copy-space/
+Single-goal operating mode:
+- doc/MINIMAL_PATH.md
 
 ------------------------------------------------------------
 
-## CLI entrypoints (Scheduler v0)
+## Try it in 60 seconds (RV32I minimal gate)
 
-  copyspace-validate --help
-  copyspace-solve --help
-  copyspace-pilot --help
-  copyspace-demo-scheduler --help
-  copyspace-bench-core --help
-  copyspace-bench-scheduler --help
-
-Partner-facing docs:
-- doc/partners/quickstart_pilot.md
-- doc/partners/pilot_intake.md
-- doc/partners/ci_gate_recipe.md
-
-Technical contracts (source of truth):
-- doc/scheduler_io_v0.md
-- doc/strict1_model_v0.md
+  make bins
+  scripts/tdd/run_rv32i_minimal.sh
 
 ------------------------------------------------------------
 
-## What is inside (high-level)
+## CLI entrypoints (active)
 
-Scheduler v0 (pilot-facing, recommended):
-- validator + metrics (copyspace-validate)
-- solver strategies (copyspace-solve: baseline, greedy, external)
-- pilot runner (copyspace-pilot)
+  riscv-port/run_riscv_f0.sh --help
+  python3 scripts/riscv/rv32i_mvp_check.py --help
+  scripts/riscv/run_staged_plan.sh
 
-Under the hood (VM and toolchain):
+------------------------------------------------------------
+
+## What is inside (high-level, current)
+
+Core (active):
 - minimal bit-addressable VM (space, ticks, copy slots)
-- std7_fixed image builder (mkimage_std7_fixed)
-- host-side Forth0 compiler (forth0c) and Forth0-first regression tests
+- std7_fixed builder + host-side Forth0 pipeline
+- RISC-V C2 tooling and staged RV32I MVP checks
 
 ------------------------------------------------------------
 

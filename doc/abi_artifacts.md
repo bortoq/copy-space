@@ -1,32 +1,14 @@
-# ABI: std7_fixed artifacts table (ART) — 2026-05-05
-_file: doc/abi_artifacts.md_
+# doc/abi_artifacts.md — ABI: std7_fixed artifacts table (ART) — 2026-05-31
 
 This document is generated from `src/mkimage/std7_fixed/artifacts.h`.
-
-## How to regenerate
-The generator script is:
-
-- `scripts/gen_abi_artifacts_doc.py`
-
-Run `python3 scripts/gen_abi_artifacts_doc.py -h` to see the exact invocation for regeneration.
-
-Consistency is enforced in CI/TDD:
-- `scripts/tdd/test_art_doc_sync.sh` runs `scripts/check_art_doc_sync.py --doc doc/abi_artifacts.md`.
 
 ## Rules
 - ABI is **append-only**: new entries are added only at the end (ART_COUNT increases).
 - ART values are **bitaddrs** (bit addresses in `space`).
 - Convert to byte offset: `byte = bitaddr / 8`.
 
-## ART base location (std7_fixed)
-In std7_fixed tools/tests we treat ART base as:
-
-- `ART = align8(workspace_base + 512)`
-
-I.e. `ART = (workspace_base + 512 + 7) & ~7` (bit address), and ART entries are stored as `ADDR_BITS`-wide values.
-
 ## ART table
-`ART_COUNT = 70` (valid indices: 0..69)
+`ART_COUNT = 93` (valid indices: 0..92)
 
 | Index | Enum name(s) | Meaning |
 |---:|---|---|
@@ -100,6 +82,29 @@ I.e. `ART = (workspace_base + 512 + 7) & ~7` (bit address), and ART entries are 
 | ART[67] | `ART_WORD_LOAD24AP` | WORD_LOAD24AP (block-pointer primitive) |
 | ART[68] | `ART_WORD_LOAD24BP` | WORD_LOAD24BP (block-pointer primitive) |
 | ART[69] | `ART_WORD_STORE24RP` | WORD_STORE24RP (block-pointer primitive) |
+| ART[70] | `ART_WORD_VALIDATE_SCHED` |  |
+| ART[71] | `ART_WORD_SCHED_INFO` |  |
+| ART[72] | `ART_WORD_COMPILE_ONE` |  |
+| ART[73] | `ART_VAR_FREE` |  |
+| ART[74] | `ART_VAR_CUR` |  |
+| ART[75] | `ART_VAR_NEXTFREE` |  |
+| ART[76] | `ART_VAR_PREV_NEXT_FLD` |  |
+| ART[77] | `ART_VAR_TOKEN` |  |
+| ART[78] | `ART_POOL_BASE` |  |
+| ART[79] | `ART_VAR_SRC_ADDR` |  |
+| ART[80] | `ART_VAR_SRC_END` |  |
+| ART[81] | `ART_WORD_SETUP_INSPACE` |  |
+| ART[82] | `ART_SYM_TABLE_BASE` |  |
+| ART[83] | `ART_SYM_TABLE_END` |  |
+| ART[84] | `ART_WORD_BNOT32` |  |
+| ART[85] | `ART_WORD_BAND32` |  |
+| ART[86] | `ART_WORD_BOR32` |  |
+| ART[87] | `ART_WORD_BXOR32` |  |
+| ART[88] | `ART_SCR_OPA` |  |
+| ART[89] | `ART_SCR_OPB` |  |
+| ART[90] | `ART_SCR_OPR` |  |
+| ART[91] | `ART_SCR_X0` |  |
+| ART[92] | `ART_SCR_X1` |  |
 
 ## Notes
 - `ART(byte)=...` is printed by `mkimage_std7_fixed` to stderr and is the byte offset of ART in `space`.

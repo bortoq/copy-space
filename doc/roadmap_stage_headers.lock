@@ -1,0 +1,46 @@
+## 1. C3 Foundation
+## 2. RV32I Closure
+## 3. RV32M Implementation Slices
+## 4. Trap/Exception Completion
+## 5. Infra and Risk Fixes
+## 6. RV32M Verification and Release Baseline
+## 7. In-Space CPU Image Loader
+## 8. Universal Fetch/Decode/Execute Loop
+## 9. Runtime Channel ABI
+## 10. Full E2E Conformance
+## 11. Readiness and Completion Controls (for 7-10)
+## 12. Dependency and Critical Path Controls (for 7-10)
+## 13. Budget and Rollback Controls (for 7-10)
+## 14. MVP Path and Anti-Stall Cadence (for 7-10)
+## 15. C3 RV32I Interpreter in Forth0
+## 16. Universal RISC-V Channel Service (Production)
+## 17. Strict Universal Product-Ready Validation
+## 18. Zero-Waiver External Validation Closure
+## 19. Full RV32IM Universal Conformance
+## 20. Blocker-Removal Plan for Stage-20 Completion
+## 21. SHA-Path Semantic Closure and Evidence Enforcement Plan
+## 22. Guest-Execution Closure Plan (for 20.5–20.7 Risks)
+## 23. Executable Closure Checklist (Step-by-Step, Controlled Blockers)
+## 24. Full Debt Return Program A (Roadmap and Governance Cleanup)
+## 25. Full Debt Return Program B (C3 Core Semantics)
+## 26. Full Debt Return Program C (Trap/Unsupported Determinism)
+## 27. Full Debt Return Program D (SHA-Class Semantic Completeness)
+## 28. Full Debt Return Program E (Runtime ABI and Service Parity)
+## 29. Full Debt Return Program F (Final Production Closure to 3-Binary Contract)
+## 30. C3 Debt Paydown Wave A (Decode/Dispatch Core)
+## 31. C3 Debt Paydown Wave B (Semantic Coverage and Traps)
+## 32. C3 Debt Paydown Wave C (Production Hardening and Release Closure)
+## 33. Minimal Freeze Plan
+## 34. Stage-23 Recovery Plan (Current Failing Gates) [LEGACY DERIVED]
+## 35. Stage-23 Execution Recovery Plan (Blocking-Lint Focus) [LEGACY DERIVED]
+## 36. Stage-23 Closure Unblock Plan (Latest) [LEGACY DERIVED]
+## 37. Stage-23 Final Recovery Plan (Remaining Blockers) [LEGACY DERIVED]
+## 38. Stage-23 Completion Recovery Plan (Current Blockers) [LEGACY DERIVED]
+## 39. Stage-23 Execution Gap Recovery Plan [LEGACY DERIVED]
+## 40. Stage-23 Blocker Elimination Plan (Execution-First) [LEGACY DERIVED]
+## 41. C3_RUN Semantic Closure Plan (Blocker for Previous Stage-23) [LEGACY DERIVED]
+## 42. Stage-20 Failure Analysis and Recovery Plan
+## 43. Runtime ABI and Real Guest Execution Path
+## 44. In-Space RV Service Reality Gap Closure
+## 45. Final In-Space RISC-V Emulator Migration Contract
+## 46. Deferred

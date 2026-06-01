@@ -102,6 +102,28 @@ static void vm_compute_mmio_layout(vm_t *vm) {
   vm->mmio.in_src_addr = p; p += vm->addr_bits;
   vm->mmio.in_src_end  = p; p += vm->addr_bits;
 
+  /* Loader channel */
+  vm->mmio.load_req  = p; p += 1;
+  vm->mmio.load_done = p; p += 1;
+  vm->mmio.load_err  = p; p += 1;
+  vm->mmio.load_src  = p; p += vm->addr_bits;
+  vm->mmio.load_bits = p; p += vm->n_bits;
+
+  /* Watchdog */
+  vm->mmio.wd_enable = p; p += 1;
+  vm->mmio.wd_fired  = p; p += 1;
+  vm->mmio.wd_limit  = p; p += vm->n_bits;
+  vm->mmio.wd_ticks  = p; p += vm->n_bits;
+
+  /* Generic channel mailbox */
+  vm->mmio.ch_req  = p; p += 1;
+  vm->mmio.ch_done = p; p += 1;
+  vm->mmio.ch_err  = p; p += 1;
+  vm->mmio.ch_op   = p; p += 8;
+  vm->mmio.ch_a    = p; p += vm->addr_bits;
+  vm->mmio.ch_b    = p; p += vm->addr_bits;
+  vm->mmio.ch_c    = p; p += vm->n_bits;
+
   /* round MMIO end up to next byte boundary for nicer workspace */
   vm->mmio.end = (p + 7u) & ~(bitaddr_t)7u;
   vm->workspace_base = vm->mmio.end;
@@ -279,6 +301,58 @@ static int service_out(vm_t *vm, FILE *out) {
   return 0;
 }
 
+static int service_loader(vm_t *vm) {
+  if (!vm_bit_get(vm, vm->mmio.load_req)) return 0;
+
+  vm_bit_set(vm, vm->mmio.load_done, 0);
+  vm_bit_set(vm, vm->mmio.load_err, 0);
+
+  bitaddr_t src = (bitaddr_t)vm_read_uint(vm, vm->mmio.load_src, vm->addr_bits);
+  bitaddr_t nbits = (bitaddr_t)vm_read_uint(vm, vm->mmio.load_bits, vm->n_bits);
+
+  if (nbits != vm->processor_bits || src + nbits > vm->space_bits || src < vm->workspace_base) {
+    vm_bit_set(vm, vm->mmio.load_err, 1);
+    vm_bit_set(vm, vm->mmio.load_done, 1);
+    vm_bit_set(vm, vm->mmio.load_req, 0);
+    return 0;
+  }
+
+  bitcpy((size_t)nbits, vm->space, (size_t)src, vm->space, (size_t)vm->processor_start);
+  vm_bit_set(vm, vm->mmio.load_done, 1);
+  vm_bit_set(vm, vm->mmio.load_req, 0);
+  return 0;
+}
+
+static int service_channel(vm_t *vm) {
+  if (!vm_bit_get(vm, vm->mmio.ch_req)) return 0;
+  vm_bit_set(vm, vm->mmio.ch_done, 0);
+  vm_bit_set(vm, vm->mmio.ch_err, 0);
+
+  /* v1 skeleton:
+   * op=0: NOP/ACK
+   * op=1: STOP (sets MMIO.HALT)
+   * op=2: STEP_BUDGET (ch_c -> wd_limit, enables wd)
+   */
+  unsigned op = (unsigned)vm_read_uint(vm, vm->mmio.ch_op, 8);
+  if (op == 0) {
+    /* no-op */
+  } else if (op == 1) {
+    vm_bit_set(vm, vm->mmio.halt, 1);
+  } else if (op == 2) {
+    uint64_t lim = vm_read_uint(vm, vm->mmio.ch_c, vm->n_bits);
+    vm_write_uint(vm, vm->mmio.wd_limit, vm->n_bits, lim);
+    vm_write_uint(vm, vm->mmio.wd_ticks, vm->n_bits, 0);
+    vm_bit_set(vm, vm->mmio.wd_fired, 0);
+    vm_bit_set(vm, vm->mmio.wd_enable, 1);
+  } else {
+    vm_bit_set(vm, vm->mmio.ch_err, 1);
+  }
+
+  vm_bit_set(vm, vm->mmio.ch_done, 1);
+  vm_bit_set(vm, vm->mmio.ch_req, 0);
+  return 0;
+}
+
 /* -------- execution -------- */
 
 vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
@@ -295,6 +369,20 @@ vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
   /* 1) MMIO at start of tick */
   if (service_out(vm, out) != 0) return VM_ERR;
   if (service_in(vm, in) != 0) return VM_ERR;
+  if (service_loader(vm) != 0) return VM_ERR;
+  if (service_channel(vm) != 0) return VM_ERR;
+
+  /* watchdog update (bounded-step mode) */
+  if (vm_bit_get(vm, vm->mmio.wd_enable)) {
+    uint64_t ticks = vm_read_uint(vm, vm->mmio.wd_ticks, vm->n_bits);
+    uint64_t limit = vm_read_uint(vm, vm->mmio.wd_limit, vm->n_bits);
+    ticks++;
+    vm_write_uint(vm, vm->mmio.wd_ticks, vm->n_bits, ticks);
+    if (limit > 0 && ticks >= limit) {
+      vm_bit_set(vm, vm->mmio.wd_fired, 1);
+      vm_bit_set(vm, vm->mmio.halt, 1);
+    }
+  }
 
   /* 2) HALT check after I/O (allows "print first, then stop") */
   if (vm_bit_get(vm, vm->mmio.halt)) { vm->tick_counter++; return VM_HALT; }

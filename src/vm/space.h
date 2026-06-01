@@ -123,6 +123,28 @@ typedef struct vm_mmio_layout {
   bitaddr_t in_src_addr;  /* ADDR_BITS: source address in space (when in_src_mode=1) */
   bitaddr_t in_src_end;   /* ADDR_BITS: end address (exclusive, when in_src_mode=1) */
 
+  /* Loader channel: load processor layer from space memory */
+  bitaddr_t load_req;      /* 1 bit */
+  bitaddr_t load_done;     /* 1 bit */
+  bitaddr_t load_err;      /* 1 bit */
+  bitaddr_t load_src;      /* ADDR_BITS: source address of layer image */
+  bitaddr_t load_bits;     /* N_BITS: bits to copy (must equal processor_bits for v1) */
+
+  /* Watchdog/timer (bounded-step mode support) */
+  bitaddr_t wd_enable;     /* 1 bit */
+  bitaddr_t wd_fired;      /* 1 bit */
+  bitaddr_t wd_limit;      /* N_BITS: max ticks while enabled */
+  bitaddr_t wd_ticks;      /* N_BITS: observed ticks while enabled */
+
+  /* Generic channel ABI mailbox (v1 skeleton) */
+  bitaddr_t ch_req;        /* 1 bit */
+  bitaddr_t ch_done;       /* 1 bit */
+  bitaddr_t ch_err;        /* 1 bit */
+  bitaddr_t ch_op;         /* 8 bits: opcode */
+  bitaddr_t ch_a;          /* ADDR_BITS */
+  bitaddr_t ch_b;          /* ADDR_BITS */
+  bitaddr_t ch_c;          /* N_BITS */
+
   bitaddr_t end;      /* 1 past end */
 } vm_mmio_layout_t;
 

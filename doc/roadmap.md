@@ -128,40 +128,46 @@
 
 ## 4. Доказательная инфраструктура bootstrap runtime
 
-4.1. ❌ Зафиксировать формат proof-grade trace для bootstrap runtime.
-4.1.1. ❌ Зафиксировать запись raw `PC`.
-4.1.2. ❌ Зафиксировать запись raw instruction word.
-4.1.3. ❌ Зафиксировать запись decoder fields.
-4.1.4. ❌ Зафиксировать запись register deltas.
-4.1.5. ❌ Зафиксировать запись memory writes.
-4.1.6. ❌ Зафиксировать запись stop reason.
+4.1. ✅ Зафиксировать формат proof-grade trace для bootstrap runtime.
+4.1.1. ✅ Зафиксировать запись raw `PC`.
+4.1.2. ✅ Зафиксировать запись raw instruction word.
+4.1.3. ✅ Зафиксировать запись decoder fields.
+4.1.4. ✅ Зафиксировать запись register deltas.
+4.1.5. ✅ Зафиксировать запись memory writes.
+4.1.6. ✅ Зафиксировать запись stop reason.
 
-4.2. ❌ Добавить извлечение proof-grade trace из активного bootstrap executor.
-4.2.1. ❌ Добавить runtime emission trace records.
-4.2.2. ❌ Добавить host-side capture raw trace artifacts.
-4.2.3. ❌ Добавить сохранение trace artifacts в repeatable format.
+4.2. ✅ Добавить извлечение proof-grade trace из активного bootstrap executor.
+4.2.1. ✅ Добавить runtime emission trace records.
+4.2.2. ✅ Добавить временный bootstrap trace buffer в `space.*`.
+4.2.2.1. ✅ Добавить layout временного bootstrap trace buffer.
+4.2.2.2. ✅ Добавить запись trace records во временный bootstrap trace buffer.
+4.2.3. ✅ Добавить временный bootstrap trace ABI для чтения raw trace artifacts.
+4.2.3.1. ✅ Добавить чтение метаданных временного bootstrap trace buffer.
+4.2.3.2. ✅ Добавить чтение байт временного bootstrap trace buffer.
+4.2.4. ✅ Добавить host-side capture raw trace artifacts.
+4.2.5. ✅ Добавить сохранение trace artifacts в repeatable format.
 
-4.3. ❌ Перестроить trace-based validation на raw runtime trace.
-4.3.1. ❌ Убрать synthetic trace generation из active proof path.
-4.3.2. ❌ Перенести trace diff на raw runtime trace как на единственный источник истины.
-4.3.3. ❌ Добавить hard fail при отсутствии raw execution trace.
+4.3. ✅ Перестроить trace-based validation на raw runtime trace.
+4.3.1. ✅ Убрать synthetic trace generation из active proof path.
+4.3.2. ✅ Перенести trace diff на raw runtime trace как на единственный источник истины.
+4.3.3. ✅ Добавить hard fail при отсутствии raw execution trace.
 
-4.4. ❌ Перестроить state-based validation на ABI-visible assertions.
-4.4.1. ❌ Убрать scaffold-only `TESTG` checks из active proof path.
-4.4.2. ❌ Добавить failure bundles на основе реального runtime execution.
-4.4.3. ❌ Оставить в release path только ABI-visible assertions.
+4.4. ✅ Перестроить state-based validation на ABI-visible assertions.
+4.4.1. ✅ Убрать scaffold-only `TESTG` checks из active proof path.
+4.4.2. ✅ Добавить failure bundles на основе реального runtime execution.
+4.4.3. ✅ Оставить в release path только ABI-visible assertions.
 
-4.5. ❌ Построить directed validation matrix для bootstrap RV32I.
-4.5.1. ❌ Добавить directed tests для U-type instructions.
-4.5.2. ❌ Добавить directed tests для compare instructions.
-4.5.3. ❌ Добавить directed tests для boolean instructions.
-4.5.4. ❌ Добавить directed tests для shift instructions.
-4.5.5. ❌ Добавить directed tests для control-flow instructions.
-4.5.6. ❌ Добавить directed tests для byte/halfword memory instructions.
-4.5.7. ❌ Добавить negative tests для alignment faults.
-4.5.8. ❌ Добавить negative tests для bounds faults.
-4.5.9. ❌ Добавить negative tests для unsupported instructions.
-4.5.10. ❌ Добавить deterministic replay checks.
+4.5. ✅ Построить directed validation matrix для bootstrap RV32I.
+4.5.1. ✅ Добавить directed tests для U-type instructions.
+4.5.2. ✅ Добавить directed tests для compare instructions.
+4.5.3. ✅ Добавить directed tests для boolean instructions.
+4.5.4. ✅ Добавить directed tests для shift instructions.
+4.5.5. ✅ Добавить directed tests для control-flow instructions.
+4.5.6. ✅ Добавить directed tests для byte/halfword memory instructions.
+4.5.7. ✅ Добавить negative tests для alignment faults.
+4.5.8. ✅ Добавить negative tests для bounds faults.
+4.5.9. ✅ Добавить negative tests для unsupported instructions.
+4.5.10. ✅ Добавить deterministic replay checks.
 
 ## 5. Очистка bootstrap path
 
@@ -172,6 +178,7 @@
 
 5.2. ❌ Закрыть bootstrap RV32I как доказанный временный контур.
 5.2.1. ❌ Зафиксировать bootstrap ABI contract как временный переходный контракт.
+5.2.1.1. ❌ Зафиксировать временный bootstrap trace ABI как временный proof-only контракт.
 5.2.2. ❌ Зафиксировать bootstrap proof set как достаточный для начала реконструкции `space.*`.
 5.2.3. ❌ Зафиксировать запрет на расширение host-side guest logic сверх bootstrap closure.
 
@@ -218,6 +225,7 @@
 6.3.4.1. ❌ Зафиксировать источник resident trace records.
 6.3.4.2. ❌ Зафиксировать способ извлечения resident trace records наружу.
 6.3.4.3. ❌ Зафиксировать соответствие resident trace contract bootstrap trace contract.
+6.3.4.4. ❌ Зафиксировать замену временного bootstrap trace ABI на resident trace contract.
 
 6.4. ❌ Зафиксировать план миграции доказательной инфраструктуры на финальный контракт.
 6.4.1. ❌ Зафиксировать миграцию proof artifacts с bootstrap ABI на final channel-only contract.
@@ -312,6 +320,10 @@
 8.2.5. ❌ Удалить host-side watchdog и bounded-run service logic.
 8.2.5.1. ❌ Удалить host-side watchdog service logic.
 8.2.5.2. ❌ Удалить host-side bounded-run service logic.
+8.2.6. ❌ Удалить из `space.*` временный bootstrap proof/trace layer.
+8.2.6.1. ❌ Удалить host-side bootstrap trace buffer.
+8.2.6.2. ❌ Удалить host-side bootstrap trace serialization/readback logic.
+8.2.6.3. ❌ Удалить временный bootstrap trace ABI ops и metadata path.
 
 8.3. ❌ Сократить `space.*` до минимального хостового эмулятора.
 8.3.1. ❌ Оставить в `space.*` только копирование в каналы и из каналов.
@@ -323,6 +335,7 @@
 8.4.1. ❌ Зафиксировать публичный интерфейс `space.h` в виде, близком к `/media/user/PROJECT/bak/demo1/space.h`.
 8.4.2. ❌ Зафиксировать поведение `space.c` в виде, близком к `/media/user/PROJECT/bak/demo1/space.c`.
 8.4.3. ❌ Добавить proof gates, подтверждающие что хостовый эмулятор выполняет только минимальный контракт.
+8.4.4. ❌ Добавить proof gates, подтверждающие отсутствие host-side trace/proof semantics в финальном эмуляторе.
 
 ## 9. Нетривиальные guest workloads
 

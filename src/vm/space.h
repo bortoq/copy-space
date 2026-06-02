@@ -47,6 +47,10 @@
 #define VM_PROCESSOR_N 64u
 #endif
 
+#ifndef VM_RV_TRACE_MAX_RECORDS
+#define VM_RV_TRACE_MAX_RECORDS 4096u
+#endif
+
 /* -------------------- Types -------------------- */
 
 typedef uint64_t bitaddr_t;
@@ -100,6 +104,26 @@ typedef enum {
   RV_STOP_ALIGN = 3,
   RV_STOP_BOUNDS = 4
 } rv_stop_reason_t;
+
+typedef struct {
+  uint32_t step;
+  uint32_t pc;
+  uint32_t instr;
+  uint32_t imm;
+  uint32_t rd_value;
+  uint32_t mem_addr;
+  uint32_t mem_value;
+  uint32_t meta;
+  uint32_t flags;
+} rv_trace_record_t;
+
+typedef struct {
+  uint32_t version;
+  uint32_t record_bytes;
+  uint32_t record_count;
+  uint32_t used_bytes;
+  uint32_t dropped_records;
+} rv_trace_info_t;
 
 /* -------------------- VM object -------------------- */
 
@@ -194,6 +218,10 @@ typedef struct vm {
   unsigned rv_guest_running;
   uint64_t rv_guest_steps;
   rv_stop_reason_t rv_guest_stop_reason;
+  rv_trace_record_t *rv_trace_records;
+  uint32_t rv_trace_capacity;
+  uint32_t rv_trace_count;
+  uint32_t rv_trace_dropped;
 
 } vm_t;
 

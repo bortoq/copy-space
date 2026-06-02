@@ -124,8 +124,10 @@ typedef enum {
   ART_SCR_OPR     = 90,
   ART_SCR_X0      = 91,
   ART_SCR_X1      = 92,
+  ART_WORD_ADD32  = 93,
+  ART_WORD_C3_RUN = 94,
 
-  ART_COUNT = 93
+  ART_COUNT = 95
 } std7_art_idx_t;
 
 /* Writes standard artifacts table. Leaves unspecified/reserved indices unchanged. */

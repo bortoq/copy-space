@@ -37,9 +37,9 @@
 
 /* -------------------- User-tunable knobs -------------------- */
 
-/* Default: 512 KiB */
+/* Default: 1.9 MiB */
 #ifndef VM_SPACE_BYTES
-#define VM_SPACE_BYTES (512u * 1024u)
+#define VM_SPACE_BYTES ((19u * 1024u * 1024u) / 10u)
 #endif
 
 /* Default: 64 slots */
@@ -144,6 +144,7 @@ typedef struct vm_mmio_layout {
   bitaddr_t ch_a;          /* ADDR_BITS */
   bitaddr_t ch_b;          /* ADDR_BITS */
   bitaddr_t ch_c;          /* N_BITS */
+  bitaddr_t ch_abi_version;/* 8 bits: current ABI version (1 for v1) */
 
   bitaddr_t end;      /* 1 past end */
 } vm_mmio_layout_t;
@@ -179,6 +180,10 @@ typedef struct vm {
   int strict_align32; /* if set, enforce 32-bit alignment for VAR_AP/VAR_BP/VAR_RP (std7_fixed) */
   uint64_t tick_counter; /* increments per vm_tick() call that completes */
   vm_err_t last_err;
+
+  /* Runtime ABI guest lifecycle state (stage-20) */
+  unsigned rv_guest_loaded;
+  unsigned rv_guest_running;
 
 } vm_t;
 

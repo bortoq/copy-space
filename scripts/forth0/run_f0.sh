@@ -5,7 +5,7 @@ LIFE_COMPILE="${LIFE_COMPILE:-20000000}"
 LIFE_RUN="${LIFE_RUN:-20000000}"
 
 usage() {
-  echo "usage: $0 --in prog.f0 [--dump-testg N] [--expect-hex HEX] [--keep] [--pool-cells N]" >&2
+  echo "usage: $0 --in prog.f0 [--dump-testg N] [--expect-hex HEX] [--keep] [--pool-cells N] [--tmpdir DIR]" >&2
   exit 2
 }
 
@@ -14,6 +14,7 @@ DUMP_N=64
 EXPECT_HEX=""
 KEEP=0
 POOL_CELLS=""
+TMPDIR_OVERRIDE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -22,6 +23,7 @@ while [ $# -gt 0 ]; do
     --expect-hex) EXPECT_HEX="${2:-}"; shift 2;;
     --keep) KEEP=1; shift 1;;
     --pool-cells) POOL_CELLS="${2:-}"; shift 2;;
+    --tmpdir) TMPDIR_OVERRIDE="${2:-}"; shift 2;;
     *) usage;;
   esac
 done
@@ -53,9 +55,25 @@ open(out, "wb").write(bytes.fromhex(hexs))
 PY
 }
 
-tmp="tmp/f0run"
-rm -rf "$tmp"
-mkdir -p "$tmp"
+if [ -n "$TMPDIR_OVERRIDE" ]; then
+  tmp="$TMPDIR_OVERRIDE"
+  mkdir -p "$tmp"
+  rm -f "$tmp/std7.bin" \
+    "$tmp/prog.tok" \
+    "$tmp/compiled.bin" \
+    "$tmp/after.bin" \
+    "$tmp/testg.byte" \
+    "$tmp/testg.bin" \
+    "$tmp/mkimage.stderr" \
+    "$tmp/forth0c.stderr" \
+    "$tmp/compile.stderr" \
+    "$tmp/prep.stderr" \
+    "$tmp/run.stderr" \
+    "$tmp/expected.bin"
+else
+  mkdir -p tmp
+  tmp="$(mktemp -d tmp/f0run.XXXXXX)"
+fi
 
 std7="$tmp/std7.bin"
 tok="$tmp/prog.tok"

@@ -1,0 +1,62 @@
+# C3 S2 fetch-only smoke
+# Simulates 3 guest fetch steps from code area and stops by step-budget reason=2.
+#
+# TESTG stop dump layout:
+#   [0] reason
+#   [1..4] guest_pc
+#   [5..8] instr
+#   [9..12] fault_addr
+#   [13..16] guest_steps
+#   [17..19] reserved
+
+const CODE_BASE (TESTG + 256)
+
+# Program words (big-endian byte order in memory)
+setbyte (CODE_BASE + 0)  0x11
+setbyte (CODE_BASE + 8)  0x22
+setbyte (CODE_BASE + 16) 0x33
+setbyte (CODE_BASE + 24) 0x44
+
+setbyte (CODE_BASE + 32) 0x55
+setbyte (CODE_BASE + 40) 0x66
+setbyte (CODE_BASE + 48) 0x77
+setbyte (CODE_BASE + 56) 0x88
+
+setbyte (CODE_BASE + 64) 0xDE
+setbyte (CODE_BASE + 72) 0xAD
+setbyte (CODE_BASE + 80) 0xBE
+setbyte (CODE_BASE + 88) 0xEF
+
+# clear fault_addr + reserved
+setbyte (TESTG + 9*8)  0x00
+setbyte (TESTG + 10*8) 0x00
+setbyte (TESTG + 11*8) 0x00
+setbyte (TESTG + 12*8) 0x00
+setbyte (TESTG + 17*8) 0x00
+setbyte (TESTG + 18*8) 0x00
+setbyte (TESTG + 19*8) 0x00
+
+# step 1: fetch @pc=0
+copybits 32 (TESTG + 5*8) CODE_BASE
+setbyte (TESTG + 1*8) 0x00
+setbyte (TESTG + 2*8) 0x00
+setbyte (TESTG + 3*8) 0x00
+setbyte (TESTG + 4*8) 0x04
+setbyte (TESTG + 13*8) 0x00
+setbyte (TESTG + 14*8) 0x00
+setbyte (TESTG + 15*8) 0x00
+setbyte (TESTG + 16*8) 0x01
+
+# step 2: fetch @pc=4
+copybits 32 (TESTG + 5*8) (CODE_BASE + 32)
+setbyte (TESTG + 4*8) 0x08
+setbyte (TESTG + 16*8) 0x02
+
+# step 3: fetch @pc=8
+copybits 32 (TESTG + 5*8) (CODE_BASE + 64)
+setbyte (TESTG + 4*8) 0x0C
+setbyte (TESTG + 16*8) 0x03
+
+# stop by budget
+setbyte TESTG 0x02
+HALT

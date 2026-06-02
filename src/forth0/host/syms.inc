@@ -107,6 +107,10 @@ static const sym_t g_syms[] = {
   {"SCR_OPR",     ART_SCR_OPR},     {"ART_SCR_OPR",     ART_SCR_OPR},
   {"SCR_X0",      ART_SCR_X0},      {"ART_SCR_X0",      ART_SCR_X0},
   {"SCR_X1",      ART_SCR_X1},      {"ART_SCR_X1",      ART_SCR_X1},
+  {"WORD_ADD32", ART_WORD_ADD32}, {"ART_WORD_ADD32", ART_WORD_ADD32}, {"ADD32", ART_WORD_ADD32},
+
+  /* C3_RUN */
+  {"WORD_C3_RUN", ART_WORD_C3_RUN}, {"ART_WORD_C3_RUN", ART_WORD_C3_RUN}, {"C3_RUN", ART_WORD_C3_RUN},
 
   /* token compiler variables */
   {"VAR_FREE",           ART_VAR_FREE},           {"ART_VAR_FREE",           ART_VAR_FREE},

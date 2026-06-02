@@ -17,8 +17,8 @@ def emit_prologue(reg_init):
     lines.append("\\ Temporary scratch space (after register file)")
     lines.append("const SCRATCH (REG_BASE + 1024)")
     lines.append("const TMP_CARRY (SCRATCH + 0)")
-    lines.append("\\ Prologue: initialize RISC-V registers")
-    for i in range(32):
+    lines.append("\\ Prologue: initialize selected RISC-V registers")
+    for i in sorted(reg_init.keys()):
         val = reg_init.get(i, 0)
         byte0 = (val >> 24) & 0xFF
         byte1 = (val >> 16) & 0xFF
@@ -110,89 +110,75 @@ def emit_addi(rd, rs1, rs2, imm):
 def emit_xor(rd, rs1, rs2, imm=0):
     lines = []
     lines.append(f"\\ xor x{rd}, x{rs1}, x{rs2}")
-    # XOR for low 24 bits
-    lines.append(f"copybits 24 VAR_A24 (REG_BASE + {rs1}*32 + 8)")
-    lines.append(f"copybits 24 VAR_B24 (REG_BASE + {rs2}*32 + 8)")
-    lines.append(f"word_BXOR")
-    lines.append(f"copybits 24 (REG_BASE + {rd}*32 + 8) VAR_SUM24")
-    # XOR for high 8 bits
-    lines.append(f"copybits 8 VAR_A24 (REG_BASE + {rs1}*32)")
-    lines.append(f"copybits 8 VAR_B24 (REG_BASE + {rs2}*32)")
-    lines.append(f"word_BXOR")
-    lines.append(f"copybits 8 (REG_BASE + {rd}*32) VAR_SUM24")
+    for b in range(32):
+        lines.append(f"copybits 1 BA (REG_BASE + {rs1}*32 + {b})")
+        lines.append(f"copybits 1 BB (REG_BASE + {rs2}*32 + {b})")
+        lines.append("word_BXOR")
+        lines.append(f"copybits 1 (REG_BASE + {rd}*32 + {b}) BR")
     lines.append("")
     return "\n".join(lines)
 
 def emit_or(rd, rs1, rs2, imm=0):
     lines = []
     lines.append(f"\\ or x{rd}, x{rs1}, x{rs2}")
-    lines.append(f"copybits 24 VAR_A24 (REG_BASE + {rs1}*32 + 8)")
-    lines.append(f"copybits 24 VAR_B24 (REG_BASE + {rs2}*32 + 8)")
-    lines.append(f"word_BOR")
-    lines.append(f"copybits 24 (REG_BASE + {rd}*32 + 8) VAR_SUM24")
-    lines.append(f"copybits 8 VAR_A24 (REG_BASE + {rs1}*32)")
-    lines.append(f"copybits 8 VAR_B24 (REG_BASE + {rs2}*32)")
-    lines.append(f"word_BOR")
-    lines.append(f"copybits 8 (REG_BASE + {rd}*32) VAR_SUM24")
+    for b in range(32):
+        lines.append(f"copybits 1 BA (REG_BASE + {rs1}*32 + {b})")
+        lines.append(f"copybits 1 BB (REG_BASE + {rs2}*32 + {b})")
+        lines.append("word_BOR")
+        lines.append(f"copybits 1 (REG_BASE + {rd}*32 + {b}) BR")
     lines.append("")
     return "\n".join(lines)
 
 def emit_and(rd, rs1, rs2, imm=0):
     lines = []
     lines.append(f"\\ and x{rd}, x{rs1}, x{rs2}")
-    lines.append(f"copybits 24 VAR_A24 (REG_BASE + {rs1}*32 + 8)")
-    lines.append(f"copybits 24 VAR_B24 (REG_BASE + {rs2}*32 + 8)")
-    lines.append(f"word_BAND")
-    lines.append(f"copybits 24 (REG_BASE + {rd}*32 + 8) VAR_SUM24")
-    lines.append(f"copybits 8 VAR_A24 (REG_BASE + {rs1}*32)")
-    lines.append(f"copybits 8 VAR_B24 (REG_BASE + {rs2}*32)")
-    lines.append(f"word_BAND")
-    lines.append(f"copybits 8 (REG_BASE + {rd}*32) VAR_SUM24")
+    for b in range(32):
+        lines.append(f"copybits 1 BA (REG_BASE + {rs1}*32 + {b})")
+        lines.append(f"copybits 1 BB (REG_BASE + {rs2}*32 + {b})")
+        lines.append("word_BAND")
+        lines.append(f"copybits 1 (REG_BASE + {rd}*32 + {b}) BR")
     lines.append("")
     return "\n".join(lines)
 
 def emit_andi(rd, rs1, rs2, imm):
     lines = []
-    lines.append(f"\\ andi x{rd}, x{rs1}, 0x{imm & 0xFFF:x}")
-    lines.append(f"copybits 24 VAR_A24 (REG_BASE + {rs1}*32 + 8)")
-    lines.append(f"set24 VAR_B24 0x{imm & 0xFFFFFF:06x}")
-    lines.append(f"word_BAND")
-    lines.append(f"copybits 24 (REG_BASE + {rd}*32 + 8) VAR_SUM24")
-    lines.append(f"copybits 8 VAR_A24 (REG_BASE + {rs1}*32)")
-    hi = (imm >> 24) & 0xFF
-    lines.append(f"setbyte VAR_B24 0x{hi:02x}")
-    lines.append(f"word_BAND")
-    lines.append(f"copybits 8 (REG_BASE + {rd}*32) VAR_SUM24")
+    imm12 = imm & 0xFFF
+    imm32 = imm12 | (0xFFFFF000 if (imm12 & 0x800) else 0)
+    lines.append(f"\\ andi x{rd}, x{rs1}, 0x{imm12:x}")
+    for b in range(32):
+        bit = (imm32 >> (31 - b)) & 1
+        lines.append(f"copybits 1 BA (REG_BASE + {rs1}*32 + {b})")
+        lines.append(f"copybits 1 BB CONST{bit}")
+        lines.append("word_BAND")
+        lines.append(f"copybits 1 (REG_BASE + {rd}*32 + {b}) BR")
     lines.append("")
     return "\n".join(lines)
 
 def emit_ori(rd, rs1, rs2, imm):
     lines = []
-    lines.append(f"\\ ori x{rd}, x{rs1}, 0x{imm & 0xFFF:x}")
-    lines.append(f"copybits 24 VAR_A24 (REG_BASE + {rs1}*32 + 8)")
-    lines.append(f"set24 VAR_B24 0x{imm & 0xFFFFFF:06x}")
-    lines.append(f"word_BOR")
-    lines.append(f"copybits 24 (REG_BASE + {rd}*32 + 8) VAR_SUM24")
-    hi = (imm >> 24) & 0xFF
-    lines.append(f"copybits 8 VAR_A24 (REG_BASE + {rs1}*32)")
-    lines.append(f"setbyte VAR_B24 0x{hi:02x}")
-    lines.append(f"word_BOR")
-    lines.append(f"copybits 8 (REG_BASE + {rd}*32) VAR_SUM24")
+    imm12 = imm & 0xFFF
+    imm32 = imm12 | (0xFFFFF000 if (imm12 & 0x800) else 0)
+    lines.append(f"\\ ori x{rd}, x{rs1}, 0x{imm12:x}")
+    for b in range(32):
+        bit = (imm32 >> (31 - b)) & 1
+        lines.append(f"copybits 1 BA (REG_BASE + {rs1}*32 + {b})")
+        lines.append(f"copybits 1 BB CONST{bit}")
+        lines.append("word_BOR")
+        lines.append(f"copybits 1 (REG_BASE + {rd}*32 + {b}) BR")
     lines.append("")
     return "\n".join(lines)
 
 def emit_xori(rd, rs1, rs2, imm):
     lines = []
-    lines.append(f"\\ xori x{rd}, x{rs1}, 0x{imm & 0xFFF:x}")
-    lines.append(f"copybits 24 VAR_A24 (REG_BASE + {rs1}*32 + 8)")
-    lines.append(f"set24 VAR_B24 0x{imm & 0xFFFFFF:06x}")
-    lines.append(f"word_BXOR")
-    lines.append(f"copybits 24 (REG_BASE + {rd}*32 + 8) VAR_SUM24")
-    hi = (imm >> 24) & 0xFF
-    lines.append(f"copybits 8 VAR_A24 (REG_BASE + {rs1}*32)")
-    lines.append(f"setbyte VAR_B24 0x{hi:02x}")
-    lines.append(f"word_BXOR")
-    lines.append(f"copybits 8 (REG_BASE + {rd}*32) VAR_SUM24")
+    imm12 = imm & 0xFFF
+    imm32 = imm12 | (0xFFFFF000 if (imm12 & 0x800) else 0)
+    lines.append(f"\\ xori x{rd}, x{rs1}, 0x{imm12:x}")
+    for b in range(32):
+        bit = (imm32 >> (31 - b)) & 1
+        lines.append(f"copybits 1 BA (REG_BASE + {rs1}*32 + {b})")
+        lines.append(f"copybits 1 BB CONST{bit}")
+        lines.append("word_BXOR")
+        lines.append(f"copybits 1 (REG_BASE + {rd}*32 + {b}) BR")
     lines.append("")
     return "\n".join(lines)
 
@@ -428,11 +414,15 @@ def emit_jal(rd, rs1, rs2, imm=0):
 def emit_jalr(rd, rs1, rs2, imm=0):
     return f"\\ jalr x{rd}, x{rs1}, 0x{imm:x} (resolved in trace)\n"
 
-def emit_epilogue(out_regs):
+def emit_epilogue(out_regs, dump_all_regs=False):
     lines = []
     lines.append("\\ Epilogue: copy output regs to TESTG")
-    for i, reg in enumerate(out_regs):
-        lines.append(f"copybits 8 (TESTG + {i*8}) (REG_BASE + {reg}*32 + 24)")
+    if dump_all_regs:
+        for reg in range(32):
+            lines.append(f"copybits 32 (TESTG + {reg*32}) (REG_BASE + {reg}*32)")
+    else:
+        for i, reg in enumerate(out_regs):
+            lines.append(f"copybits 8 (TESTG + {i*8}) (REG_BASE + {reg}*32 + 24)")
     lines.append("HALT")
     return "\n".join(lines)
 

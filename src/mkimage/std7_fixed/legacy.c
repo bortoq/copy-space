@@ -21,6 +21,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include "meta_add32.h"
+#include "meta_c3_run.h"
 #include "syms.h"
 /* sym table globals (defined in syms.c) */
 extern const sym_table_entry_t g_syms[];
@@ -227,6 +229,12 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   bitaddr_t WORD_BOR32  = WORDS_BASE + 132*STEP;
   bitaddr_t WORD_BXOR32 = WORDS_BASE + 135*STEP;
 
+  // 32-bit addition (32 pages: 140..171)
+  bitaddr_t WORD_ADD32  = WORDS_BASE + 140*STEP;
+
+  // C3_RUN (30 pages: 172..201)
+  bitaddr_t WORD_C3_RUN = WORDS_BASE + 172*STEP;
+
   // scheduler words (slots 29..31)
   bitaddr_t WORD_VALIDATE_SCHED = WORDS_BASE + 29*STEP;
   bitaddr_t WORD_SCHED_INFO     = WORDS_BASE + 30*STEP;
@@ -270,6 +278,15 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   write_word_bor32(&vm, WORD_BOR32,  NEXT_IMG, SCR_OPA, SCR_OPB, SCR_OPR, CONST1, CONST0);
   write_word_bxor32(&vm, WORD_BXOR32, NEXT_IMG, SCR_OPA, SCR_OPB, SCR_OPR,
                      SCR_X0, SCR_X1, CONST1, CONST0);
+
+  write_word_add32(&vm, WORD_ADD32, NEXT_IMG,
+                    SCR_OPA, SCR_OPB, SCR_OPR,
+                    BA, BB, BC, BR, T0, T1, X0, X1, CONST1, CONST0);
+
+  // C3_RUN
+  write_word_c3_run(&vm, WORD_C3_RUN, NEXT_IMG, TESTSCR_BASE, CONST1, CONST0,
+                    BA, BB, BC, BR, T0, T1, X0, X1,
+                    VAR_A24, VAR_B24, VAR_SUM24);
 
   // static cells
   write_cell(&vm, HEAD_CELL, WORD_NOP, HALT_CELL);
@@ -477,6 +494,9 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   /* pool base */
   A.pool_base            = POOL_BASE;
 
+  /* C3_RUN */
+  A.word_c3_run          = WORD_C3_RUN;
+
   std7_fixed_write_artifacts(&vm, ART, &A); // }}
   /* Write Symbol Table to test scratch area */
   bitaddr_t sym_table_end = std7_fixed_write_symbol_table(
@@ -499,6 +519,8 @@ int std7_fixed_legacy_main(int argc, char **argv) {
   vm_write_uint(&vm, ART + ART_SCR_OPR     * vm.addr_bits, vm.addr_bits, SCR_OPR);
   vm_write_uint(&vm, ART + ART_SCR_X0      * vm.addr_bits, vm.addr_bits, SCR_X0);
   vm_write_uint(&vm, ART + ART_SCR_X1      * vm.addr_bits, vm.addr_bits, SCR_X1);
+  vm_write_uint(&vm, ART + ART_WORD_ADD32  * vm.addr_bits, vm.addr_bits, WORD_ADD32);
+  vm_write_uint(&vm, ART + ART_WORD_C3_RUN * vm.addr_bits, vm.addr_bits, WORD_C3_RUN);
 
   // INIT compilation: token -> VAR_TOKEN, len=ADDR_BITS, IN_REQ=1, load BRANCH
   nop_fill_processor(&vm);

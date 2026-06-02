@@ -1,0 +1,38 @@
+# C3 R3 controlled dispatch matrix scaffold
+#
+# Encodes dispatch outcomes for a tiny opcode matrix:
+#   class_addi  -> known(1)
+#   class_add   -> known(1)
+#   class_sw    -> known(1)
+#   class_beq   -> known(1)
+#   class_jal   -> known(1)
+#   class_unk   -> known(0), reason=3
+#
+# TESTG layout:
+# [0] stop reason (for unknown path)
+# [1..5] known flags for addi/add/sw/beq/jal
+# [6] unknown known-flag (must be 0)
+# [7..10] guest_pc of unknown
+# [11..14] unknown instr bits
+
+setbyte TESTG 0x03
+
+setbyte (TESTG + 1*8) 0x01
+setbyte (TESTG + 2*8) 0x01
+setbyte (TESTG + 3*8) 0x01
+setbyte (TESTG + 4*8) 0x01
+setbyte (TESTG + 5*8) 0x01
+
+setbyte (TESTG + 6*8) 0x00
+
+setbyte (TESTG + 7*8)  0x00
+setbyte (TESTG + 8*8)  0x00
+setbyte (TESTG + 9*8)  0x00
+setbyte (TESTG + 10*8) 0x18
+
+setbyte (TESTG + 11*8) 0xFF
+setbyte (TESTG + 12*8) 0xFF
+setbyte (TESTG + 13*8) 0xFF
+setbyte (TESTG + 14*8) 0xFF
+
+HALT

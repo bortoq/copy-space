@@ -1,0 +1,4 @@
+{
+  "policy": "Zero-waiver strict mode. Any failure fails the gate.",
+  "allowed_failures": []
+}

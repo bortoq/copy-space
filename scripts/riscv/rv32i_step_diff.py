@@ -58,8 +58,14 @@ def main():
         pre_rs1 = emu.regs[rs1] & 0xFFFFFFFF if rs1 else 0
         pre_rs2 = emu.regs[rs2] & 0xFFFFFFFF if rs2 else 0
         mem_write = None
-        if name == "sw":
-            mem_write = {"addr": (pre_rs1 + imm) & 0xFFFFFFFF, "size": 4, "value": pre_rs2}
+        if name in ("sb", "sh", "sw"):
+            addr = (pre_rs1 + imm) & 0xFFFFFFFF
+            if name == "sb":
+                mem_write = {"addr": addr, "size": 1, "value": pre_rs2 & 0xFF}
+            elif name == "sh":
+                mem_write = {"addr": addr, "size": 2, "value": pre_rs2 & 0xFFFF}
+            else:
+                mem_write = {"addr": addr, "size": 4, "value": pre_rs2}
 
         emu.pc += 4
         emu.execute(instr)

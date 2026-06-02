@@ -1,0 +1,46 @@
+# C3_RUN end-to-end smoke test: execute ADDI x1, x0, 5 = 0x00500093
+# Expected after C3_RUN returns: x1=5, G_PC=4, G_STEPS=0 (steps stubbed for MVP)
+
+# C3 state layout (bit addresses)
+const G_PC          0x001000
+const G_STEP_BUDGET 0x001020
+const G_STEPS       0x001040
+const G_STOP_REASON 0x001080
+const G_REG_BASE    0x001200
+const G_MEM_BASE    0x002000
+
+# Step 1: Write ADDI x1, x0, 5 = 0x00500093 to guest memory at G_MEM_BASE+0
+setbyte (G_MEM_BASE + 0)  0x00
+setbyte (G_MEM_BASE + 8)  0x50
+setbyte (G_MEM_BASE + 16) 0x00
+setbyte (G_MEM_BASE + 24) 0x93
+
+# Step 2: Set G_PC = 0
+setbyte G_PC         0x00
+setbyte (G_PC + 8)   0x00
+setbyte (G_PC + 16)  0x00
+setbyte (G_PC + 24)  0x00
+
+# Step 3: Clear G_STEPS
+setbyte G_STEPS         0x00
+setbyte (G_STEPS + 8)   0x00
+setbyte (G_STEPS + 16)  0x00
+setbyte (G_STEPS + 24)  0x00
+
+# Step 4: Clear x0 (G_REG_BASE)
+setbyte G_REG_BASE         0x00
+setbyte (G_REG_BASE + 8)   0x00
+setbyte (G_REG_BASE + 16)  0x00
+setbyte (G_REG_BASE + 24)  0x00
+
+# Step 5: Clear x1 (G_REG_BASE + 32)
+setbyte (G_REG_BASE + 32)  0x00
+setbyte (G_REG_BASE + 40)  0x00
+setbyte (G_REG_BASE + 48)  0x00
+setbyte (G_REG_BASE + 56)  0x00
+
+# Step 6: Call C3_RUN (executes ADDI, PC+=4, returns)
+C3_RUN
+
+# Step 7: HALT the VM
+HALT

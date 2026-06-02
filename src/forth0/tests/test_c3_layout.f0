@@ -1,0 +1,31 @@
+# C3 S1 layout freeze smoke test
+#
+# Writes layout constants into TESTG for host-side verification.
+# Format (20 bytes):
+#   [0]   layout_ver
+#   [1:4]   G_PC (24-bit)
+#   [4:7]   G_STEP_BUDGET (24-bit)
+#   [7:10]  G_STEPS (24-bit)
+#   [10:13] G_REG_BASE (24-bit)
+#   [13:16] G_MEM_BASE (24-bit)
+#   [16:19] G_STOP_REASON (24-bit)
+#   [19]    delta(G_STEP_BUDGET - G_PC) in bits (expected 0x20)
+
+const C3_LAYOUT_VER 0x01
+const G_PC          0x001000
+const G_STEP_BUDGET 0x001020
+const G_STEPS       0x001040
+const G_REG_BASE    0x001200
+const G_MEM_BASE    0x002000
+const G_STOP_REASON 0x001080
+
+setbyte TESTG C3_LAYOUT_VER
+set24 (TESTG + 8)   G_PC
+set24 (TESTG + 32)  G_STEP_BUDGET
+set24 (TESTG + 56)  G_STEPS
+set24 (TESTG + 80)  G_REG_BASE
+set24 (TESTG + 104) G_MEM_BASE
+set24 (TESTG + 128) G_STOP_REASON
+setbyte (TESTG + 152) 0x20
+
+HALT

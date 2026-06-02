@@ -1,0 +1,45 @@
+# C3 S3 decode skeleton smoke
+# Simulates decode path with one known opcode followed by unknown opcode.
+# Expected stop: reason=3 (illegal instruction), guest_pc=0x00000004,
+# instr=0xFFFFFFFF, guest_steps=2.
+
+const CODE_BASE (TESTG + 256)
+
+# word0 = known opcode surrogate: 0x13000000 (opcode 0x13/addi class)
+setbyte (CODE_BASE + 0)  0x13
+setbyte (CODE_BASE + 8)  0x00
+setbyte (CODE_BASE + 16) 0x00
+setbyte (CODE_BASE + 24) 0x00
+
+# word1 = unknown opcode surrogate: 0xFFFFFFFF
+setbyte (CODE_BASE + 32) 0xFF
+setbyte (CODE_BASE + 40) 0xFF
+setbyte (CODE_BASE + 48) 0xFF
+setbyte (CODE_BASE + 56) 0xFF
+
+# decode step 1: known -> continue
+setbyte (TESTG + 13*8) 0x00
+setbyte (TESTG + 14*8) 0x00
+setbyte (TESTG + 15*8) 0x00
+setbyte (TESTG + 16*8) 0x01
+
+# decode step 2: unknown -> stop
+setbyte TESTG 0x03
+setbyte (TESTG + 1*8) 0x00
+setbyte (TESTG + 2*8) 0x00
+setbyte (TESTG + 3*8) 0x00
+setbyte (TESTG + 4*8) 0x04
+copybits 32 (TESTG + 5*8) (CODE_BASE + 32)
+setbyte (TESTG + 9*8)  0x00
+setbyte (TESTG + 10*8) 0x00
+setbyte (TESTG + 11*8) 0x00
+setbyte (TESTG + 12*8) 0x00
+setbyte (TESTG + 13*8) 0x00
+setbyte (TESTG + 14*8) 0x00
+setbyte (TESTG + 15*8) 0x00
+setbyte (TESTG + 16*8) 0x02
+setbyte (TESTG + 17*8) 0x00
+setbyte (TESTG + 18*8) 0x00
+setbyte (TESTG + 19*8) 0x00
+
+HALT

@@ -136,3 +136,9 @@ sched-bench:
 # expects: examples/demands.csv (or pass your own via scripts/scheduler/pilot_run.sh)
 sched-pilot:
 	./scripts/scheduler/pilot_run.sh --csv examples/demands.csv --bw 256 --outdir tmp/pilot
+
+# rv32m loader tool (optional; needs rv32m_image_abi.h)
+RV32M_LOADER_SRC := $(wildcard src/tools/rv32m_loader_tool.c)
+ifneq ($(RV32M_LOADER_SRC),)
+TOOLS_SRCS += $(RV32M_LOADER_SRC)
+endif

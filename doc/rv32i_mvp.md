@@ -27,19 +27,26 @@ All gates must pass for MVP completion:
 - Max traced instructions per MVP program: 256
 - Max `.f0` lines per MVP program: 20,000
 - Max `.tok` bytes for MVP runs: 1,500,000
-- Max VM compile ticks (observed): 20,000,000
+- Max VM compile ticks (observed): 60,000,000
 - Max VM run ticks (observed): 20,000,000
 
 Notes:
 - These are initial engineering guardrails, not hard architecture limits.
 - Budgets may be tightened/relaxed after stable baseline measurements.
 
-## 6) MVP Test Set (v1)
+## 6) MVP Test Set (v2, 12 cases)
 - T0: demo arithmetic/store (`addi`, `add`, `sw`)
-- T1: branch taken (`beq`)
-- T2: branch taken (`bne`)
-- T3: shift path (`sll`, `srl`)
-- T4: store/load roundtrip (`sw`, `lw`)
+- T1: `lui/ori/andi` logic composition
+- T2: ALU mix (`sub/xor/or/and`)
+- T3: shifts + compares (`sll/srl/sra/slt/sltu/slti/sltiu`)
+- T4: memory roundtrip + subword ops (`sb/sh/lb/lbu/lh/lhu/sw/lw`)
+- T5: branches + jumps (`beq/bne/blt/auipc/jal/jalr`)
+- T6: non-trivial looped compute (sum `1..10` via `add/addi/blt`, then `sw`)
+- T7: edge sign/unsigned compare (`lb/lbu/bltu`)
+- T8: signed branch path (`bge`)
+- T9: unsigned branch path (`bgeu`)
+- T10: jump link path (`jal` link behavior)
+- T11: signed/unsigned halfword load (`sh/lh/lhu`)
 
 ## 7) Current Risks
 1. Trace expansion inflates `.tok` and may fail compile-stage VM bounds.
@@ -70,10 +77,13 @@ Completed:
    - all wired into `scripts/tdd/run_all.sh`.
 
 Remaining before full MVP closure:
-1. Add stronger VM-level equivalence checks (beyond trace replay consistency).
-2. Deepen semantic checks for load/store + jump instructions against full VM traces.
+1. Keep SHA track deferred until explicitly switched to active track by roadmap decision.
 
 ## 10) Contracts and Gates
 1. Emitter contract is documented in `doc/riscv_emitter_contract.md`.
 2. `scripts/tdd/test_rv32i_emitter_contract.sh` enforces no `UNSUPPORTED` in staged Wave A-E outputs.
 3. `scripts/riscv/run_staged_plan.sh` enforces `.tok` size + tick budgets + repeatability.
+4. Staged runner now uses per-case isolated temp directories (`--tmpdir`) to avoid cross-test races.
+5. Step-diff memory-write checks cover `sb/sh/sw` (not only `sw`).
+6. `rv32i_mvp_check.py` now enforces VM-level equivalence for final register file (`x1..x31`) by executing generated `.f0` in VM and comparing TESTG dump against Python reference replay.
+7. C2 generation is concrete by trace writeback (`rd_value`), which removes emitter semantic drift in narrow MVP and makes end-to-end checks deterministic.

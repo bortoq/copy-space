@@ -116,4 +116,7 @@ void std7_fixed_write_artifacts(vm_t *vm, bitaddr_t ART, const std7_addrs_t *A) 
 
   /* setup inspace word */
   artw(vm, ART, ART_WORD_SETUP_INSPACE,  A->word_setup_inspace);
+
+  /* C3_RUN */
+  artw(vm, ART, ART_WORD_C3_RUN,          A->word_c3_run);
 }

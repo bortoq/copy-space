@@ -6,6 +6,32 @@
 #include <string.h>
 #include <inttypes.h>
 
+static uint32_t rd_u32_le(const vm_t *vm, bitaddr_t bit_addr) {
+  size_t b = (size_t)(bit_addr >> 3);
+  return ((uint32_t)vm->space[b]) |
+         ((uint32_t)vm->space[b + 1] << 8) |
+         ((uint32_t)vm->space[b + 2] << 16) |
+         ((uint32_t)vm->space[b + 3] << 24);
+}
+
+static void wr_u32_le(vm_t *vm, bitaddr_t bit_addr, uint32_t v) {
+  size_t b = (size_t)(bit_addr >> 3);
+  vm->space[b] = (uint8_t)(v & 0xffu);
+  vm->space[b + 1] = (uint8_t)((v >> 8) & 0xffu);
+  vm->space[b + 2] = (uint8_t)((v >> 16) & 0xffu);
+  vm->space[b + 3] = (uint8_t)((v >> 24) & 0xffu);
+}
+
+static int32_t sext_imm12(uint32_t x) {
+  return (int32_t)(x << 20) >> 20;
+}
+static int32_t sext_imm13(uint32_t x) {
+  return (int32_t)(x << 19) >> 19;
+}
+static int32_t sext_imm21(uint32_t x) {
+  return (int32_t)(x << 11) >> 11;
+}
+
 /* -------- utilities: ceil_log2 and rounding -------- */
 
 static unsigned ceil_log2_u64(uint64_t x) {
@@ -123,6 +149,7 @@ static void vm_compute_mmio_layout(vm_t *vm) {
   vm->mmio.ch_a    = p; p += vm->addr_bits;
   vm->mmio.ch_b    = p; p += vm->addr_bits;
   vm->mmio.ch_c    = p; p += vm->n_bits;
+  vm->mmio.ch_abi_version = p; p += 8;
 
   /* round MMIO end up to next byte boundary for nicer workspace */
   vm->mmio.end = (p + 7u) & ~(bitaddr_t)7u;
@@ -169,6 +196,8 @@ int vm_init(vm_t *vm, size_t space_bytes, unsigned processor_n) {
 
   /* sanity: mmio must fit */
   if (vm->mmio.end > vm->space_bits) { vm_free(vm); return -1; }
+
+  vm_write_uint(vm, vm->mmio.ch_abi_version, 8, 1);
 
   return 0;
 }
@@ -324,14 +353,32 @@ static int service_loader(vm_t *vm) {
 }
 
 static int service_channel(vm_t *vm) {
+  const bitaddr_t G_REG_BASE = 0x001200ULL;
+  const bitaddr_t G_MEM_BASE = 0x002000ULL;
+  const bitaddr_t REG_FILE_BITS = 32u * 32u;
+  const uint64_t CH_E_NONE = 0;
+  const uint64_t CH_E_BOUNDS = 1;
+  const uint64_t CH_E_ALIGN = 2;
+  const uint64_t CH_E_PROTOCOL = 3;
+
   if (!vm_bit_get(vm, vm->mmio.ch_req)) return 0;
   vm_bit_set(vm, vm->mmio.ch_done, 0);
   vm_bit_set(vm, vm->mmio.ch_err, 0);
 
-  /* v1 skeleton:
-   * op=0: NOP/ACK
-   * op=1: STOP (sets MMIO.HALT)
-   * op=2: STEP_BUDGET (ch_c -> wd_limit, enables wd)
+  /* v1 channel ABI operations:
+   * op=0: NOP/ACK               — no operation
+   * op=1: STOP                  — sets MMIO.HALT
+   * op=2: STEP_BUDGET           — ch_c -> wd_limit, enables watchdog
+   * op=3: LOAD_IMAGE            — ch_a=src, ch_b=nbits, copy into processor area
+   * op=4: LOAD_ACK              — acknowledge load, reset watchdog
+   * op=5: IO_WRITE              — ch_a=src, ch_b=len(bytes), write to stdout
+   * op=6: STATUS                — tick->ch_a, halt->ch_b[0], error->ch_c
+   * op=7: LOAD_CODE             — ch_a=src, ch_b=guest_off(bits), ch_c=nbits -> copy to G_MEM_BASE+off
+   * op=8: RUN                   — ch_c=max_ticks (watchdog arm)
+   * op=9: STEP                  — ch_c=step_ticks (watchdog arm)
+   * op=10: READ_REGS            — ch_a=dst, copies x0..x31 (32*32 bits) from G_REG_BASE
+   * op=11: READ_MEM             — ch_a=guest_off(bits), ch_b=dst, ch_c=nbits from G_MEM_BASE+off
+   * op=12: WRITE_MEM            — ch_a=src, ch_b=guest_off(bits), ch_c=nbits to G_MEM_BASE+off
    */
   unsigned op = (unsigned)vm_read_uint(vm, vm->mmio.ch_op, 8);
   if (op == 0) {
@@ -344,12 +391,220 @@ static int service_channel(vm_t *vm) {
     vm_write_uint(vm, vm->mmio.wd_ticks, vm->n_bits, 0);
     vm_bit_set(vm, vm->mmio.wd_fired, 0);
     vm_bit_set(vm, vm->mmio.wd_enable, 1);
+  } else if (op == 3) {
+    bitaddr_t src_a = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_a, vm->addr_bits);
+    bitaddr_t nbits = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_b, vm->addr_bits);
+    if (nbits != vm->processor_bits || src_a + nbits > vm->space_bits || src_a < vm->workspace_base) {
+      vm_bit_set(vm, vm->mmio.ch_err, 1);
+    } else {
+      bitcpy((size_t)nbits, vm->space, (size_t)src_a, vm->space, (size_t)vm->processor_start);
+    }
+  } else if (op == 4) {
+    uint64_t start_addr = vm_read_uint(vm, vm->mmio.ch_a, vm->addr_bits);
+    (void)start_addr;
+    vm_bit_set(vm, vm->mmio.wd_enable, 0);
+    vm_bit_set(vm, vm->mmio.wd_fired, 0);
+    vm_write_uint(vm, vm->mmio.wd_ticks, vm->n_bits, 0);
+  } else if (op == 5) {
+    bitaddr_t src_a = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_a, vm->addr_bits);
+    uint64_t blen = vm_read_uint(vm, vm->mmio.ch_b, vm->addr_bits);
+    if ((src_a & 7u) || src_a + (blen << 3) > vm->space_bits) {
+      vm_bit_set(vm, vm->mmio.ch_err, 1);
+      vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, (src_a & 7u) ? CH_E_ALIGN : CH_E_BOUNDS);
+    } else {
+      size_t byte_src = (size_t)(src_a >> 3);
+      size_t nbytes = (size_t)blen;
+      if (nbytes && fwrite(&vm->space[byte_src], 1, nbytes, stdout) != nbytes) {
+        vm_bit_set(vm, vm->mmio.ch_err, 1);
+        vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, CH_E_PROTOCOL);
+      }
+      fflush(stdout);
+    }
+  } else if (op == 6) {
+    vm_write_uint(vm, vm->mmio.ch_a, vm->addr_bits, vm->tick_counter);
+    vm_bit_set(vm, vm->mmio.ch_b, vm_bit_get(vm, vm->mmio.halt));
+    vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, (uint64_t)vm->last_err.kind);
+  } else if (op == 7) {
+    bitaddr_t src_a = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_a, vm->addr_bits);
+    bitaddr_t off = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_b, vm->addr_bits);
+    bitaddr_t nbits = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_c, vm->n_bits);
+    bitaddr_t dst_a = G_MEM_BASE + off;
+    if (src_a + nbits > vm->space_bits || dst_a + nbits > vm->space_bits) {
+      vm_bit_set(vm, vm->mmio.ch_err, 1);
+      vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, CH_E_BOUNDS);
+    } else {
+      bitcpy((size_t)nbits, vm->space, (size_t)src_a, vm->space, (size_t)dst_a);
+      vm->rv_guest_loaded = 1;
+      vm->rv_guest_running = 0;
+      vm_bit_set(vm, vm->mmio.halt, 0);
+    }
+  } else if (op == 8 || op == 9) {
+    if (!vm->rv_guest_loaded) {
+      vm_bit_set(vm, vm->mmio.ch_err, 1);
+      vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, CH_E_PROTOCOL);
+    } else {
+    uint64_t lim = vm_read_uint(vm, vm->mmio.ch_c, vm->n_bits);
+    vm_write_uint(vm, vm->mmio.wd_limit, vm->n_bits, lim);
+    vm_write_uint(vm, vm->mmio.wd_ticks, vm->n_bits, 0);
+    vm_bit_set(vm, vm->mmio.wd_fired, 0);
+    vm_bit_set(vm, vm->mmio.wd_enable, lim > 0 ? 1 : 0);
+    vm->rv_guest_running = lim > 0 ? 1 : 0;
+    if (lim == 0) {
+      vm_bit_set(vm, vm->mmio.halt, 0);
+      vm->rv_guest_running = 0;
+    }
+    }
+  } else if (op == 10) {
+    bitaddr_t dst_a = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_a, vm->addr_bits);
+    if (G_REG_BASE + REG_FILE_BITS > vm->space_bits || dst_a + REG_FILE_BITS > vm->space_bits) {
+      vm_bit_set(vm, vm->mmio.ch_err, 1);
+      vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, CH_E_BOUNDS);
+    } else {
+      bitcpy((size_t)REG_FILE_BITS, vm->space, (size_t)G_REG_BASE, vm->space, (size_t)dst_a);
+    }
+  } else if (op == 11) {
+    bitaddr_t off = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_a, vm->addr_bits);
+    bitaddr_t dst_a = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_b, vm->addr_bits);
+    bitaddr_t nbits = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_c, vm->n_bits);
+    bitaddr_t src_a = G_MEM_BASE + off;
+    if (src_a + nbits > vm->space_bits || dst_a + nbits > vm->space_bits) {
+      vm_bit_set(vm, vm->mmio.ch_err, 1);
+      vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, CH_E_BOUNDS);
+    } else {
+      bitcpy((size_t)nbits, vm->space, (size_t)src_a, vm->space, (size_t)dst_a);
+    }
+  } else if (op == 12) {
+    bitaddr_t src_a = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_a, vm->addr_bits);
+    bitaddr_t off = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_b, vm->addr_bits);
+    bitaddr_t nbits = (bitaddr_t)vm_read_uint(vm, vm->mmio.ch_c, vm->n_bits);
+    bitaddr_t dst_a = G_MEM_BASE + off;
+    if (src_a + nbits > vm->space_bits || dst_a + nbits > vm->space_bits) {
+      vm_bit_set(vm, vm->mmio.ch_err, 1);
+      vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, CH_E_BOUNDS);
+    } else {
+      bitcpy((size_t)nbits, vm->space, (size_t)src_a, vm->space, (size_t)dst_a);
+    }
   } else {
     vm_bit_set(vm, vm->mmio.ch_err, 1);
+    vm_write_uint(vm, vm->mmio.ch_c, vm->n_bits, CH_E_PROTOCOL);
   }
 
   vm_bit_set(vm, vm->mmio.ch_done, 1);
   vm_bit_set(vm, vm->mmio.ch_req, 0);
+  return 0;
+}
+
+static int rv32_guest_step(vm_t *vm) {
+  const bitaddr_t G_PC = 0x001000ULL;
+  const bitaddr_t G_REG_BASE = 0x001200ULL;
+  const bitaddr_t G_MEM_BASE = 0x002000ULL;
+  uint32_t pc = rd_u32_le(vm, G_PC);
+  bitaddr_t insn_addr = G_MEM_BASE + (bitaddr_t)pc * 8u;
+  if (insn_addr + 32u > vm->space_bits) {
+    vm_bit_set(vm, vm->mmio.halt, 1);
+    vm->rv_guest_running = 0;
+    return 0;
+  }
+
+  uint32_t insn = rd_u32_le(vm, insn_addr);
+  if (insn == 0u) {
+    vm_bit_set(vm, vm->mmio.halt, 1);
+    vm->rv_guest_running = 0;
+    return 0;
+  }
+
+  uint32_t opcode = insn & 0x7fu;
+  if (opcode == 0x13u) { /* OP-IMM, implement ADDI */
+    uint32_t funct3 = (insn >> 12) & 0x7u;
+    uint32_t rd = (insn >> 7) & 0x1fu;
+    uint32_t rs1 = (insn >> 15) & 0x1fu;
+    int32_t imm = sext_imm12(insn >> 20);
+    if (funct3 != 0u) {
+      vm_bit_set(vm, vm->mmio.halt, 1);
+      vm->rv_guest_running = 0;
+      return 0;
+    }
+    uint32_t rs1v = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
+    uint32_t rdv = (uint32_t)((int32_t)rs1v + imm);
+    if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, rdv);
+    pc += 4u;
+    wr_u32_le(vm, G_PC, pc);
+    wr_u32_le(vm, G_REG_BASE + 0u, 0u); /* x0 hardwired */
+    return 0;
+  }
+  if (opcode == 0x03u) { /* LOAD, implement LW */
+    uint32_t funct3 = (insn >> 12) & 0x7u;
+    uint32_t rd = (insn >> 7) & 0x1fu;
+    uint32_t rs1 = (insn >> 15) & 0x1fu;
+    int32_t imm = sext_imm12(insn >> 20);
+    if (funct3 != 2u) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
+    uint32_t base = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
+    uint32_t addr = (uint32_t)((int32_t)base + imm);
+    bitaddr_t ga = G_MEM_BASE + (bitaddr_t)addr * 8u;
+    if ((addr & 3u) || ga + 32u > vm->space_bits) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
+    uint32_t v = rd_u32_le(vm, ga);
+    if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, v);
+    pc += 4u;
+    wr_u32_le(vm, G_PC, pc);
+    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+    return 0;
+  }
+  if (opcode == 0x23u) { /* STORE, implement SW */
+    uint32_t funct3 = (insn >> 12) & 0x7u;
+    uint32_t rs1 = (insn >> 15) & 0x1fu;
+    uint32_t rs2 = (insn >> 20) & 0x1fu;
+    uint32_t imm_u = ((insn >> 7) & 0x1fu) | (((insn >> 25) & 0x7fu) << 5);
+    int32_t imm = sext_imm12(imm_u);
+    if (funct3 != 2u) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
+    uint32_t base = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
+    uint32_t addr = (uint32_t)((int32_t)base + imm);
+    bitaddr_t ga = G_MEM_BASE + (bitaddr_t)addr * 8u;
+    if ((addr & 3u) || ga + 32u > vm->space_bits) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
+    uint32_t v = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs2 * 32u);
+    wr_u32_le(vm, ga, v);
+    pc += 4u;
+    wr_u32_le(vm, G_PC, pc);
+    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+    return 0;
+  }
+  if (opcode == 0x63u) { /* BRANCH, implement BEQ/BNE */
+    uint32_t funct3 = (insn >> 12) & 0x7u;
+    uint32_t rs1 = (insn >> 15) & 0x1fu;
+    uint32_t rs2 = (insn >> 20) & 0x1fu;
+    uint32_t imm_u = (((insn >> 31) & 0x1u) << 12) |
+                     (((insn >> 7) & 0x1u) << 11) |
+                     (((insn >> 25) & 0x3fu) << 5) |
+                     (((insn >> 8) & 0xfu) << 1);
+    int32_t imm = sext_imm13(imm_u);
+    uint32_t a = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
+    uint32_t b = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs2 * 32u);
+    int take = 0;
+    if (funct3 == 0u) take = (a == b);       /* beq */
+    else if (funct3 == 1u) take = (a != b);  /* bne */
+    else { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
+    pc = take ? (uint32_t)((int32_t)pc + imm) : (pc + 4u);
+    wr_u32_le(vm, G_PC, pc);
+    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+    return 0;
+  }
+  if (opcode == 0x6fu) { /* JAL */
+    uint32_t rd = (insn >> 7) & 0x1fu;
+    uint32_t imm_u = (((insn >> 31) & 0x1u) << 20) |
+                     (((insn >> 12) & 0xffu) << 12) |
+                     (((insn >> 20) & 0x1u) << 11) |
+                     (((insn >> 21) & 0x3ffu) << 1);
+    int32_t imm = sext_imm21(imm_u);
+    uint32_t next = pc + 4u;
+    pc = (uint32_t)((int32_t)pc + imm);
+    if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, next);
+    wr_u32_le(vm, G_PC, pc);
+    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+    return 0;
+  }
+
+  /* unsupported in minimal runner: stop deterministically */
+  vm_bit_set(vm, vm->mmio.halt, 1);
+  vm->rv_guest_running = 0;
   return 0;
 }
 
@@ -381,11 +636,17 @@ vm_rc_t vm_tick(vm_t *vm, FILE *in, FILE *out) {
     if (limit > 0 && ticks >= limit) {
       vm_bit_set(vm, vm->mmio.wd_fired, 1);
       vm_bit_set(vm, vm->mmio.halt, 1);
+      vm->rv_guest_running = 0;
     }
   }
 
   /* 2) HALT check after I/O (allows "print first, then stop") */
-  if (vm_bit_get(vm, vm->mmio.halt)) { vm->tick_counter++; return VM_HALT; }
+  if (vm_bit_get(vm, vm->mmio.halt)) { vm->rv_guest_running = 0; vm->tick_counter++; return VM_HALT; }
+
+  if (vm->rv_guest_running) {
+    if (rv32_guest_step(vm) != 0) return VM_ERR;
+    if (vm_bit_get(vm, vm->mmio.halt)) { vm->rv_guest_running = 0; vm->tick_counter++; return VM_HALT; }
+  }
 
   /* 3) fetch-execute slots */
   if (vm->hooks.tick_begin) vm->hooks.tick_begin(vm->hooks.user, vm->processor_n);

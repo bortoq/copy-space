@@ -24,6 +24,7 @@ Everything else is secondary and may be deferred.
 - LLVM backend integration
 - FreeRTOS port
 - FPGA prototype
+- SHA-256 demo in space (until RV32I MVP is closed)
 
 ## Required Gates (Single-Goal)
 Use this command as the default quality gate:

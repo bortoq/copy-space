@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "notes": "Full strict RV32I external set for universal conformance gate.",
+  "cases": [
+    {"name": "riscv-tests-rv32ui-simple", "binary": "third_party/riscv-external/riscv-tests/rv32ui-p-simple.bin", "max_instr": 128, "require": ["addi"]},
+    {"name": "riscv-tests-rv32ui-addi", "binary": "third_party/riscv-external/riscv-tests/rv32ui-p-addi.bin", "max_instr": 16, "require": ["addi"]},
+    {"name": "riscv-tests-rv32ui-add", "binary": "third_party/riscv-external/riscv-tests/rv32ui-p-add.bin", "max_instr": 16, "require": ["add"]},
+    {"name": "riscv-tests-rv32ui-beq", "binary": "third_party/riscv-external/riscv-tests/rv32ui-p-beq.bin", "max_instr": 16, "require": ["beq"]},
+    {"name": "riscv-tests-rv32ui-bne", "binary": "third_party/riscv-external/riscv-tests/rv32ui-p-bne.bin", "max_instr": 16, "require": ["bne"]},
+    {"name": "riscv-tests-rv32ui-lw-sw", "binary": "third_party/riscv-external/riscv-tests/rv32ui-p-lw.bin", "max_instr": 16, "require": ["lw"]}
+  ]
+}

@@ -109,6 +109,8 @@ const sym_table_entry_t g_syms[] = {
   {"SCR_OPR",     ART_SCR_OPR},
   {"SCR_X0",      ART_SCR_X0},
   {"SCR_X1",      ART_SCR_X1},
+  /* 94 */
+  {"WORD_C3_RUN", ART_WORD_C3_RUN},
 };
 
 const unsigned g_syms_count = sizeof(g_syms) / sizeof(g_syms[0]);

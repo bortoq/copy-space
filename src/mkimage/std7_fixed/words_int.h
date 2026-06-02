@@ -34,6 +34,14 @@ void emit_bxor(vm_t *vm, bitaddr_t img, unsigned *pslot,
                bitaddr_t X0, bitaddr_t X1,
                bitaddr_t CONST1, bitaddr_t CONST0);
 
+/* 32-bit arithmetic */
+void write_word_add32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                       bitaddr_t OPA, bitaddr_t OPB, bitaddr_t OPR,
+                       bitaddr_t BA, bitaddr_t BB, bitaddr_t BC, bitaddr_t BR,
+                       bitaddr_t T0, bitaddr_t T1,
+                       bitaddr_t X0, bitaddr_t X1,
+                       bitaddr_t CONST1, bitaddr_t CONST0);
+
 /* 32-bit gate words (multi-page, with page stride) */
 void write_word_bnot32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
                         bitaddr_t OPA, bitaddr_t OPR,

@@ -112,6 +112,9 @@ typedef struct std7_addrs_t {
   /* setup inspace word: 81 */
   bitaddr_t word_setup_inspace;   /* ART[81] */
 
+  /* C3_RUN: 94 */
+  bitaddr_t word_c3_run;          /* ART[94] */
+
 } std7_addrs_t;
 
 #endif

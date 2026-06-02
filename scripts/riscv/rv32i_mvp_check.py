@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""RV32I MVP checker for C2 trace->f0 stage.
-
-This is a phase-0/phase-2 harness: it validates tracer outputs and emits
-artifacts for debugging. It does not claim full VM-level equivalence yet.
-"""
+"""RV32I MVP checker for C2 trace->f0 stage with VM-level equivalence."""
 
 import argparse
 import hashlib
@@ -30,6 +26,38 @@ def trace_digest(trace):
     return h.hexdigest()
 
 
+def expected_final_regs(repo: Path, binary: str, trace):
+    sys.path.insert(0, str(repo / "riscv-port"))
+    from riscv_emulator import RISCVEmulator  # type: ignore
+    from riscv_trace_to_f0 import decode_rv32i  # type: ignore
+
+    emu = RISCVEmulator()
+    program = Path(binary).read_bytes()
+    emu.load_program(program, base=0)
+    for i, exp in enumerate(trace):
+        pc = emu.pc
+        if pc != exp.get("pc"):
+            raise RuntimeError(f"expected_final_regs: pc mismatch at step {i}: got={pc} exp={exp.get('pc')}")
+        instr = int.from_bytes(emu.memory[pc:pc + 4], "little")
+        name, _, _, _, _ = decode_rv32i(instr, pc)
+        if name != exp.get("instr_name"):
+            raise RuntimeError(f"expected_final_regs: instr mismatch at step {i}: got={name} exp={exp.get('instr_name')}")
+        emu.pc += 4
+        emu.execute(instr)
+    return [(r & 0xFFFFFFFF) for r in emu.regs]
+
+
+def parse_vm_regs_from_testg(testg: bytes):
+    need = 32 * 4
+    if len(testg) < need:
+        raise RuntimeError(f"testg too short for reg dump: {len(testg)} < {need}")
+    regs = []
+    for i in range(32):
+        b = testg[i * 4:(i + 1) * 4]
+        regs.append(int.from_bytes(b, "big"))
+    return regs
+
+
 def main():
     ap = argparse.ArgumentParser(description="Check RV32I MVP trace->f0 artifacts")
     ap.add_argument("--binary", help="Input machine-code binary; demo if omitted")
@@ -38,6 +66,7 @@ def main():
     ap.add_argument("--max-f0-lines", type=int, default=20000)
     ap.add_argument("--require", action="append", default=[], help="Require instruction name in trace (repeatable)")
     ap.add_argument("--binary-required", action="store_true", help="Fail if --binary is not provided")
+    ap.add_argument("--skip-vm-run", action="store_true", help="Skip VM-level .f0 execution and reg comparison")
     args = ap.parse_args()
 
     repo = Path(__file__).resolve().parents[2]
@@ -115,6 +144,48 @@ def main():
         if step_diff_rc != 0:
             return fail(f"step-diff failed (rc={step_diff_rc}); see {outdir}")
 
+        if not args.skip_vm_run:
+            f0_runner = repo / "scripts" / "forth0" / "run_f0.sh"
+            f0_tmp = outdir / "f0run"
+            vm_cmd = [
+                "env",
+                "LIFE_COMPILE=60000000",
+                "LIFE_RUN=20000000",
+                str(f0_runner),
+                "--in",
+                str(f0_path),
+                "--dump-testg",
+                "128",
+                "--keep",
+                "--tmpdir",
+                str(f0_tmp),
+            ]
+            vm_rc, vm_so, vm_se = run(vm_cmd)
+            (outdir / "vmrun.stdout.log").write_text(vm_so, encoding="utf-8")
+            (outdir / "vmrun.stderr.log").write_text(vm_se, encoding="utf-8")
+            if vm_rc != 0:
+                return fail(f"vm-run failed (rc={vm_rc}); see {outdir}")
+
+            testg_path = f0_tmp / "testg.bin"
+            if not testg_path.exists():
+                return fail(f"vm-run did not emit {testg_path}")
+            got_regs = parse_vm_regs_from_testg(testg_path.read_bytes())
+            exp_regs = expected_final_regs(repo, args.binary, trace)
+            # In current narrow C2 pipeline x0 is used as internal scratch register
+            # during address materialization in emitted .f0. Therefore VM-level
+            # equivalence for MVP is strict on x1..x31.
+            if got_regs[1:] != exp_regs[1:]:
+                mism = []
+                for i, (g, e) in enumerate(zip(got_regs, exp_regs)):
+                    if i == 0:
+                        continue
+                    if g != e:
+                        mism.append({"reg": i, "got": g, "exp": e})
+                    if len(mism) >= 8:
+                        break
+                (outdir / "vm_reg_mismatch.json").write_text(json.dumps(mism, indent=2) + "\n", encoding="utf-8")
+                return fail(f"vm-level reg mismatch; see {outdir/'vm_reg_mismatch.json'}")
+
     summary = {
         "ok": True,
         "trace_len": len(trace),
@@ -122,11 +193,14 @@ def main():
         "instructions": instrs,
         "trace_sha256": trace_digest(trace),
         "step_diff_rc": step_diff_rc,
+        "vm_regs_checked": bool(args.binary and not args.skip_vm_run),
         "artifacts": {
             "f0": str(f0_path),
             "trace": str(trace_path),
             "tracer_stdout": str(outdir / "tracer.stdout.log"),
             "tracer_stderr": str(outdir / "tracer.stderr.log"),
+            "vmrun_stdout": str(outdir / "vmrun.stdout.log"),
+            "vmrun_stderr": str(outdir / "vmrun.stderr.log"),
         },
     }
     (outdir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

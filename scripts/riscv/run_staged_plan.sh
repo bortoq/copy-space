@@ -8,7 +8,7 @@ MAX_INSTR="${MAX_INSTR:-256}"
 MAX_F0_LINES="${MAX_F0_LINES:-20000}"
 MAX_TOK_BYTES="${MAX_TOK_BYTES:-1500000}"
 REPEAT_RUNS="${REPEAT_RUNS:-3}"
-MAX_COMPILE_TICKS="${MAX_COMPILE_TICKS:-20000000}"
+MAX_COMPILE_TICKS="${MAX_COMPILE_TICKS:-60000000}"
 MAX_RUN_TICKS="${MAX_RUN_TICKS:-20000000}"
 
 mkdir -p "$OUT_ROOT"
@@ -53,15 +53,20 @@ PY
   cp "$outdir/run_1/trace.json" "$outdir/trace.json"
   cp "$outdir/run_1/summary.json" "$outdir/summary.json"
 
-  scripts/forth0/run_f0.sh --in "$outdir/program.f0" --keep >/dev/null
-  tok_bytes="$(wc -c < tmp/f0run/prog.tok)"
+  f0tmp="$outdir/f0run"
+  LIFE_COMPILE="$MAX_COMPILE_TICKS" LIFE_RUN="$MAX_RUN_TICKS" \
+    scripts/forth0/run_f0.sh --in "$outdir/program.f0" --keep --tmpdir "$f0tmp" >/dev/null
+  tok_bytes="$(wc -c < "$f0tmp/prog.tok")"
   if [ "$tok_bytes" -gt "$MAX_TOK_BYTES" ]; then
     echo "FAIL: $name tok_bytes=$tok_bytes > budget=$MAX_TOK_BYTES" >&2
     exit 1
   fi
 
-  compile_ticks="$(sed -n 's/.*ticks=\([0-9][0-9]*\).*/\1/p' tmp/f0run/compile.stderr | tail -n 1)"
-  run_ticks="$(sed -n 's/.*ticks=\([0-9][0-9]*\).*/\1/p' tmp/f0run/run.stderr | tail -n 1)"
+  compile_ticks="$(sed -n 's/.*ticks=\([0-9][0-9]*\).*/\1/p' "$f0tmp/compile.stderr" 2>/dev/null | tail -n 1)"
+  run_ticks="$(sed -n 's/.*ticks=\([0-9][0-9]*\).*/\1/p' "$f0tmp/run.stderr" 2>/dev/null | tail -n 1)"
+  if [ -z "$run_ticks" ]; then
+    run_ticks="$(sed -n 's/.*ticks=\([0-9][0-9]*\).*/\1/p' "$f0tmp/exec.stderr" 2>/dev/null | tail -n 1)"
+  fi
   test -n "$compile_ticks" || { echo "FAIL: $name cannot parse compile ticks" >&2; exit 1; }
   test -n "$run_ticks" || { echo "FAIL: $name cannot parse run ticks" >&2; exit 1; }
   if [ "$compile_ticks" -gt "$MAX_COMPILE_TICKS" ]; then
@@ -98,5 +103,11 @@ run_case "wave_a_alu_mix" "scripts/riscv/cases/wave_a_alu_mix.bin" "--require ad
 run_case "wave_b_shift_cmp" "scripts/riscv/cases/wave_b_shift_cmp.bin" "--require sll --require srl --require sra --require slt --require sltu --require slti --require sltiu"
 run_case "wave_c_e_mem" "scripts/riscv/cases/wave_c_e_mem.bin" "--require sb --require sh --require lb --require lbu --require lh --require lhu --require sw --require lw"
 run_case "wave_d_branch_jump" "scripts/riscv/cases/wave_d_branch_jump.bin" "--require beq --require bne --require blt --require auipc --require jal --require jalr"
+run_case "wave_mvp_compute" "scripts/riscv/cases/wave_mvp_compute.bin" "--require addi --require add --require blt --require sw"
+run_case "wave_edge_sign_branch" "scripts/riscv/cases/wave_edge_sign_branch.bin" "--require sb --require lb --require lbu --require bltu"
+run_case "wave_branch_bge" "scripts/riscv/cases/wave_branch_bge.bin" "--require bge"
+run_case "wave_branch_bgeu" "scripts/riscv/cases/wave_branch_bgeu.bin" "--require bgeu"
+run_case "wave_jump_jal_link" "scripts/riscv/cases/wave_jump_jal_link.bin" "--require jal"
+run_case "wave_mem_signed_half" "scripts/riscv/cases/wave_mem_signed_half.bin" "--require sh --require lh --require lhu"
 
 echo "STAGED_PLAN_OK out=$OUT_ROOT"

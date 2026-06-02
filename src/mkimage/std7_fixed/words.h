@@ -123,6 +123,25 @@ void write_word_setup_inspace(vm_t *vm, bitaddr_t img, bitaddr_t branch_img,
                                bitaddr_t var_token,
                                bitaddr_t const1_base);
 
+/* 32-bit arithmetic */
+void write_word_add32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
+                       bitaddr_t OPA, bitaddr_t OPB, bitaddr_t OPR,
+                       bitaddr_t BA, bitaddr_t BB, bitaddr_t BC, bitaddr_t BR,
+                       bitaddr_t T0, bitaddr_t T1,
+                       bitaddr_t X0, bitaddr_t X1,
+                       bitaddr_t CONST1, bitaddr_t CONST0);
+
+/* C3_RUN: RISC-V interpreter (30 pages) */
+void write_word_c3_run(vm_t *vm, bitaddr_t img, bitaddr_t nxt,
+                        bitaddr_t testscr_base,
+                        bitaddr_t const1_base, bitaddr_t const0_base,
+                        bitaddr_t BA, bitaddr_t BB, bitaddr_t BC, bitaddr_t BR,
+                        bitaddr_t T0, bitaddr_t T1,
+                        bitaddr_t X0, bitaddr_t X1,
+                        bitaddr_t VAR_A24,
+                        bitaddr_t VAR_B24,
+                        bitaddr_t VAR_SUM24);
+
 /* 32-bit gate words (multi-page, with page stride) */
 void write_word_bnot32(vm_t *vm, bitaddr_t img, bitaddr_t next_img,
                         bitaddr_t OPA, bitaddr_t OPR,

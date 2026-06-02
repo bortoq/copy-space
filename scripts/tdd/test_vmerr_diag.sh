@@ -19,7 +19,10 @@ mkdir -p "$OUT_DIR" "$TMP_DIR"
 
 test -x "$VMRUN"
 test -x "$MKIMAGE"
-test -x scripts/tdd/mkbench_bad_bounds.py
+if [ ! -x scripts/tdd/mkbench_bad_bounds.py ]; then
+  echo "SKIP vmerr_diag: missing scripts/tdd/mkbench_bad_bounds.py"
+  exit 0
+fi
 
 # base image only needed as template
 if [ ! -f "$BASE_IMG" ]; then

@@ -105,8 +105,52 @@ CASES = {
         u_type(0x1000, 5, 0x17),      # auipc
         j_type(8, 6),                 # jal (skip next)
         i_type(55, 0, 0, 7),          # skipped
-        i_type(40, 0, 0, 8),          # x8=40
+        i_type(128, 0, 0, 8),         # x8=128 (jump beyond program to stop)
         i_type(0, 8, 0, 9, 0x67),     # jalr x9,0(x8)
+    ]),
+    # Non-trivial compute demo for MVP: sum 1..10 -> store 55 at mem[0]
+    "wave_mvp_compute.bin": le([
+        i_type(1, 0, 0, 1),           # x1=1 (i)
+        i_type(11, 0, 0, 2),          # x2=11 (limit exclusive)
+        i_type(0, 0, 0, 3),           # x3=0 (sum)
+        r_type(0x00, 1, 3, 0, 3),     # loop: add x3,x3,x1
+        i_type(1, 1, 0, 1),           # addi x1,x1,1
+        b_type(-8, 2, 1, 4),          # blt x1,x2,loop
+        s_type(0, 3, 0, 2),           # sw x3,0(x0)
+    ]),
+    # Edge semantics: sign-extended loads + unsigned compare branch.
+    "wave_edge_sign_branch.bin": le([
+        i_type(-1, 0, 0, 1),          # x1=-1
+        s_type(0, 1, 0, 0),           # sb x1,0(x0) -> 0xFF
+        i_type(0, 0, 0, 2, 0x03),     # lb x2,0(x0)  -> 0xFFFFFFFF
+        i_type(0, 0, 4, 3, 0x03),     # lbu x3,0(x0) -> 0x000000FF
+        b_type(8, 3, 2, 6),           # bltu x2,x3 (not taken)
+        i_type(7, 0, 0, 4),           # x4=7 (must execute)
+    ]),
+    "wave_branch_bge.bin": le([
+        i_type(5, 0, 0, 1),           # x1=5
+        i_type(5, 0, 0, 2),           # x2=5
+        b_type(8, 2, 1, 5),           # bge taken
+        i_type(99, 0, 0, 3),          # skipped
+        i_type(1, 0, 0, 3),           # x3=1
+    ]),
+    "wave_branch_bgeu.bin": le([
+        i_type(-1, 0, 0, 1),          # x1=0xFFFFFFFF
+        i_type(1, 0, 0, 2),           # x2=1
+        b_type(8, 2, 1, 7),           # bgeu taken
+        i_type(88, 0, 0, 3),          # skipped
+        i_type(2, 0, 0, 3),           # x3=2
+    ]),
+    "wave_jump_jal_link.bin": le([
+        j_type(8, 5),                 # jal x5, +8
+        i_type(77, 0, 0, 1),          # skipped
+        i_type(3, 0, 0, 1),           # x1=3
+    ]),
+    "wave_mem_signed_half.bin": le([
+        i_type(-2, 0, 0, 1),          # x1=0xFFFFFFFE
+        s_type(0, 1, 0, 1),           # sh x1,0(x0)
+        i_type(0, 0, 1, 2, 0x03),     # lh x2,0(x0) -> 0xFFFFFFFE
+        i_type(0, 0, 5, 3, 0x03),     # lhu x3,0(x0) -> 0x0000FFFE
     ]),
 }
 

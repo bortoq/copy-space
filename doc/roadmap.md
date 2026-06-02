@@ -1,112 +1,347 @@
 # Copy-Space Roadmap
 
-Audit baseline: 2026-06-02.
-Rule: only artifact-backed, code-backed, or directly executed project state is recorded here.
+Цель: довести `RISC-V` до состояния, в котором гостевой код реально и доказуемо исполняется *внутри* адресного пространства Copy-Space, а хостовый `space.*` сведен к минимальному контракту: копирование в каналы и из каналов, выполнение `copy` полуинтервалов по инструкциям процессорных слотов, останов пространства и одноразовая загрузка данных в один слот процессора перед первым тактом.
 
-## 1. Verified Foundation
+## Правила ведения документа
 
-1.1. ✅ Bit-addressable VM substrate exists in active code.
-1.1.1. ✅ Core VM runtime is implemented in `src/vm/space.c`.
-1.1.2. ✅ VM public interface exists in `src/vm/space.h`.
-1.1.3. ✅ Native VM runner/toolchain is part of the active tree (`vmrun`, `mkimage_std7_fixed`, `forth0c`, `vmprep_forth0`).
+Этот документ хранит только этапы достижения цели проекта.
 
-1.2. ✅ Image-generation path exists.
-1.2.1. ✅ Space image layout/build path exists under `src/mkimage/std7_fixed/`.
-1.2.2. ✅ Generated artifact/address tables exist and are wired into the image build.
-1.2.3. ✅ RV32M image tooling exists in `scripts/riscv/rv32m_image_builder.py` and `src/tools/rv32m_loader_tool.c`.
+1. ✅ Включать только этапы и пункты-действия.
+1.1. ✅ Не включать аудит, диагностику, ретроспективу, анализ причин и обзор состояния.
+1.2. ✅ Любые результаты проверок и расследований выносить в отдельные документы.
 
-1.3. ✅ MMIO/channel/watchdog foundations exist.
-1.3.1. ✅ Loader MMIO path exists in `src/vm/space.c`.
-1.3.2. ✅ Channel ABI entrypoint exists in `service_channel()` in `src/vm/space.c`.
-1.3.3. ✅ Watchdog/bounded-run controls exist in the same runtime.
+2. ✅ Каждый пункт формулировать как действие.
+2.1. ✅ Каждый пункт должен описывать выполненное или запланированное действие.
+2.2. ✅ Недопустимы формулировки состояния, проблемы, риска или вывода аудита вместо действия.
+2.3. ✅ Предпочтительная форма: `Реализовать`, `Добавить`, `Зафиксировать`, `Переписать`, `Построить`.
 
-## 2. Verified In-Space RISC-V Progress
+3. ✅ Использовать только статусы `✅` и `❌`.
+3.1. ✅ `✅` означает завершенное действие.
+3.2. ✅ `❌` означает незавершенное или запланированное действие.
+3.3. ✅ Пунктов без статуса быть не должно.
 
-2.1. ✅ Minimal runtime ABI is implemented inside the VM.
-2.1.1. ✅ Implemented channel ops include `STATUS`, `LOAD_CODE`, `RUN`, `STEP`, `READ_REGS`, `READ_MEM`, `WRITE_MEM`.
-2.1.2. ✅ These ops are exercised by active C-level harnesses in `scripts/tdd/test_rv32_runtime_abi_ops.sh` and `scripts/tdd/test_rv32_guest_run_contract.sh`.
+4. ✅ Сохранять строгую иерархическую нумерацию.
+4.1. ✅ Верхний уровень: `1.`, `2.`, `3.`.
+4.2. ✅ Подуровни: `1.1.`, `1.1.1.` и далее.
+4.3. ✅ При изменениях перенумеровывать документ вручную без разрывов.
 
-2.2. ✅ Guest architectural state layout exists.
-2.2.1. ✅ `G_PC` exists at `0x001000`.
-2.2.2. ✅ `G_REG_BASE` exists at `0x001200`.
-2.2.3. ✅ `G_MEM_BASE` exists at `0x002000`.
+5. ✅ Сохранять назначение и вид документа.
+5.1. ✅ Заголовки разделов должны описывать этапы работ.
+5.2. ✅ Один пункт должен описывать одно действие.
+5.3. ✅ Крупные действия раскладывать на подпункты.
+5.4. ✅ Все, что не является действием по достижению цели, выносить из `roadmap`.
 
-2.3. ✅ Real in-space guest stepping exists, but only for a narrow subset.
-2.3.1. ✅ Implemented guest instructions in active runtime: `ADDI`.
-2.3.2. ✅ Implemented guest instructions in active runtime: `LW`, `SW`.
-2.3.3. ✅ Implemented guest instructions in active runtime: `BEQ`, `BNE`, `JAL`.
-2.3.4. ✅ Unsupported instructions currently stop deterministically instead of executing.
+## 1. База исполнения
 
-2.4. ✅ Development assets around RISC-V are present and usable.
-2.4.1. ✅ Loader/image/channel docs exist under `doc/rv32*` and `doc/rv32m*`.
-2.4.2. ✅ Directed shell/C harnesses exist under `scripts/tdd/`.
-2.4.3. ✅ Host-side corpus and helper scripts remain available as development aids.
+1.1. ✅ Реализовать бит-адресуемую VM-подложку.
+1.1.1. ✅ Поддержать активный runtime в `src/vm/space.c`.
+1.1.2. ✅ Зафиксировать публичный интерфейс VM в `src/vm/space.h`.
+1.1.3. ✅ Сохранить рабочий toolchain сборки/запуска (`vmrun`, `mkimage_std7_fixed`, `forth0c`, `vmprep_forth0`).
 
-## 3. Verified C3/Forth0 Progress
+1.2. ✅ Реализовать путь сборки образа пространства.
+1.2.1. ✅ Поддержать layout/build path в `src/mkimage/std7_fixed/`.
+1.2.2. ✅ Подключить таблицы адресов и артефактов в сборку образа.
+1.2.3. ✅ Добавить tooling для `rv32m`-образов и загрузки (`scripts/riscv/rv32m_image_builder.py`, `src/tools/rv32m_loader_tool.c`).
 
-3.1. ✅ `C3_RUN` exists as an image-generation artifact.
-3.1.1. ✅ Generator exists in `scripts/riscv/gen_c3_run.py`.
-3.1.2. ✅ Generated word exists in `src/mkimage/std7_fixed/words_c3_run.c`.
-3.1.3. ✅ Symbol/address wiring exists in `src/mkimage/std7_fixed/legacy.c`, `words.h`, `syms.c`, `artifacts.c`.
+1.3. ✅ Реализовать базовые MMIO/channel/watchdog-механизмы.
+1.3.1. ✅ Поддержать loader MMIO path в `src/vm/space.c`.
+1.3.2. ✅ Поддержать channel ABI entrypoint в `service_channel()`.
+1.3.3. ✅ Поддержать bounded-run/watchdog control в runtime.
 
-3.2. ✅ Some C3 microcode building blocks exist.
-3.2.1. ✅ `ADD32` artifact exists.
-3.2.2. ✅ C3 state layout/docs exist.
-3.2.3. ✅ Multiple C3-oriented tests and trace helpers exist as development material.
+## 2. Текущий минимум in-space RISC-V
 
-3.3. ❌ Forth0 is not ported into Copy-Space as an autonomous in-space system.
-3.3.1. ❌ Active `forth0` workflow still depends on host-side compilation/prep scripts.
-3.3.2. ❌ `scripts/forth0/run_f0.sh` still orchestrates the path from the host.
+2.1. ✅ Реализовать минимальный runtime ABI внутри VM.
+2.1.1. ✅ Поддержать `STATUS`, `LOAD_CODE`, `RUN`, `STEP`, `READ_REGS`, `READ_MEM`, `WRITE_MEM`.
+2.1.2. ✅ Добавить C-level harnesses для этих ops в `scripts/tdd/test_rv32_runtime_abi_ops.sh` и `scripts/tdd/test_rv32_guest_run_contract.sh`.
 
-3.4. ❌ C3 execution is not proven as the real RISC-V closure path.
-3.4.1. ❌ `C3_RUN` is only partially verified.
-3.4.2. ❌ Current proof level is limited to a narrow `ADDI`-class path.
-3.4.3. ❌ Existing C3 trace/e2e gates are not acceptable as proof of in-space execution.
+2.2. ✅ Зафиксировать гостевое состояние в пространстве.
+2.2.1. ✅ Выделить `G_PC`.
+2.2.2. ✅ Выделить `G_REG_BASE`.
+2.2.3. ✅ Выделить `G_MEM_BASE`.
 
-## 4. Verified Reality Gaps
+2.3. ✅ Реализовать минимальный in-space guest stepper.
+2.3.1. ✅ Добавить исполнение `ADDI`.
+2.3.2. ✅ Добавить исполнение `LW` и `SW`.
+2.3.3. ✅ Добавить исполнение `BEQ`, `BNE`, `JAL`.
+2.3.4. ✅ Добавить детерминированную остановку на unsupported instructions.
 
-4.1. ❌ There is no accepted raw PC/decoder trace proving in-space RISC-V execution.
-4.1.1. ❌ This blocks strong claims about true guest execution closure.
-4.1.2. ❌ This also blocks strong claims about C3-based execution proof.
+## 3. Достижение полноценного bootstrap RV32I
 
-4.2. ❌ The active in-space RISC-V executor is far below full RV32I.
-4.2.1. ❌ Missing major RV32I arithmetic/logical families.
-4.2.2. ❌ Missing major control-flow families (`JALR`, signed/unsigned branch matrix beyond `BEQ/BNE`).
-4.2.3. ❌ Missing byte/halfword memory ops and exact fault semantics.
+3.1. ✅ Реализовать оставшиеся bootstrap RV32I U-type instructions в активном runtime.
+3.1.1. ✅ Добавить `LUI`.
+3.1.2. ✅ Добавить `AUIPC`.
 
-4.3. ❌ RV32M is not proven in the active in-space executor.
-4.3.1. ❌ Multiplication/division/reminder families are not implemented in the runtime executor in `src/vm/space.c`.
-4.3.2. ❌ Existing RV32M closure claims rely on surrounding harnesses, not on the verified narrow executor.
+3.2. ✅ Реализовать оставшиеся bootstrap RV32I compare instructions в активном runtime.
+3.2.1. ✅ Добавить `SLTI`.
+3.2.2. ✅ Добавить `SLTIU`.
+3.2.3. ✅ Добавить `SLT`.
+3.2.4. ✅ Добавить `SLTU`.
 
-4.4. ❌ SHA/FreeRTOS milestones are not proven as real computational closure.
-4.4.1. ❌ Current SHA three-binary gate reads a prearranged payload shape rather than proving SHA computation by the in-space executor.
-4.4.2. ❌ Current FreeRTOS interactive gate proves a small guest loop/harness shape, not a trustworthy production-grade FreeRTOS port.
+3.3. ✅ Реализовать оставшиеся bootstrap RV32I boolean instructions в активном runtime.
+3.3.1. ✅ Добавить `XORI`.
+3.3.2. ✅ Добавить `ORI`.
+3.3.3. ✅ Добавить `ANDI`.
+3.3.4. ✅ Добавить `XOR`.
+3.3.5. ✅ Добавить `OR`.
+3.3.6. ✅ Добавить `AND`.
 
-4.5. ❌ The release/gate layer contains false-positive risk.
-4.5.1. ❌ Some gates are infrastructure smoke tests rather than semantic execution proofs.
-4.5.2. ❌ Some gates rely on synthetic traces, scaffolded `TESTG`, or indirect invariants.
+3.4. ✅ Реализовать оставшиеся bootstrap RV32I shift instructions в активном runtime.
+3.4.1. ✅ Добавить `SLLI`.
+3.4.2. ✅ Добавить `SRLI`.
+3.4.3. ✅ Добавить `SRAI`.
+3.4.4. ✅ Добавить `SLL`.
+3.4.5. ✅ Добавить `SRL`.
+3.4.6. ✅ Добавить `SRA`.
 
-## 5. Active Development Roadmap
+3.5. ✅ Реализовать оставшиеся bootstrap RV32I control-flow instructions.
+3.5.1. ✅ Добавить `JALR`.
+3.5.2. ✅ Добавить `BLT`.
+3.5.3. ✅ Добавить `BGE`.
+3.5.4. ✅ Добавить `BLTU`.
+3.5.5. ✅ Добавить `BGEU`.
+3.5.6. ✅ Зафиксировать правило изменения `PC` для sequential path.
+3.5.7. ✅ Зафиксировать правило изменения `PC` для branch-taken path.
+3.5.8. ✅ Зафиксировать правило изменения `PC` для jump path.
 
-5.1. ❌ Finish a trustworthy in-space RV32I baseline in the runtime executor.
-5.1.1. ❌ Add the remaining arithmetic/logical instructions required for a coherent RV32I core.
-5.1.2. ❌ Add the remaining control-flow instructions and exact PC progression rules.
-5.1.3. ❌ Add byte/halfword memory ops and exact alignment/bounds behavior.
+3.6. ✅ Реализовать оставшиеся bootstrap RV32I memory instructions.
+3.6.1. ✅ Добавить `LB`.
+3.6.2. ✅ Добавить `LBU`.
+3.6.3. ✅ Добавить `LH`.
+3.6.4. ✅ Добавить `LHU`.
+3.6.5. ✅ Добавить `SB`.
+3.6.6. ✅ Добавить `SH`.
 
-5.2. ❌ Add proof-grade execution observability.
-5.2.1. ❌ Emit raw PC/instruction/stop logs from the active in-space executor.
-5.2.2. ❌ Make these logs the truth source for semantic validation.
-5.2.3. ❌ Rebuild trace diff gates on top of real runtime traces only.
+3.7. ✅ Зафиксировать bootstrap RV32I memory semantics.
+3.7.1. ✅ Зафиксировать sign-extension rule для `LB`.
+3.7.2. ✅ Зафиксировать sign-extension rule для `LH`.
+3.7.3. ✅ Зафиксировать alignment behavior для byte accesses.
+3.7.4. ✅ Зафиксировать alignment behavior для halfword accesses.
+3.7.5. ✅ Зафиксировать alignment behavior для word accesses.
+3.7.6. ✅ Зафиксировать bounds behavior для guest memory accesses.
 
-5.3. ❌ Replace false-positive tests with executable semantic proofs.
-5.3.1. ❌ Retire scaffold-only C3 e2e/trace gates from active closure claims.
-5.3.2. ❌ Rewrite SHA acceptance so the digest is produced by guest execution, not preloaded data.
-5.3.3. ❌ Rewrite FreeRTOS acceptance so it proves a real scheduler/task/runtime path.
+3.8. ✅ Зафиксировать архитектурные инварианты bootstrap runtime.
+3.8.1. ✅ Зафиксировать поведение `x0`.
+3.8.2. ✅ Зафиксировать progression `pc`.
+3.8.3. ✅ Зафиксировать progression `step`.
+3.8.4. ✅ Зафиксировать progression `stop_reason`.
+3.8.5. ✅ Зафиксировать deterministic unsupported path.
 
-5.4. ❌ Reach a clean stage where RISC-V, not Forth0, is the primary closure path.
-5.4.1. ❌ Keep `C3_RUN` as a research/development branch until it has proof-grade traces.
-5.4.2. ❌ Drive project closure through the simpler active path: `LOAD_CODE -> RUN/STEP -> READ_*`.
+## 4. Доказательная инфраструктура bootstrap runtime
 
-5.5. ❌ Only after 5.1-5.4, decide whether RV32M belongs in the active path.
-5.5.1. ❌ If needed, extend the runtime executor to full required RV32M semantics.
-5.5.2. ❌ Otherwise, freeze unsupported instructions explicitly and narrow the project contract.
+4.1. ❌ Зафиксировать формат proof-grade trace для bootstrap runtime.
+4.1.1. ❌ Зафиксировать запись raw `PC`.
+4.1.2. ❌ Зафиксировать запись raw instruction word.
+4.1.3. ❌ Зафиксировать запись decoder fields.
+4.1.4. ❌ Зафиксировать запись register deltas.
+4.1.5. ❌ Зафиксировать запись memory writes.
+4.1.6. ❌ Зафиксировать запись stop reason.
+
+4.2. ❌ Добавить извлечение proof-grade trace из активного bootstrap executor.
+4.2.1. ❌ Добавить runtime emission trace records.
+4.2.2. ❌ Добавить host-side capture raw trace artifacts.
+4.2.3. ❌ Добавить сохранение trace artifacts в repeatable format.
+
+4.3. ❌ Перестроить trace-based validation на raw runtime trace.
+4.3.1. ❌ Убрать synthetic trace generation из active proof path.
+4.3.2. ❌ Перенести trace diff на raw runtime trace как на единственный источник истины.
+4.3.3. ❌ Добавить hard fail при отсутствии raw execution trace.
+
+4.4. ❌ Перестроить state-based validation на ABI-visible assertions.
+4.4.1. ❌ Убрать scaffold-only `TESTG` checks из active proof path.
+4.4.2. ❌ Добавить failure bundles на основе реального runtime execution.
+4.4.3. ❌ Оставить в release path только ABI-visible assertions.
+
+4.5. ❌ Построить directed validation matrix для bootstrap RV32I.
+4.5.1. ❌ Добавить directed tests для U-type instructions.
+4.5.2. ❌ Добавить directed tests для compare instructions.
+4.5.3. ❌ Добавить directed tests для boolean instructions.
+4.5.4. ❌ Добавить directed tests для shift instructions.
+4.5.5. ❌ Добавить directed tests для control-flow instructions.
+4.5.6. ❌ Добавить directed tests для byte/halfword memory instructions.
+4.5.7. ❌ Добавить negative tests для alignment faults.
+4.5.8. ❌ Добавить negative tests для bounds faults.
+4.5.9. ❌ Добавить negative tests для unsupported instructions.
+4.5.10. ❌ Добавить deterministic replay checks.
+
+## 5. Очистка bootstrap path
+
+5.1. ❌ Закрепить `LOAD_CODE -> RUN/STEP -> READ_*` как единственный bootstrap closure path.
+5.1.1. ❌ Оставить `C3_RUN` только как исследовательскую ветку до появления in-space control plane.
+5.1.2. ❌ Исключить host-assisted helpers из bootstrap correctness path.
+5.1.3. ❌ Исключить synthetic/scaffold gates из bootstrap release path.
+
+5.2. ❌ Закрыть bootstrap RV32I как доказанный временный контур.
+5.2.1. ❌ Зафиксировать bootstrap ABI contract как временный переходный контракт.
+5.2.2. ❌ Зафиксировать bootstrap proof set как достаточный для начала реконструкции `space.*`.
+5.2.3. ❌ Зафиксировать запрет на расширение host-side guest logic сверх bootstrap closure.
+
+## 6. Подготовка реконструкции эмулятора пространства
+
+6.1. ❌ Зафиксировать финальный минимальный контракт хостового `space.*`.
+6.1.1. ❌ Зафиксировать копирование в каналы и из каналов как единственную channel-функцию хоста.
+6.1.2. ❌ Зафиксировать выполнение `copy` полуинтервалов по инструкциям процессорных слотов как единственную compute-функцию хоста.
+6.1.3. ❌ Зафиксировать останов пространства как единственную control-функцию хоста.
+6.1.4. ❌ Зафиксировать одноразовую загрузку данных в один слот процессора перед первым тактом как единственную bootstrap-функцию хоста.
+
+6.2. ❌ Зафиксировать resident in-space control plane, который заменит bootstrap ABI.
+6.2.1. ❌ Зафиксировать resident memory layout control plane.
+6.2.1.1. ❌ Зафиксировать размещение resident dispatcher state.
+6.2.1.2. ❌ Зафиксировать размещение resident request/response buffers.
+6.2.1.3. ❌ Зафиксировать размещение resident service code.
+6.2.2. ❌ Зафиксировать resident channel protocol внутри пространства.
+6.2.2.1. ❌ Зафиксировать формат resident request.
+6.2.2.2. ❌ Зафиксировать формат resident response.
+6.2.2.3. ❌ Зафиксировать handshake semantics resident protocol.
+6.2.3. ❌ Зафиксировать resident bootstrapping sequence от одного загруженного слота.
+6.2.3.1. ❌ Зафиксировать начальную загрузку resident bootstrap payload.
+6.2.3.2. ❌ Зафиксировать развертывание resident dispatcher в пространстве.
+6.2.3.3. ❌ Зафиксировать переход от bootstrap payload к resident steady-state.
+6.2.4. ❌ Зафиксировать resident handoff от bootstrap path к in-space control plane.
+6.2.4.1. ❌ Зафиксировать момент завершения bootstrap ABI.
+6.2.4.2. ❌ Зафиксировать первый запрос, обслуживаемый resident control plane.
+6.2.4.3. ❌ Зафиксировать rollback/fail behavior при срыве handoff.
+
+6.3. ❌ Зафиксировать resident in-space guest runtime, который заменит host-side runtime.
+6.3.1. ❌ Зафиксировать resident decode/dispatch contract.
+6.3.1.1. ❌ Зафиксировать resident fetch contract.
+6.3.1.2. ❌ Зафиксировать resident decode contract.
+6.3.1.3. ❌ Зафиксировать resident execute/commit contract.
+6.3.2. ❌ Зафиксировать resident guest state contract (`PC`, register file, guest memory).
+6.3.2.1. ❌ Зафиксировать resident `PC` layout and ownership.
+6.3.2.2. ❌ Зафиксировать resident register file layout and ownership.
+6.3.2.3. ❌ Зафиксировать resident guest memory layout and ownership.
+6.3.3. ❌ Зафиксировать resident stop/fault contract.
+6.3.3.1. ❌ Зафиксировать resident unsupported-instruction behavior.
+6.3.3.2. ❌ Зафиксировать resident alignment-fault behavior.
+6.3.3.3. ❌ Зафиксировать resident bounds-fault behavior.
+6.3.4. ❌ Зафиксировать resident trace/proof contract после удаления host-side executor.
+6.3.4.1. ❌ Зафиксировать источник resident trace records.
+6.3.4.2. ❌ Зафиксировать способ извлечения resident trace records наружу.
+6.3.4.3. ❌ Зафиксировать соответствие resident trace contract bootstrap trace contract.
+
+6.4. ❌ Зафиксировать план миграции доказательной инфраструктуры на финальный контракт.
+6.4.1. ❌ Зафиксировать миграцию proof artifacts с bootstrap ABI на final channel-only contract.
+6.4.1.1. ❌ Зафиксировать замену bootstrap trace artifacts на resident trace artifacts.
+6.4.1.2. ❌ Зафиксировать замену bootstrap state artifacts на resident state artifacts.
+6.4.2. ❌ Зафиксировать миграцию validation gates с bootstrap executor на resident executor.
+6.4.2.1. ❌ Зафиксировать миграцию directed instruction-family gates.
+6.4.2.2. ❌ Зафиксировать миграцию negative/fault gates.
+6.4.2.3. ❌ Зафиксировать миграцию replay/determinism gates.
+6.4.3. ❌ Зафиксировать критерий готовности к сокращению `space.*`.
+6.4.3.1. ❌ Зафиксировать критерий готовности resident control plane.
+6.4.3.2. ❌ Зафиксировать критерий готовности resident executor.
+6.4.3.3. ❌ Зафиксировать критерий готовности proof gates.
+
+## 7. Построение resident in-space control plane
+
+7.1. ❌ Перенести host-side channel ABI логику внутрь адресного пространства.
+7.1.1. ❌ Перенести диспетчеризацию `STATUS` в in-space код.
+7.1.2. ❌ Перенести диспетчеризацию `LOAD_CODE` в in-space код.
+7.1.3. ❌ Перенести диспетчеризацию `RUN` и `STEP` в in-space код.
+7.1.4. ❌ Перенести диспетчеризацию `READ_REGS`, `READ_MEM`, `WRITE_MEM` в in-space код.
+
+7.2. ❌ Перенести host-side execution control внутрь адресного пространства.
+7.2.1. ❌ Перенести watchdog control в in-space код.
+7.2.2. ❌ Перенести bounded-run control в in-space код.
+7.2.3. ❌ Перенести guest lifecycle control в in-space код.
+
+7.3. ❌ Перенести host-side guest execution semantics внутрь адресного пространства.
+7.3.1. ❌ Перенести resident fetch/decode path `RISC-V` instructions в in-space код.
+7.3.1.1. ❌ Перенести resident fetch path в in-space код.
+7.3.1.2. ❌ Перенести resident decode path в in-space код.
+7.3.1.3. ❌ Перенести resident dispatch path в in-space код.
+7.3.2. ❌ Перенести resident execute/commit path `RISC-V` instructions в in-space код.
+7.3.2.1. ❌ Перенести resident arithmetic/logic execution в in-space код.
+7.3.2.2. ❌ Перенести resident control-flow execution в in-space код.
+7.3.2.3. ❌ Перенести resident memory execution в in-space код.
+7.3.3. ❌ Перенести управление `PC` в in-space код.
+7.3.3.1. ❌ Перенести sequential `PC` progression в in-space код.
+7.3.3.2. ❌ Перенести branch/jump `PC` progression в in-space код.
+7.3.4. ❌ Перенести управление register file в in-space код.
+7.3.4.1. ❌ Перенести resident register reads в in-space код.
+7.3.4.2. ❌ Перенести resident register writes в in-space код.
+7.3.4.3. ❌ Перенести resident `x0` invariant в in-space код.
+7.3.5. ❌ Перенести управление guest memory в in-space код.
+7.3.5.1. ❌ Перенести resident guest loads в in-space код.
+7.3.5.2. ❌ Перенести resident guest stores в in-space код.
+7.3.5.3. ❌ Перенести resident memory bounds checks в in-space код.
+7.3.6. ❌ Перенести stop/fault semantics в in-space код.
+7.3.6.1. ❌ Перенести unsupported stop path в in-space код.
+7.3.6.2. ❌ Перенести alignment-fault path в in-space код.
+7.3.6.3. ❌ Перенести bounds-fault path в in-space код.
+
+7.4. ❌ Перенести доказательную инфраструктуру на resident executor.
+7.4.1. ❌ Перенести runtime trace production на resident executor.
+7.4.1.1. ❌ Перенести resident trace emission.
+7.4.1.2. ❌ Перенести resident trace extraction.
+7.4.1.3. ❌ Перенести resident trace artifact persistence.
+7.4.2. ❌ Перенести validation gates на resident executor.
+7.4.2.1. ❌ Перенести directed instruction-family gates.
+7.4.2.2. ❌ Перенести negative/fault gates.
+7.4.2.3. ❌ Перенести replay/determinism gates.
+7.4.3. ❌ Зафиксировать resident closure path как доказанный.
+7.4.3.1. ❌ Зафиксировать resident trace evidence как достаточное.
+7.4.3.2. ❌ Зафиксировать resident state evidence как достаточное.
+7.4.3.3. ❌ Зафиксировать resident release path как единственный активный path.
+
+## 8. Реконструкция эмулятора пространства
+
+8.1. ❌ Удалить из `space.*` host-side channel ABI после подтверждения resident control plane.
+8.1.1. ❌ Удалить host-side dispatch `STATUS`.
+8.1.2. ❌ Удалить host-side dispatch `LOAD_CODE`.
+8.1.3. ❌ Удалить host-side dispatch `RUN` и `STEP`.
+8.1.4. ❌ Удалить host-side dispatch `READ_REGS`, `READ_MEM`, `WRITE_MEM`.
+
+8.2. ❌ Удалить из `space.*` host-side guest runtime после подтверждения resident executor.
+8.2.1. ❌ Удалить host-side fetch/decode/dispatch `RISC-V`.
+8.2.1.1. ❌ Удалить host-side fetch path.
+8.2.1.2. ❌ Удалить host-side decode path.
+8.2.1.3. ❌ Удалить host-side dispatch path.
+8.2.2. ❌ Удалить host-side execute/commit logic.
+8.2.2.1. ❌ Удалить host-side arithmetic/logic execution.
+8.2.2.2. ❌ Удалить host-side control-flow execution.
+8.2.2.3. ❌ Удалить host-side memory execution.
+8.2.3. ❌ Удалить host-side guest state management.
+8.2.3.1. ❌ Удалить host-side управление `PC`.
+8.2.3.2. ❌ Удалить host-side управление register file.
+8.2.3.3. ❌ Удалить host-side управление guest memory.
+8.2.4. ❌ Удалить host-side stop/fault semantics.
+8.2.4.1. ❌ Удалить host-side unsupported stop path.
+8.2.4.2. ❌ Удалить host-side alignment-fault path.
+8.2.4.3. ❌ Удалить host-side bounds-fault path.
+8.2.5. ❌ Удалить host-side watchdog и bounded-run service logic.
+8.2.5.1. ❌ Удалить host-side watchdog service logic.
+8.2.5.2. ❌ Удалить host-side bounded-run service logic.
+
+8.3. ❌ Сократить `space.*` до минимального хостового эмулятора.
+8.3.1. ❌ Оставить в `space.*` только копирование в каналы и из каналов.
+8.3.2. ❌ Оставить в `space.*` только выполнение `copy` полуинтервалов по инструкциям процессорных слотов.
+8.3.3. ❌ Оставить в `space.*` только останов пространства.
+8.3.4. ❌ Оставить в `space.*` только одноразовую загрузку данных в один слот процессора перед первым тактом.
+
+8.4. ❌ Зафиксировать минимальный контракт финального эмулятора пространства.
+8.4.1. ❌ Зафиксировать публичный интерфейс `space.h` в виде, близком к `/media/user/PROJECT/bak/demo1/space.h`.
+8.4.2. ❌ Зафиксировать поведение `space.c` в виде, близком к `/media/user/PROJECT/bak/demo1/space.c`.
+8.4.3. ❌ Добавить proof gates, подтверждающие что хостовый эмулятор выполняет только минимальный контракт.
+
+## 9. Нетривиальные guest workloads
+
+9.1. ❌ Переписать SHA acceptance как реальное guest computation proof.
+9.1.1. ❌ Загружать обычный guest binary через финальный in-space control plane.
+9.1.1.1. ❌ Подготовить честный guest SHA binary без prearranged digest payload.
+9.1.1.2. ❌ Загрузить guest SHA binary через финальный in-space control plane.
+9.1.2. ❌ Выполнить guest SHA workload через финальный resident executor.
+9.1.2.1. ❌ Довести workload до завершения через финальный channel-only contract.
+9.1.2.2. ❌ Зафиксировать trace/state evidence реального выполнения workload.
+9.1.3. ❌ Получать digest только из финального channel-visible state.
+9.1.3.1. ❌ Считать digest только через финальный channel-visible readback.
+9.1.3.2. ❌ Сверить digest с host-side reference without payload shortcut.
+9.1.4. ❌ Убрать prearranged payload path из active proof.
+9.1.4.1. ❌ Удалить acceptance checks, опирающиеся на заранее уложенный digest.
+9.1.4.2. ❌ Зафиксировать SHA gate как proof of computation, а не proof of layout.
+
+## 10. Решение по RV32M
+
+10.1. ❌ Принять и зафиксировать контракт по `RV32M` после завершения финального RV32I closure.
+10.1.1. ❌ Либо расширить resident executor до требуемого `RV32M`.
+10.1.2. ❌ Либо формально заморозить `M` как unsupported в финальном контракте.

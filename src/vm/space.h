@@ -93,6 +93,14 @@ typedef enum {
   VM_ERR  = -1   /* error (I/O, bounds, invariants, etc) */
 } vm_rc_t;
 
+typedef enum {
+  RV_STOP_NONE = 0,
+  RV_STOP_HALT = 1,
+  RV_STOP_UNSUPPORTED = 2,
+  RV_STOP_ALIGN = 3,
+  RV_STOP_BOUNDS = 4
+} rv_stop_reason_t;
+
 /* -------------------- VM object -------------------- */
 
 typedef struct vm_mmio_layout {
@@ -184,6 +192,8 @@ typedef struct vm {
   /* Runtime ABI guest lifecycle state (stage-20) */
   unsigned rv_guest_loaded;
   unsigned rv_guest_running;
+  uint64_t rv_guest_steps;
+  rv_stop_reason_t rv_guest_stop_reason;
 
 } vm_t;
 

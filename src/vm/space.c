@@ -14,12 +14,32 @@ static uint32_t rd_u32_le(const vm_t *vm, bitaddr_t bit_addr) {
          ((uint32_t)vm->space[b + 3] << 24);
 }
 
+static uint16_t rd_u16_le(const vm_t *vm, bitaddr_t bit_addr) {
+  size_t b = (size_t)(bit_addr >> 3);
+  return (uint16_t)((uint16_t)vm->space[b] |
+                    ((uint16_t)vm->space[b + 1] << 8));
+}
+
+static uint8_t rd_u8(const vm_t *vm, bitaddr_t bit_addr) {
+  return vm->space[(size_t)(bit_addr >> 3)];
+}
+
 static void wr_u32_le(vm_t *vm, bitaddr_t bit_addr, uint32_t v) {
   size_t b = (size_t)(bit_addr >> 3);
   vm->space[b] = (uint8_t)(v & 0xffu);
   vm->space[b + 1] = (uint8_t)((v >> 8) & 0xffu);
   vm->space[b + 2] = (uint8_t)((v >> 16) & 0xffu);
   vm->space[b + 3] = (uint8_t)((v >> 24) & 0xffu);
+}
+
+static void wr_u16_le(vm_t *vm, bitaddr_t bit_addr, uint16_t v) {
+  size_t b = (size_t)(bit_addr >> 3);
+  vm->space[b] = (uint8_t)(v & 0xffu);
+  vm->space[b + 1] = (uint8_t)((v >> 8) & 0xffu);
+}
+
+static void wr_u8(vm_t *vm, bitaddr_t bit_addr, uint8_t v) {
+  vm->space[(size_t)(bit_addr >> 3)] = v;
 }
 
 static int32_t sext_imm12(uint32_t x) {
@@ -30,6 +50,14 @@ static int32_t sext_imm13(uint32_t x) {
 }
 static int32_t sext_imm21(uint32_t x) {
   return (int32_t)(x << 11) >> 11;
+}
+
+static int32_t sext_imm16(uint32_t x) {
+  return (int32_t)(x << 16) >> 16;
+}
+
+static int32_t sext_imm8(uint32_t x) {
+  return (int32_t)(x << 24) >> 24;
 }
 
 /* -------- utilities: ceil_log2 and rounding -------- */
@@ -97,8 +125,14 @@ void vm_write_inst(vm_t *vm, bitaddr_t ip, vm_inst_t in) {
 /* -------- MMIO layout -------- */
 
 static void vm_compute_mmio_layout(vm_t *vm) {
-  /* Place MMIO right after processor area. */
+  const bitaddr_t RV_GUEST_MMIO_GUARD = 0x001600ULL;
+
+  /* Keep MMIO above the fixed guest state window:
+   *   G_PC       = 0x001000
+   *   G_REG_BASE = 0x001200 .. 0x0015ff
+   */
   bitaddr_t p = vm->processor_bits;
+  if (p < RV_GUEST_MMIO_GUARD) p = RV_GUEST_MMIO_GUARD;
   vm->mmio.base = p;
 
   /* IN */
@@ -436,7 +470,10 @@ static int service_channel(vm_t *vm) {
       bitcpy((size_t)nbits, vm->space, (size_t)src_a, vm->space, (size_t)dst_a);
       vm->rv_guest_loaded = 1;
       vm->rv_guest_running = 0;
+      vm->rv_guest_steps = 0;
+      vm->rv_guest_stop_reason = RV_STOP_NONE;
       vm_bit_set(vm, vm->mmio.halt, 0);
+      wr_u32_le(vm, 0x001000ULL, 0u);
     }
   } else if (op == 8 || op == 9) {
     if (!vm->rv_guest_loaded) {
@@ -449,9 +486,12 @@ static int service_channel(vm_t *vm) {
     vm_bit_set(vm, vm->mmio.wd_fired, 0);
     vm_bit_set(vm, vm->mmio.wd_enable, lim > 0 ? 1 : 0);
     vm->rv_guest_running = lim > 0 ? 1 : 0;
+    vm->rv_guest_stop_reason = RV_STOP_NONE;
     if (lim == 0) {
       vm_bit_set(vm, vm->mmio.halt, 0);
       vm->rv_guest_running = 0;
+    } else {
+      vm_bit_set(vm, vm->mmio.halt, 0);
     }
     }
   } else if (op == 10) {
@@ -494,80 +534,201 @@ static int service_channel(vm_t *vm) {
   return 0;
 }
 
+static void rv32_guest_stop(vm_t *vm, rv_stop_reason_t reason) {
+  vm->rv_guest_stop_reason = reason;
+  vm_bit_set(vm, vm->mmio.halt, 1);
+  vm->rv_guest_running = 0;
+}
+
+static void rv32_guest_commit(vm_t *vm, uint32_t next_pc) {
+  const bitaddr_t G_PC = 0x001000ULL;
+  const bitaddr_t G_REG_BASE = 0x001200ULL;
+
+  wr_u32_le(vm, G_PC, next_pc);
+  wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+}
+
+static int rv32_addr_check(vm_t *vm,
+                           uint32_t addr,
+                           unsigned width_bytes,
+                           unsigned align_bytes,
+                           bitaddr_t *guest_addr_out) {
+  bitaddr_t guest_addr = 0x002000ULL + (bitaddr_t)addr * 8u;
+  if (align_bytes > 1u && (addr & (uint32_t)(align_bytes - 1u)) != 0u) {
+    rv32_guest_stop(vm, RV_STOP_ALIGN);
+    return -1;
+  }
+  if (guest_addr + (bitaddr_t)width_bytes * 8u > vm->space_bits) {
+    rv32_guest_stop(vm, RV_STOP_BOUNDS);
+    return -1;
+  }
+  *guest_addr_out = guest_addr;
+  return 0;
+}
+
 static int rv32_guest_step(vm_t *vm) {
   const bitaddr_t G_PC = 0x001000ULL;
   const bitaddr_t G_REG_BASE = 0x001200ULL;
-  const bitaddr_t G_MEM_BASE = 0x002000ULL;
   uint32_t pc = rd_u32_le(vm, G_PC);
-  bitaddr_t insn_addr = G_MEM_BASE + (bitaddr_t)pc * 8u;
+  bitaddr_t insn_addr = 0x002000ULL + (bitaddr_t)pc * 8u;
   if (insn_addr + 32u > vm->space_bits) {
-    vm_bit_set(vm, vm->mmio.halt, 1);
-    vm->rv_guest_running = 0;
+    rv32_guest_stop(vm, RV_STOP_BOUNDS);
     return 0;
   }
 
   uint32_t insn = rd_u32_le(vm, insn_addr);
   if (insn == 0u) {
-    vm_bit_set(vm, vm->mmio.halt, 1);
-    vm->rv_guest_running = 0;
+    rv32_guest_stop(vm, RV_STOP_HALT);
     return 0;
   }
 
+  vm->rv_guest_steps++;
+
   uint32_t opcode = insn & 0x7fu;
-  if (opcode == 0x13u) { /* OP-IMM, implement ADDI */
+  if (opcode == 0x37u) { /* LUI */
+    uint32_t rd = (insn >> 7) & 0x1fu;
+    uint32_t imm = insn & 0xfffff000u;
+    if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, imm);
+    rv32_guest_commit(vm, pc + 4u);
+    return 0;
+  }
+  if (opcode == 0x17u) { /* AUIPC */
+    uint32_t rd = (insn >> 7) & 0x1fu;
+    uint32_t imm = insn & 0xfffff000u;
+    if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, pc + imm);
+    rv32_guest_commit(vm, pc + 4u);
+    return 0;
+  }
+  if (opcode == 0x13u) { /* OP-IMM */
     uint32_t funct3 = (insn >> 12) & 0x7u;
     uint32_t rd = (insn >> 7) & 0x1fu;
     uint32_t rs1 = (insn >> 15) & 0x1fu;
     int32_t imm = sext_imm12(insn >> 20);
-    if (funct3 != 0u) {
-      vm_bit_set(vm, vm->mmio.halt, 1);
-      vm->rv_guest_running = 0;
+    uint32_t rs1v = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
+    uint32_t rdv = 0u;
+
+    if (funct3 == 0u) rdv = (uint32_t)((int32_t)rs1v + imm);
+    else if (funct3 == 2u) rdv = ((int32_t)rs1v < imm) ? 1u : 0u;
+    else if (funct3 == 3u) rdv = (rs1v < (uint32_t)imm) ? 1u : 0u;
+    else if (funct3 == 4u) rdv = rs1v ^ (uint32_t)imm;
+    else if (funct3 == 6u) rdv = rs1v | (uint32_t)imm;
+    else if (funct3 == 7u) rdv = rs1v & (uint32_t)imm;
+    else if (funct3 == 1u) {
+      if ((insn >> 25) != 0u) {
+        rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
+        return 0;
+      }
+      rdv = rs1v << ((insn >> 20) & 0x1fu);
+    } else if (funct3 == 5u) {
+      uint32_t funct7 = (insn >> 25) & 0x7fu;
+      uint32_t shamt = (insn >> 20) & 0x1fu;
+      if (funct7 == 0x00u) rdv = rs1v >> shamt;
+      else if (funct7 == 0x20u) rdv = (uint32_t)((int32_t)rs1v >> shamt);
+      else {
+        rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
+        return 0;
+      }
+    } else {
+      rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
       return 0;
     }
-    uint32_t rs1v = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
-    uint32_t rdv = (uint32_t)((int32_t)rs1v + imm);
+
     if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, rdv);
-    pc += 4u;
-    wr_u32_le(vm, G_PC, pc);
-    wr_u32_le(vm, G_REG_BASE + 0u, 0u); /* x0 hardwired */
+    rv32_guest_commit(vm, pc + 4u);
     return 0;
   }
-  if (opcode == 0x03u) { /* LOAD, implement LW */
+  if (opcode == 0x33u) { /* OP */
+    uint32_t funct3 = (insn >> 12) & 0x7u;
+    uint32_t funct7 = (insn >> 25) & 0x7fu;
+    uint32_t rd = (insn >> 7) & 0x1fu;
+    uint32_t rs1 = (insn >> 15) & 0x1fu;
+    uint32_t rs2 = (insn >> 20) & 0x1fu;
+    uint32_t a = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
+    uint32_t b = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs2 * 32u);
+    uint32_t rdv = 0u;
+
+    if (funct7 == 0x00u && funct3 == 0u) rdv = a + b;
+    else if (funct7 == 0x20u && funct3 == 0u) rdv = a - b;
+    else if (funct7 == 0x00u && funct3 == 1u) rdv = a << (b & 0x1fu);
+    else if (funct7 == 0x00u && funct3 == 2u) rdv = ((int32_t)a < (int32_t)b) ? 1u : 0u;
+    else if (funct7 == 0x00u && funct3 == 3u) rdv = (a < b) ? 1u : 0u;
+    else if (funct7 == 0x00u && funct3 == 4u) rdv = a ^ b;
+    else if (funct7 == 0x00u && funct3 == 5u) rdv = a >> (b & 0x1fu);
+    else if (funct7 == 0x20u && funct3 == 5u) rdv = (uint32_t)((int32_t)a >> (b & 0x1fu));
+    else if (funct7 == 0x00u && funct3 == 6u) rdv = a | b;
+    else if (funct7 == 0x00u && funct3 == 7u) rdv = a & b;
+    else {
+      rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
+      return 0;
+    }
+
+    if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, rdv);
+    rv32_guest_commit(vm, pc + 4u);
+    return 0;
+  }
+  if (opcode == 0x03u) { /* LOAD */
     uint32_t funct3 = (insn >> 12) & 0x7u;
     uint32_t rd = (insn >> 7) & 0x1fu;
     uint32_t rs1 = (insn >> 15) & 0x1fu;
     int32_t imm = sext_imm12(insn >> 20);
-    if (funct3 != 2u) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
     uint32_t base = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
     uint32_t addr = (uint32_t)((int32_t)base + imm);
-    bitaddr_t ga = G_MEM_BASE + (bitaddr_t)addr * 8u;
-    if ((addr & 3u) || ga + 32u > vm->space_bits) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
-    uint32_t v = rd_u32_le(vm, ga);
+    bitaddr_t ga = 0;
+    uint32_t v = 0u;
+
+    if (funct3 == 0u) {
+      if (rv32_addr_check(vm, addr, 1u, 1u, &ga) != 0) return 0;
+      v = (uint32_t)sext_imm8(rd_u8(vm, ga));
+    } else if (funct3 == 1u) {
+      if (rv32_addr_check(vm, addr, 2u, 2u, &ga) != 0) return 0;
+      v = (uint32_t)sext_imm16(rd_u16_le(vm, ga));
+    } else if (funct3 == 2u) {
+      if (rv32_addr_check(vm, addr, 4u, 4u, &ga) != 0) return 0;
+      v = rd_u32_le(vm, ga);
+    } else if (funct3 == 4u) {
+      if (rv32_addr_check(vm, addr, 1u, 1u, &ga) != 0) return 0;
+      v = rd_u8(vm, ga);
+    } else if (funct3 == 5u) {
+      if (rv32_addr_check(vm, addr, 2u, 2u, &ga) != 0) return 0;
+      v = rd_u16_le(vm, ga);
+    } else {
+      rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
+      return 0;
+    }
+
     if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, v);
-    pc += 4u;
-    wr_u32_le(vm, G_PC, pc);
-    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+    rv32_guest_commit(vm, pc + 4u);
     return 0;
   }
-  if (opcode == 0x23u) { /* STORE, implement SW */
+  if (opcode == 0x23u) { /* STORE */
     uint32_t funct3 = (insn >> 12) & 0x7u;
     uint32_t rs1 = (insn >> 15) & 0x1fu;
     uint32_t rs2 = (insn >> 20) & 0x1fu;
     uint32_t imm_u = ((insn >> 7) & 0x1fu) | (((insn >> 25) & 0x7fu) << 5);
     int32_t imm = sext_imm12(imm_u);
-    if (funct3 != 2u) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
     uint32_t base = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
     uint32_t addr = (uint32_t)((int32_t)base + imm);
-    bitaddr_t ga = G_MEM_BASE + (bitaddr_t)addr * 8u;
-    if ((addr & 3u) || ga + 32u > vm->space_bits) { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
+    bitaddr_t ga = 0;
     uint32_t v = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs2 * 32u);
-    wr_u32_le(vm, ga, v);
-    pc += 4u;
-    wr_u32_le(vm, G_PC, pc);
-    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+
+    if (funct3 == 0u) {
+      if (rv32_addr_check(vm, addr, 1u, 1u, &ga) != 0) return 0;
+      wr_u8(vm, ga, (uint8_t)(v & 0xffu));
+    } else if (funct3 == 1u) {
+      if (rv32_addr_check(vm, addr, 2u, 2u, &ga) != 0) return 0;
+      wr_u16_le(vm, ga, (uint16_t)(v & 0xffffu));
+    } else if (funct3 == 2u) {
+      if (rv32_addr_check(vm, addr, 4u, 4u, &ga) != 0) return 0;
+      wr_u32_le(vm, ga, v);
+    } else {
+      rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
+      return 0;
+    }
+
+    rv32_guest_commit(vm, pc + 4u);
     return 0;
   }
-  if (opcode == 0x63u) { /* BRANCH, implement BEQ/BNE */
+  if (opcode == 0x63u) { /* BRANCH */
     uint32_t funct3 = (insn >> 12) & 0x7u;
     uint32_t rs1 = (insn >> 15) & 0x1fu;
     uint32_t rs2 = (insn >> 20) & 0x1fu;
@@ -579,12 +740,17 @@ static int rv32_guest_step(vm_t *vm) {
     uint32_t a = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
     uint32_t b = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs2 * 32u);
     int take = 0;
-    if (funct3 == 0u) take = (a == b);       /* beq */
-    else if (funct3 == 1u) take = (a != b);  /* bne */
-    else { vm_bit_set(vm, vm->mmio.halt, 1); vm->rv_guest_running = 0; return 0; }
-    pc = take ? (uint32_t)((int32_t)pc + imm) : (pc + 4u);
-    wr_u32_le(vm, G_PC, pc);
-    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+    if (funct3 == 0u) take = (a == b);
+    else if (funct3 == 1u) take = (a != b);
+    else if (funct3 == 4u) take = ((int32_t)a < (int32_t)b);
+    else if (funct3 == 5u) take = ((int32_t)a >= (int32_t)b);
+    else if (funct3 == 6u) take = (a < b);
+    else if (funct3 == 7u) take = (a >= b);
+    else {
+      rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
+      return 0;
+    }
+    rv32_guest_commit(vm, take ? (uint32_t)((int32_t)pc + imm) : (pc + 4u));
     return 0;
   }
   if (opcode == 0x6fu) { /* JAL */
@@ -597,14 +763,28 @@ static int rv32_guest_step(vm_t *vm) {
     uint32_t next = pc + 4u;
     pc = (uint32_t)((int32_t)pc + imm);
     if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, next);
-    wr_u32_le(vm, G_PC, pc);
-    wr_u32_le(vm, G_REG_BASE + 0u, 0u);
+    rv32_guest_commit(vm, pc);
+    return 0;
+  }
+  if (opcode == 0x67u) { /* JALR */
+    uint32_t rd = (insn >> 7) & 0x1fu;
+    uint32_t rs1 = (insn >> 15) & 0x1fu;
+    uint32_t funct3 = (insn >> 12) & 0x7u;
+    int32_t imm = sext_imm12(insn >> 20);
+    uint32_t base = rd_u32_le(vm, G_REG_BASE + (bitaddr_t)rs1 * 32u);
+    uint32_t next = pc + 4u;
+    uint32_t target = (uint32_t)(((int32_t)base + imm) & ~1u);
+    if (funct3 != 0u) {
+      rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
+      return 0;
+    }
+    if (rd != 0u) wr_u32_le(vm, G_REG_BASE + (bitaddr_t)rd * 32u, next);
+    rv32_guest_commit(vm, target);
     return 0;
   }
 
   /* unsupported in minimal runner: stop deterministically */
-  vm_bit_set(vm, vm->mmio.halt, 1);
-  vm->rv_guest_running = 0;
+  rv32_guest_stop(vm, RV_STOP_UNSUPPORTED);
   return 0;
 }
 

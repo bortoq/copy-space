@@ -184,61 +184,61 @@
 
 ## 6. Подготовка реконструкции эмулятора пространства
 
-6.1. ❌ Зафиксировать финальный минимальный контракт хостового `space.*`.
-6.1.1. ❌ Зафиксировать копирование в каналы и из каналов как единственную channel-функцию хоста.
-6.1.2. ❌ Зафиксировать выполнение `copy` полуинтервалов по инструкциям процессорных слотов как единственную compute-функцию хоста.
-6.1.3. ❌ Зафиксировать останов пространства как единственную control-функцию хоста.
-6.1.4. ❌ Зафиксировать одноразовую загрузку данных в один слот процессора перед первым тактом как единственную bootstrap-функцию хоста.
+6.1. ✅ Зафиксировать финальный минимальный контракт хостового `space.*`.
+6.1.1. ✅ Зафиксировать копирование в каналы и из каналов как единственную channel-функцию хоста.
+6.1.2. ✅ Зафиксировать выполнение `copy` полуинтервалов по инструкциям процессорных слотов как единственную compute-функцию хоста.
+6.1.3. ✅ Зафиксировать останов пространства как единственную control-функцию хоста.
+6.1.4. ✅ Зафиксировать одноразовую загрузку данных в один слот процессора перед первым тактом как единственную bootstrap-функцию хоста.
 
-6.2. ❌ Зафиксировать resident in-space control plane, который заменит bootstrap ABI.
-6.2.1. ❌ Зафиксировать resident memory layout control plane.
-6.2.1.1. ❌ Зафиксировать размещение resident dispatcher state.
-6.2.1.2. ❌ Зафиксировать размещение resident request/response buffers.
-6.2.1.3. ❌ Зафиксировать размещение resident service code.
-6.2.2. ❌ Зафиксировать resident channel protocol внутри пространства.
-6.2.2.1. ❌ Зафиксировать формат resident request.
-6.2.2.2. ❌ Зафиксировать формат resident response.
-6.2.2.3. ❌ Зафиксировать handshake semantics resident protocol.
-6.2.3. ❌ Зафиксировать resident bootstrapping sequence от одного загруженного слота.
-6.2.3.1. ❌ Зафиксировать начальную загрузку resident bootstrap payload.
-6.2.3.2. ❌ Зафиксировать развертывание resident dispatcher в пространстве.
-6.2.3.3. ❌ Зафиксировать переход от bootstrap payload к resident steady-state.
-6.2.4. ❌ Зафиксировать resident handoff от bootstrap path к in-space control plane.
-6.2.4.1. ❌ Зафиксировать момент завершения bootstrap ABI.
-6.2.4.2. ❌ Зафиксировать первый запрос, обслуживаемый resident control plane.
-6.2.4.3. ❌ Зафиксировать rollback/fail behavior при срыве handoff.
+6.2. ✅ Зафиксировать resident in-space control plane, который заменит bootstrap ABI.
+6.2.1. ✅ Зафиксировать resident memory layout control plane.
+6.2.1.1. ✅ Зафиксировать размещение resident dispatcher state.
+6.2.1.2. ✅ Зафиксировать размещение resident request/response buffers.
+6.2.1.3. ✅ Зафиксировать размещение resident service code.
+6.2.2. ✅ Зафиксировать resident channel protocol внутри пространства.
+6.2.2.1. ✅ Зафиксировать формат resident request.
+6.2.2.2. ✅ Зафиксировать формат resident response.
+6.2.2.3. ✅ Зафиксировать handshake semantics resident protocol.
+6.2.3. ✅ Зафиксировать resident bootstrapping sequence от одного загруженного слота.
+6.2.3.1. ✅ Зафиксировать начальную загрузку resident bootstrap payload.
+6.2.3.2. ✅ Зафиксировать развертывание resident dispatcher в пространстве.
+6.2.3.3. ✅ Зафиксировать переход от bootstrap payload к resident steady-state.
+6.2.4. ✅ Зафиксировать resident handoff от bootstrap path к in-space control plane.
+6.2.4.1. ✅ Зафиксировать момент завершения bootstrap ABI.
+6.2.4.2. ✅ Зафиксировать первый запрос, обслуживаемый resident control plane.
+6.2.4.3. ✅ Зафиксировать rollback/fail behavior при срыве handoff.
 
-6.3. ❌ Зафиксировать resident in-space guest runtime, который заменит host-side runtime.
-6.3.1. ❌ Зафиксировать resident decode/dispatch contract.
-6.3.1.1. ❌ Зафиксировать resident fetch contract.
-6.3.1.2. ❌ Зафиксировать resident decode contract.
-6.3.1.3. ❌ Зафиксировать resident execute/commit contract.
-6.3.2. ❌ Зафиксировать resident guest state contract (`PC`, register file, guest memory).
-6.3.2.1. ❌ Зафиксировать resident `PC` layout and ownership.
-6.3.2.2. ❌ Зафиксировать resident register file layout and ownership.
-6.3.2.3. ❌ Зафиксировать resident guest memory layout and ownership.
-6.3.3. ❌ Зафиксировать resident stop/fault contract.
-6.3.3.1. ❌ Зафиксировать resident unsupported-instruction behavior.
-6.3.3.2. ❌ Зафиксировать resident alignment-fault behavior.
-6.3.3.3. ❌ Зафиксировать resident bounds-fault behavior.
-6.3.4. ❌ Зафиксировать resident trace/proof contract после удаления host-side executor.
-6.3.4.1. ❌ Зафиксировать источник resident trace records.
-6.3.4.2. ❌ Зафиксировать способ извлечения resident trace records наружу.
-6.3.4.3. ❌ Зафиксировать соответствие resident trace contract bootstrap trace contract.
-6.3.4.4. ❌ Зафиксировать замену временного bootstrap trace ABI на resident trace contract.
+6.3. ✅ Зафиксировать resident in-space guest runtime, который заменит host-side runtime.
+6.3.1. ✅ Зафиксировать resident decode/dispatch contract.
+6.3.1.1. ✅ Зафиксировать resident fetch contract.
+6.3.1.2. ✅ Зафиксировать resident decode contract.
+6.3.1.3. ✅ Зафиксировать resident execute/commit contract.
+6.3.2. ✅ Зафиксировать resident guest state contract (`PC`, register file, guest memory).
+6.3.2.1. ✅ Зафиксировать resident `PC` layout and ownership.
+6.3.2.2. ✅ Зафиксировать resident register file layout and ownership.
+6.3.2.3. ✅ Зафиксировать resident guest memory layout and ownership.
+6.3.3. ✅ Зафиксировать resident stop/fault contract.
+6.3.3.1. ✅ Зафиксировать resident unsupported-instruction behavior.
+6.3.3.2. ✅ Зафиксировать resident alignment-fault behavior.
+6.3.3.3. ✅ Зафиксировать resident bounds-fault behavior.
+6.3.4. ✅ Зафиксировать resident trace/proof contract после удаления host-side executor.
+6.3.4.1. ✅ Зафиксировать источник resident trace records.
+6.3.4.2. ✅ Зафиксировать способ извлечения resident trace records наружу.
+6.3.4.3. ✅ Зафиксировать соответствие resident trace contract bootstrap trace contract.
+6.3.4.4. ✅ Зафиксировать замену временного bootstrap trace ABI на resident trace contract.
 
-6.4. ❌ Зафиксировать план миграции доказательной инфраструктуры на финальный контракт.
-6.4.1. ❌ Зафиксировать миграцию proof artifacts с bootstrap ABI на final channel-only contract.
-6.4.1.1. ❌ Зафиксировать замену bootstrap trace artifacts на resident trace artifacts.
-6.4.1.2. ❌ Зафиксировать замену bootstrap state artifacts на resident state artifacts.
-6.4.2. ❌ Зафиксировать миграцию validation gates с bootstrap executor на resident executor.
-6.4.2.1. ❌ Зафиксировать миграцию directed instruction-family gates.
-6.4.2.2. ❌ Зафиксировать миграцию negative/fault gates.
-6.4.2.3. ❌ Зафиксировать миграцию replay/determinism gates.
-6.4.3. ❌ Зафиксировать критерий готовности к сокращению `space.*`.
-6.4.3.1. ❌ Зафиксировать критерий готовности resident control plane.
-6.4.3.2. ❌ Зафиксировать критерий готовности resident executor.
-6.4.3.3. ❌ Зафиксировать критерий готовности proof gates.
+6.4. ✅ Зафиксировать план миграции доказательной инфраструктуры на финальный контракт.
+6.4.1. ✅ Зафиксировать миграцию proof artifacts с bootstrap ABI на final channel-only contract.
+6.4.1.1. ✅ Зафиксировать замену bootstrap trace artifacts на resident trace artifacts.
+6.4.1.2. ✅ Зафиксировать замену bootstrap state artifacts на resident state artifacts.
+6.4.2. ✅ Зафиксировать миграцию validation gates с bootstrap executor на resident executor.
+6.4.2.1. ✅ Зафиксировать миграцию directed instruction-family gates.
+6.4.2.2. ✅ Зафиксировать миграцию negative/fault gates.
+6.4.2.3. ✅ Зафиксировать миграцию replay/determinism gates.
+6.4.3. ✅ Зафиксировать критерий готовности к сокращению `space.*`.
+6.4.3.1. ✅ Зафиксировать критерий готовности resident control plane.
+6.4.3.2. ✅ Зафиксировать критерий готовности resident executor.
+6.4.3.3. ✅ Зафиксировать критерий готовности proof gates.
 
 ## 7. Построение resident in-space control plane
 

@@ -171,16 +171,16 @@
 
 ## 5. Очистка bootstrap path
 
-5.1. ❌ Закрепить `LOAD_CODE -> RUN/STEP -> READ_*` как единственный bootstrap closure path.
-5.1.1. ❌ Оставить `C3_RUN` только как исследовательскую ветку до появления in-space control plane.
-5.1.2. ❌ Исключить host-assisted helpers из bootstrap correctness path.
-5.1.3. ❌ Исключить synthetic/scaffold gates из bootstrap release path.
+5.1. ✅ Закрепить `LOAD_CODE -> RUN/STEP -> READ_*` как единственный bootstrap closure path.
+5.1.1. ✅ Оставить `C3_RUN` только как исследовательскую ветку до появления in-space control plane.
+5.1.2. ✅ Исключить host-assisted helpers из bootstrap correctness path.
+5.1.3. ✅ Исключить synthetic/scaffold gates из bootstrap release path.
 
-5.2. ❌ Закрыть bootstrap RV32I как доказанный временный контур.
-5.2.1. ❌ Зафиксировать bootstrap ABI contract как временный переходный контракт.
-5.2.1.1. ❌ Зафиксировать временный bootstrap trace ABI как временный proof-only контракт.
-5.2.2. ❌ Зафиксировать bootstrap proof set как достаточный для начала реконструкции `space.*`.
-5.2.3. ❌ Зафиксировать запрет на расширение host-side guest logic сверх bootstrap closure.
+5.2. ✅ Закрыть bootstrap RV32I как доказанный временный контур.
+5.2.1. ✅ Зафиксировать bootstrap ABI contract как временный переходный контракт.
+5.2.1.1. ✅ Зафиксировать временный bootstrap trace ABI как временный proof-only контракт.
+5.2.2. ✅ Зафиксировать bootstrap proof set как достаточный для начала реконструкции `space.*`.
+5.2.3. ✅ Зафиксировать запрет на расширение host-side guest logic сверх bootstrap closure.
 
 ## 6. Подготовка реконструкции эмулятора пространства
 

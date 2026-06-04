@@ -6,7 +6,7 @@
 
 - довести resident `RV32I` proof-closure в `space.c`
 - использовать resident `RISC-V` как вычислительную опору для переноса других частей проекта
-- свести `host` к ОС/железу как среде исполнения, а `vmrun` - к переходному bootstrap helper
+- свести `host` к ОС/железу как среде исполнения; финальная граница описана в `doc/space_contract.md`
 
 ## Активный минимум
 
@@ -15,6 +15,7 @@
 - `src/vm/rv32.c`
 - `src/vm/rv32.h`
 - `src/vm/bitcpy.c`
+- `src/tools/space.c`
 - активные `scripts/tdd/` gates
 - активная документация:
   - `doc/project_structure.md`
@@ -50,6 +51,6 @@ sh scripts/tdd/run_all.sh
 
 Исторический материал заморожен в legacy inventory и при необходимости восстанавливается из git.
 
-## Переходный helper
+## Legacy helper
 
-- `src/tools/vmrun.c` (не является целевым executable boundary; выводится из active path на стадии `27`)
+- `src/tools/vmrun.c` (legacy helper; активная точка запуска теперь `src/tools/space.c`)

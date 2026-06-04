@@ -20,6 +20,7 @@ grep -F -q '## 23. Контракт на владение minimal copy schedulin
 grep -F -q '## 24. Контракт на владение completion bookkeeping' doc/roadmap.md
 grep -F -q '## 25. Контракт на владение job selection и tool dispatch после bootstrap' doc/roadmap.md
 grep -F -q '## 26. План сборки resident control plane' doc/roadmap.md
-grep -F -q '## 27. Снять зависимость от host для resident `RISC-V`' doc/roadmap.md
+grep -F -q '## 27. Сделать `space.*` единственным проектным executable boundary на стороне ОС' doc/roadmap.md
+grep -F -q 'Финальная граница проекта на стороне ОС такова:' doc/space_contract.md
 
 echo "OK riscv boundary freeze"

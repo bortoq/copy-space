@@ -21,7 +21,7 @@
 3. Потом перевести orchestration и toolchain control в resident copicode.
 4. Потом собрать resident execution boundary, startup, scheduling и test orchestration в один resident-owned путь.
 5. Потом собрать host collapse plan.
-6. Потом вывести `vmrun` из active path и оставить `space.*` единственным project executable boundary на стороне ОС.
+6. Потом вывести `vmrun` из active path и оставить `space.*` единственным project executable boundary на стороне ОС через `src/tools/space.c`.
 7. Использовать `doc/resident_riscv_migration.md` как границу этого этапа.
 8. Перенести resident execution logic `RISC-V` в отдельные исходники.
 9. Использовать resident `RISC-V` для одного маленького migration payload.

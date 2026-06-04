@@ -9,11 +9,12 @@
 - `src/vm/space.c` - источник истины для resident `RV32I` execution.
 - `src/vm/space.h` - layout состояния, stop reasons, trace records и объект VM.
 - `src/vm/rv32.c` / `src/vm/rv32.h` - отдельная resident execution boundary.
+- `src/tools/space.c` - активная точка запуска проекта на стороне ОС.
 - `scripts/tdd/*` - активные proof gates.
 
 Переходные и вспомогательные части:
 
-- `src/tools/vmrun.c` - transition-only bootstrap helper.
+- `src/tools/vmrun.c` - legacy bootstrap helper, выведенный из active path.
 - `doc/legacy_inventory.md` - реестр замороженного legacy.
 
 ## Активная документация
@@ -58,7 +59,7 @@
 - запускает VM на bounded ticks;
 - optionally dumps final space image.
 
-Это переходный bootstrap helper, а не целевой boundary.
+Это legacy bootstrap helper, выведенный из active path; active launcher теперь `src/tools/space.c`.
 
 ### `scripts/tdd/*`
 

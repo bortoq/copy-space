@@ -484,12 +484,10 @@
 
 ## 27. Сделать `space.*` единственным проектным executable boundary на стороне ОС
 
-## 27. Снять зависимость от host для resident `RISC-V`
-
-27.1. ❌ Вывести `vmrun` из active path и оставить `space.*` как единственную проектную точку запуска.
-27.1.1. ❌ Оставить `space.*` запускаемым напрямую в ОС без отдельного `vmrun`.
-27.1.2. ❌ Перевести `vmrun` в legacy inventory.
-27.1.3. ❌ Убрать `vmrun` из active documentation and gates.
+27.1. ✅ Вывести `vmrun` из active path и оставить `space.*` как единственную проектную точку запуска. Финальная граница описана в `doc/space_contract.md`.
+27.1.1. ✅ Оставить `space.*` запускаемым напрямую в ОС через `src/tools/space.c`.
+27.1.2. ✅ Перевести `vmrun` в legacy inventory.
+27.1.3. ✅ Убрать `vmrun` из active documentation and gates.
 
 27.2. ❌ Свести `space.*` к чистому эмулятору адресного пространства.
 27.2.1. ❌ Оставить в `space.*` только эмуляцию адресного пространства и минимальный host bootstrap contract.

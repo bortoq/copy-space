@@ -11,7 +11,7 @@ The active set is intentionally small:
 - `src/vm/rv32.c`
 - `src/vm/rv32.h`
 - `src/vm/bitcpy.c`
-- `src/tools/vmrun.c` as a transition-only bootstrap helper
+- `src/tools/space.c` as the active launcher on the OS side
 - the active proof gates under `scripts/tdd/`
 - the active documentation set listed in `doc/project_structure.md`
 
@@ -29,3 +29,5 @@ The following groups are frozen as legacy material and must not be treated as ac
 ## Rule
 
 If a file or directory is not listed in the active minimum, it is legacy unless the active plan explicitly reintroduces it.
+
+`src/tools/vmrun.c` is legacy and is not part of the active minimum.

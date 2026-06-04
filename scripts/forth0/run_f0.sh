@@ -34,7 +34,7 @@ done
 need_bin() { [ -x "$1" ] || { echo "ERROR: missing binary: $1 (run: make bins)" >&2; exit 1; }; }
 need_bin build/bin/mkimage_std7_fixed
 need_bin build/bin/forth0c
-need_bin build/bin/vmrun
+need_bin build/bin/space
 need_bin build/bin/vmprep_forth0
 
 dump_or_xxd() {
@@ -94,12 +94,12 @@ awk -F= '/^TESTG\(byte\)=/{print $2}' "$tmp/forth0c.stderr" >"$testg_off"
 B="$(cat "$testg_off" || true)"
 [ -n "$B" ] || { echo "ERROR: cannot parse TESTG(byte) from $tmp/forth0c.stderr" >&2; exit 1; }
 
-build/bin/vmrun --image "$std7" --life "$LIFE_COMPILE" --dump "$compiled" \
+build/bin/space --image "$std7" --life "$LIFE_COMPILE" --dump "$compiled" \
   < "$tok" >/dev/null 2>"$tmp/compile.stderr"
 
 build/bin/vmprep_forth0 --image "$compiled" >/dev/null 2>"$tmp/prep.stderr"
 
-build/bin/vmrun --image "$compiled" --life "$LIFE_RUN" --dump "$after" \
+build/bin/space --image "$compiled" --life "$LIFE_RUN" --dump "$after" \
   < /dev/null >/dev/null 2>"$tmp/run.stderr"
 
 dd if="$after" bs=1 skip="$B" count="$DUMP_N" status=none > "$testg_bin"

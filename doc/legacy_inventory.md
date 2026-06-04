@@ -11,7 +11,7 @@ The active set is intentionally small:
 - `src/vm/rv32.c`
 - `src/vm/rv32.h`
 - `src/vm/bitcpy.c`
-- `src/tools/vmrun.c`
+- `src/tools/vmrun.c` as a transition-only bootstrap helper
 - the active proof gates under `scripts/tdd/`
 - the active documentation set listed in `doc/project_structure.md`
 

@@ -2,7 +2,7 @@
 set -eu
 
 grep -F -q 'должен оставаться только эмулятором адресного пространства' doc/space_contract.md
-grep -F -q 'doc/resident_riscv_boundary_freeze.md' README.md
+grep -F -q 'doc/resident_riscv_migration.md' README.md
 grep -F -q 'doc/riscv_migration_plan.md' doc/project_structure.md
 grep -F -q '## 11. Freeze the `space.*` boundary for the next migration' doc/roadmap.md
 grep -F -q '## 12. Extract resident `RISC-V` implementation into isolated source' doc/roadmap.md

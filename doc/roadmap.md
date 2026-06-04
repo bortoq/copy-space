@@ -252,9 +252,9 @@
 15.3.4. ✅ Добавить gate on orchestration/runtime separation.
 
 15.4. ✅ Обновить документацию под runtime boundary.
-15.4.1. ✅ Update `doc/resident_orchestration_runtime_boundary.md`.
-15.4.2. ✅ Update `doc/resident_orchestration_boundary.md`.
-15.4.3. ✅ Update `doc/resident_orchestration_migration_plan.md`.
+15.4.1. ✅ Update `doc/resident_execution_boundary.md`.
+15.4.2. ✅ Update `doc/resident_execution_boundary.md`.
+15.4.3. ✅ Update `doc/resident_copicode_migration.md`.
 15.4.4. ✅ Update `doc/project_structure.md`.
 
 ## 16. Implement the minimal resident startup contract
@@ -276,8 +276,8 @@
 16.3.4. ✅ Добавить gate on resident continuation after first tick.
 
 16.4. ✅ Обновить документацию под startup contract.
-16.4.1. ✅ Update `doc/resident_startup_contract.md`.
-16.4.2. ✅ Update `doc/resident_orchestration_runtime_boundary.md`.
+16.4.1. ✅ Update `doc/resident_execution_boundary.md`.
+16.4.2. ✅ Update `doc/resident_execution_boundary.md`.
 16.4.3. ✅ Update `doc/project_structure.md`.
 16.4.4. ✅ Update `README.md`.
 
@@ -299,9 +299,9 @@
 17.3.3. ✅ Добавить проверку того, что host остается bootstrap-only.
 
 17.4. ✅ Обновить документацию для execution runtime.
-17.4.1. ✅ Обновить `doc/resident_orchestration_execution_runtime.md`.
-17.4.2. ✅ Обновить `doc/resident_orchestration_runtime_boundary.md`.
-17.4.3. ✅ Обновить `doc/resident_copicode_runtime_boundary.md`.
+17.4.1. ✅ Обновить `doc/resident_execution_boundary.md`.
+17.4.2. ✅ Обновить `doc/resident_execution_boundary.md`.
+17.4.3. ✅ Обновить `doc/resident_copicode_migration.md`.
 17.4.4. ✅ Обновить `doc/project_structure.md`.
 
 ## 18. Минимальный resident runtime для copy scheduling
@@ -322,9 +322,9 @@
 18.3.3. ✅ Оставить channel semantics минимальными и измеримыми.
 
 18.4. ✅ Обновить документацию для copy scheduling runtime.
-18.4.1. ✅ Обновить `doc/resident_copy_scheduling_runtime.md`.
+18.4.1. ✅ Обновить `doc/resident_execution_boundary.md`.
 18.4.2. ✅ Обновить `doc/project_structure.md`.
-18.4.3. ✅ Обновить `doc/resident_copicode_migration_plan.md`.
+18.4.3. ✅ Обновить `doc/resident_copicode_migration.md`.
 
 ## 19. Минимальный resident runtime для test orchestration
 
@@ -345,8 +345,8 @@
 19.3.4. ✅ Добавить проверку отделения от `space.*`.
 
 19.4. ✅ Обновить документацию для test-orchestration runtime.
-19.4.1. ✅ Обновить `doc/resident_test_orchestration_runtime.md`.
-19.4.2. ✅ Обновить `doc/resident_copicode_migration_plan.md`.
+19.4.1. ✅ Обновить `doc/resident_execution_boundary.md`.
+19.4.2. ✅ Обновить `doc/resident_copicode_migration.md`.
 19.4.3. ✅ Обновить `doc/project_structure.md`.
 
 ## 20. Контракт на минимальное снятие зависимости от host
@@ -389,7 +389,7 @@
 21.3.3. ✅ Добавить проверку на bootstrap-only host responsibilities.
 
 21.4. ✅ Обновить документацию под host-independent launch slice.
-21.4.1. ✅ Обновить `doc/resident_host_independent_launch_slice.md`.
+21.4.1. ✅ Обновить `doc/resident_host_collapse_plan.md`.
 21.4.2. ✅ Обновить `doc/project_structure.md`.
 21.4.3. ✅ Обновить `README.md`.
 
@@ -404,7 +404,7 @@
 22.2.2. ✅ Запретить host-side execution control для launch path после bootstrap.
 
 22.3. ✅ Обновить документацию под launch control ownership.
-22.3.1. ✅ Обновить `doc/resident_launch_control_ownership.md`.
+22.3.1. ✅ Обновить `doc/resident_host_collapse_plan.md`.
 22.3.2. ✅ Обновить `doc/project_structure.md`.
 22.3.3. ✅ Обновить `README.md`.
 
@@ -419,7 +419,7 @@
 23.2.2. ✅ Запретить host-side scheduling control для copy path после bootstrap.
 
 23.3. ✅ Обновить документацию под copy scheduling ownership.
-23.3.1. ✅ Обновить `doc/resident_copy_scheduling_ownership.md`.
+23.3.1. ✅ Обновить `doc/resident_host_collapse_plan.md`.
 23.3.2. ✅ Обновить `doc/project_structure.md`.
 23.3.3. ✅ Обновить `README.md`.
 
@@ -434,7 +434,7 @@
 24.2.2. ✅ Запретить host-side ownership завершения после bootstrap.
 
 24.3. ✅ Обновить документацию под completion bookkeeping ownership.
-24.3.1. ✅ Обновить `doc/resident_completion_bookkeeping_ownership.md`.
+24.3.1. ✅ Обновить `doc/resident_host_collapse_plan.md`.
 24.3.2. ✅ Обновить `doc/project_structure.md`.
 24.3.3. ✅ Обновить `README.md`.
 
@@ -454,7 +454,7 @@
 25.3.3. ✅ Запретить host-side tool dispatch после bootstrap.
 
 25.4. ✅ Обновить документацию под job selection и tool dispatch ownership.
-25.4.1. ✅ Обновить `doc/resident_job_selection_tool_dispatch_ownership.md`.
+25.4.1. ✅ Обновить `doc/resident_host_collapse_plan.md`.
 25.4.2. ✅ Обновить `doc/project_structure.md`.
 25.4.3. ✅ Обновить `README.md`.
 
@@ -478,28 +478,33 @@
 26.4.2. ✅ Зафиксировать, что `vmrun` остается только bootstrap wrapper.
 
 26.5. ✅ Обновить документацию.
-26.5.1. ✅ Обновить `doc/resident_control_plane_assembly_plan.md`.
+26.5.1. ✅ Обновить `doc/resident_host_collapse_plan.md`.
 26.5.2. ✅ Обновить `doc/project_structure.md`.
 26.5.3. ✅ Обновить `README.md`.
 
+## 27. Сделать `space.*` единственным проектным executable boundary на стороне ОС
+
 ## 27. Снять зависимость от host для resident `RISC-V`
 
-27.1. ❌ Убрать оставшиеся bootstrap shims из active `RISC-V` path.
-27.1.1. ❌ Оставить только минимальный loader для запуска resident `RISC-V`.
-27.1.2. ❌ Убрать host-side execution control из active path.
-27.1.3. ❌ Убрать host-side proof orchestration из active path.
+27.1. ❌ Вывести `vmrun` из active path и оставить `space.*` как единственную проектную точку запуска.
+27.1.1. ❌ Оставить `space.*` запускаемым напрямую в ОС без отдельного `vmrun`.
+27.1.2. ❌ Перевести `vmrun` в legacy inventory.
+27.1.3. ❌ Убрать `vmrun` из active documentation and gates.
 
-27.2. ❌ Сделать resident copicode единственным источником execution control.
-27.2.1. ❌ Перевести launch control только в resident code.
-27.2.2. ❌ Перевести minimal copy scheduling только в resident code.
-27.2.3. ❌ Перевести completion bookkeeping только в resident code.
+27.2. ❌ Свести `space.*` к чистому эмулятору адресного пространства.
+27.2.1. ❌ Оставить в `space.*` только эмуляцию адресного пространства и минимальный host bootstrap contract.
+27.2.2. ❌ Удалить из `space.*` всю остаточную управляющую логику, не нужную эмулятору.
+27.2.3. ❌ Запретить рост host-side orchestration semantics в `space.*`.
 
-27.3. ❌ Убрать `space.*` как active runtime dependency for resident `RISC-V`.
-27.3.1. ❌ Оставить `space.*` только эмулятором адресного пространства.
-27.3.2. ❌ Убедиться, что `RISC-V` execution больше не зависит от bootstrap wrapper glue.
-27.3.3. ❌ Заморозить все оставшееся bootstrap-visible поведение как временное.
+27.3. ❌ Оставить resident control plane единственным источником active control после bootstrap.
+27.3.1. ❌ Перевести launch control в resident code.
+27.3.2. ❌ Перевести minimal copy scheduling в resident code.
+27.3.3. ❌ Перевести completion bookkeeping в resident code.
+27.3.4. ❌ Перевести job selection и tool dispatch в resident code.
 
-27.4. ❌ Обновить документацию после снятия зависимости от host.
+27.4. ❌ Обновить документацию и gates после удаления `vmrun` из active path.
 27.4.1. ❌ Обновить `README.md`.
 27.4.2. ❌ Обновить `doc/project_structure.md`.
 27.4.3. ❌ Обновить `doc/legacy_inventory.md`.
+27.4.4. ❌ Добавить gate на отсутствие `vmrun` в active path.
+27.4.5. ❌ Добавить gate на то, что `space.*` остается единственным проектным executable boundary на стороне ОС.

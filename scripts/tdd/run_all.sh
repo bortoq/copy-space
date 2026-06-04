@@ -1,31 +1,13 @@
 #!/bin/sh
 set -eu
 
-fail=0
+sh scripts/tdd/run_rv32_space_closure.sh
+sh scripts/tdd/test_space_minimal_host_contract.sh
+sh scripts/tdd/test_resident_job_descriptor_proof.sh
+sh scripts/tdd/test_resident_job_selection_proof.sh
+sh scripts/tdd/test_resident_tool_invocation_proof.sh
+sh scripts/tdd/test_resident_toolchain_control_proof.sh
+sh scripts/tdd/test_resident_copicode_artifact_proof.sh
+sh scripts/tdd/test_resident_copicode_handoff_proof.sh
 
-tests="
-scripts/tdd/test_forth0c.sh
-scripts/tdd/test_vmerr_diag.sh
-scripts/tdd/test_vmrun_strict_align32.sh
-scripts/tdd/test_vmrun_trace_jsonl.sh
-scripts/tdd/test_c3_m0_stop_contract.sh
-scripts/tdd/test_c3_trace_diff.sh
-scripts/tdd/test_rv32i_mvp_trace.sh
-scripts/tdd/test_rv32i_staged_plan.sh
-scripts/tdd/test_rv32i_emitter_contract.sh
-"
-
-for t in $tests; do
-  echo
-  echo "[tdd] RUN $t"
-  rc=0
-  if sh "$t"; then rc=0; else rc=$?; fi
-  if [ "$rc" -eq 0 ]; then
-    echo "[tdd] OK  $t"
-  else
-    echo "[tdd] FAIL $t"
-    fail=1
-  fi
-done
-
-exit "$fail"
+echo "OK anticrisis minimal baseline"

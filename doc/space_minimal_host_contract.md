@@ -1,61 +1,15 @@
-# Minimal Host `space.*` Contract
+# Space Minimal Host Contract
 
-Этот документ фиксирует финальный минимальный контракт хостового `space.*`.
+The host-side emulator wrapper is kept minimal. Its job is to:
 
-## 1. Назначение
+1. Load a full image into `vm->space`.
+2. Run ticks for a bounded `life`.
+3. Optionally dump the final `vm->space`.
+4. Optionally emit copy-trace diagnostics.
 
-Финальный хостовый эмулятор должен быть сведен к минимальной роли carrier/runtime shell вокруг адресного пространства.
+It does not own guest semantics.
+It does not interpret RISC-V.
+It does not implement resident request/response behavior.
+All resident execution and resident channel semantics live in `src/vm/space.c`.
 
-Этот контракт должен быть близок к:
-
-- `/media/user/PROJECT/bak/demo1/space.c`
-- `/media/user/PROJECT/bak/demo1/space.h`
-
-## 2. Разрешенные функции хоста
-
-Хосту разрешено выполнять только четыре функции.
-
-### 2.1. Channel function
-
-Разрешено только копирование в каналы и из каналов.
-
-Хост не интерпретирует channel ABI, не декодирует запросы сервиса и не знает семантику guest-операций.
-
-### 2.2. Compute function
-
-Разрешено только выполнение `copy` полуинтервалов по инструкциям процессорных слотов.
-
-Хост читает инструкции из слотов, выполняет битовые копирования и не содержит guest ISA semantics.
-
-### 2.3. Control function
-
-Разрешен только останов пространства.
-
-Хост может завершить общий цикл исполнения только по правилам минимального контракта пространства.
-
-### 2.4. Bootstrap function
-
-Разрешена только одноразовая загрузка данных в один слот процессора перед первым тактом.
-
-Эта загрузка допускается только как старт resident bootstrap payload и не расширяет постоянную роль хоста.
-
-## 3. Запрещенные функции хоста
-
-Запрещено сохранять в хостовом `space.*` channel ABI, guest runtime, proof runtime и guest-state semantics.
-
-В частности, хост не должен:
-
-- обслуживать `STATUS`, `LOAD_CODE`, `RUN`, `STEP`, `READ_REGS`, `READ_MEM`, `WRITE_MEM`;
-- обслуживать `TRACE_INFO` и `TRACE_READ`;
-- исполнять `RISC-V` decode/dispatch/execute logic;
-- владеть `PC`, register file, guest memory и stop/fault semantics;
-- оставаться источником trace/proof artifacts после завершения реконструкции.
-
-## 4. Критерий соответствия
-
-Хостовый `space.*` считается соответствующим финальному контракту, только если:
-
-- копирование в каналы и из каналов остается его единственной channel-функцией;
-- выполнение `copy` полуинтервалов по инструкциям процессорных слотов остается его единственной compute-функцией;
-- останов пространства остается его единственной control-функцией;
-- одноразовая загрузка данных в один слот процессора перед первым тактом остается его единственной bootstrap-функцией.
+This document is the host-side counterpart of the resident `space.c` contract.

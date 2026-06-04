@@ -75,7 +75,23 @@ void bitcpy(size_t n_bits,
   const uint8_t *src = src0 + src_byte;
   uint8_t *dst = dst0 + dst_byte;
 
-  /* aligned case: can memcpy middle bytes */
+  /* Fast byte-aligned path. */
+  if (((src_bit | dst_bit) & 7u) == 0u) {
+    size_t nbytes = n_bits >> 3;
+    size_t rem = n_bits & 7u;
+    if (nbytes) {
+      memmove(dst, src, nbytes);
+      dst += nbytes;
+      src += nbytes;
+    }
+    if (rem) {
+      uint8_t mask = keep_hi[rem];
+      *dst = (uint8_t)((*dst & (uint8_t)~mask) | (*src & mask));
+    }
+    return;
+  }
+
+  /* Same bit offset: align once, then bulk-copy whole bytes. */
   if (src_mod == dst_mod) {
     if (dst_mod) {
       unsigned head = 8u - dst_mod;
@@ -89,9 +105,25 @@ void bitcpy(size_t n_bits,
       dst++; src++;
     }
 
+    while (n_bits >= 64) {
+      uint64_t a, b, w;
+      memcpy(&a, src, sizeof(a));
+      memcpy(&b, src + 8, sizeof(b));
+      if (src_mod == 0u) {
+        w = a;
+      } else {
+        unsigned s = src_mod;
+        w = (a << s) | (b >> (64u - s));
+      }
+      memcpy(dst, &w, sizeof(w));
+      src += 8;
+      dst += 8;
+      n_bits -= 64;
+    }
+
     size_t nbytes = n_bits >> 3;
     if (nbytes) {
-      memcpy(dst, src, nbytes);
+      memmove(dst, src, nbytes);
       dst += nbytes;
       src += nbytes;
       n_bits -= (nbytes << 3);
@@ -105,27 +137,14 @@ void bitcpy(size_t n_bits,
     return;
   }
 
-  /* misaligned: shift/merge from consecutive src bytes */
-  unsigned ls, rs;
-  if (src_mod > dst_mod) {
-    ls = src_mod - dst_mod;
-    rs = 8u - ls;
-  } else {
-    rs = dst_mod - src_mod;
-    ls = 8u - rs;
-  }
-
   if (dst_mod) {
     unsigned head = 8u - dst_mod;
     if (head > n_bits) head = (unsigned)n_bits;
 
-    uint8_t c;
-    if (src_mod > dst_mod) {
-      c = (uint8_t)(src[0] << ls);
-      c |= (uint8_t)(src[1] >> rs);
-    } else {
-      c = (uint8_t)(src[0] >> rs);
-    }
+    unsigned left = src_mod > dst_mod ? (src_mod - dst_mod) : (8u - (dst_mod - src_mod));
+    unsigned right = 8u - left;
+    uint8_t c = (uint8_t)(src[0] << left);
+    c |= (uint8_t)(src[1] >> right);
 
     uint8_t mask_keep = (uint8_t)(keep_hi[dst_mod] | keep_lo[dst_mod + head]);
     *dst = (uint8_t)((*dst & mask_keep) | (c & (uint8_t)~mask_keep));
@@ -135,17 +154,35 @@ void bitcpy(size_t n_bits,
     if (src_mod > dst_mod) src++;
   }
 
+  /* 64-bit sliding window for the bulk body. */
+  while (n_bits >= 64) {
+    uint64_t a, b;
+    memcpy(&a, src, sizeof(a));
+    memcpy(&b, src + 8, sizeof(b));
+    unsigned left = src_mod > dst_mod ? (src_mod - dst_mod) : (8u - (dst_mod - src_mod));
+    unsigned right = 8u - left;
+    uint64_t w = (a << left) | (b >> right);
+    memcpy(dst, &w, sizeof(w));
+    src += 8;
+    dst += 8;
+    n_bits -= 64;
+  }
+
   while (n_bits >= 8) {
-    uint8_t c = (uint8_t)(src[0] << ls);
-    c |= (uint8_t)(src[1] >> rs);
+    unsigned left = src_mod > dst_mod ? (src_mod - dst_mod) : (8u - (dst_mod - src_mod));
+    unsigned right = 8u - left;
+    uint8_t c = (uint8_t)(src[0] << left);
+    c |= (uint8_t)(src[1] >> right);
     *dst++ = c;
     src++;
     n_bits -= 8;
   }
 
   if (n_bits) {
-    uint8_t c = (uint8_t)(src[0] << ls);
-    c |= (uint8_t)(src[1] >> rs);
+    unsigned left = src_mod > dst_mod ? (src_mod - dst_mod) : (8u - (dst_mod - src_mod));
+    unsigned right = 8u - left;
+    uint8_t c = (uint8_t)(src[0] << left);
+    c |= (uint8_t)(src[1] >> right);
     uint8_t mask = keep_hi[n_bits];
     *dst = (uint8_t)((*dst & (uint8_t)~mask) | (c & mask));
   }

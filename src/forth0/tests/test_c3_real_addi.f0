@@ -1,0 +1,42 @@
+# Real C3_RUN proof: execute ADDI x1, x0, 5 and dump actual state.
+
+const G_PC          0x002200
+const G_STOP_REASON 0x002280
+const G_REG_BASE    0x001200
+const G_MEM_BASE    0x002000
+
+# ADDI x1, x0, 5 = 0x00500093
+setbyte (G_MEM_BASE + 0)  0x00
+setbyte (G_MEM_BASE + 8)  0x50
+setbyte (G_MEM_BASE + 16) 0x00
+setbyte (G_MEM_BASE + 24) 0x93
+
+# guest PC = 0x00002000
+setbyte G_PC          0x00
+setbyte (G_PC + 8)    0x20
+setbyte (G_PC + 16)   0x00
+setbyte (G_PC + 24)   0x00
+
+# clear x0/x1 and stop reason
+setbyte G_REG_BASE          0x00
+setbyte (G_REG_BASE + 8)    0x00
+setbyte (G_REG_BASE + 16)   0x00
+setbyte (G_REG_BASE + 24)   0x00
+setbyte (G_REG_BASE + 32)   0x00
+setbyte (G_REG_BASE + 40)   0x00
+setbyte (G_REG_BASE + 48)   0x00
+setbyte (G_REG_BASE + 56)   0x00
+
+setbyte G_STOP_REASON        0x00
+setbyte (G_STOP_REASON + 8)  0x00
+setbyte (G_STOP_REASON + 16) 0x00
+setbyte (G_STOP_REASON + 24) 0x00
+
+C3_RUN
+
+# Dump actual x1, actual PC, actual stop reason
+copybits 32 TESTG              (G_REG_BASE + 32)
+copybits 32 (TESTG + 32)       G_PC
+copybits 32 (TESTG + 64)       G_STOP_REASON
+
+HALT

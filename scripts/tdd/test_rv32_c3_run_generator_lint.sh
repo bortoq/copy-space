@@ -3,6 +3,7 @@ set -eu
 
 GEN="scripts/riscv/gen_c3_run.py"
 OUT="src/mkimage/std7_fixed/words_c3_run.c"
+mkdir -p tmp
 TMPDIR="$(mktemp -d tmp/rv32_c3_genlint.XXXXXX)"
 trap 'rm -rf "$TMPDIR"' EXIT
 

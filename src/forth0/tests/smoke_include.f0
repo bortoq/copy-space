@@ -1,2 +1,0 @@
-# Smoke: test include (relative to current file dir).
-include "smoke_setbytes.f0"

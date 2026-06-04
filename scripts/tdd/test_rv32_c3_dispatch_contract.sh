@@ -11,6 +11,7 @@ OUT="src/mkimage/std7_fixed/words_c3_run.c"
 
 rg -n "opcode|funct3|funct7|reject/trap|in sync" "$DOC" >/dev/null
 
+mkdir -p tmp
 TMPDIR="$(mktemp -d tmp/rv32_c3_dispatch_contract.XXXXXX)"
 trap 'rm -rf "$TMPDIR"' EXIT
 python3 "$GEN" > "$TMPDIR/generated.c"

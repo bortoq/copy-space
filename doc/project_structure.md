@@ -9,13 +9,26 @@ The project is now organized around one active resident execution core:
 - `src/vm/space.c` is the source of truth for resident `RV32I` execution.
 - `src/vm/space.h` defines the resident state, stop reasons, trace records, and the VM object layout.
 - `src/vm/rv32.c` and `src/vm/rv32.h` hold the resident execution core and trace helpers as a separate source boundary.
-- `src/tools/vmrun.c` is a minimal host wrapper.
+- `src/tools/vmrun.c` is a temporary bootstrap wrapper, not a second runtime layer.
 - `scripts/tdd/*` contains the active proof gates.
 - `doc/roadmap.md` contains only action stages toward the goal.
+- `doc/glossary.md` defines the project terms used in the active docs.
 - `doc/anticrisis_plan.md` contains the crisis-mode execution policy.
 - `doc/legacy_inventory.md` freezes everything intentionally outside the active path.
 - `doc/resident_orchestration_boundary.md` defines the scope of the `9.4` migration step.
 - `doc/resident_orchestration_migration_plan.md` defines the execution plan for `9.4`.
+- `doc/resident_orchestration_runtime_boundary.md` defines the runtime boundary for stage `15`.
+- `doc/resident_startup_contract.md` defines the minimal startup contract for stage `16`.
+- `doc/resident_orchestration_execution_runtime.md` defines the minimal execution runtime for stage `17`.
+- `doc/resident_copy_scheduling_runtime.md` defines the minimal copy scheduling runtime for stage `18`.
+- `doc/resident_test_orchestration_runtime.md` defines the minimal test orchestration runtime for stage `19`.
+- `doc/resident_host_dependency_collapse_contract.md` defines the minimal host-dependency collapse contract for stage `20`.
+- `doc/resident_host_independent_launch_slice.md` defines the minimal host-independent launch slice for stage `21`.
+- `doc/resident_launch_control_ownership.md` defines the minimal resident launch control contract for stage `22`.
+- `doc/resident_copy_scheduling_ownership.md` defines the minimal resident copy scheduling contract for stage `23`.
+- `doc/resident_completion_bookkeeping_ownership.md` defines the minimal resident completion bookkeeping contract for stage `24`.
+- `doc/resident_job_selection_tool_dispatch_ownership.md` defines the minimal resident job selection and tool dispatch contract for stage `25`.
+- `doc/resident_control_plane_assembly_plan.md` defines the resident control plane assembly plan for stage `26`.
 - `doc/resident_job_descriptor.md` defines the first resident orchestration payload contract.
 - `doc/resident_job_selection.md` defines the first resident orchestration selection contract.
 - `doc/resident_tool_invocation.md` defines the first resident tool invocation contract.
@@ -26,6 +39,14 @@ The project is now organized around one active resident execution core:
 - `doc/resident_copicode_migration_plan.md` defines the execution plan for `10.2`.
 - `doc/resident_copicode_artifact.md` defines the first resident copicode artifact contract.
 - `doc/resident_copicode_handoff.md` defines the handoff contract for `10.3.2`.
+- `doc/resident_copicode_decision_records.md` defines the decision record contract for `10.3.3`.
+- `doc/resident_copicode_toolchain_control_records.md` defines the toolchain control record contract for `10.3.4`.
+- `doc/resident_copicode_launch_completion.md` defines the launch-completion contract for `10.3.5`.
+- `doc/riscv_migration_plan.md` defines the staged migration from resident `RISC-V` compute backend to host-dependency collapse.
+- `doc/resident_riscv_boundary_freeze.md` defines the frozen `space.*` boundary for the next `RISC-V` migration.
+- `doc/resident_riscv_extraction_boundary.md` defines the isolated source boundary for resident `RISC-V`.
+- `doc/resident_riscv_compute_backend.md` defines the resident compute backend usage boundary for `RISC-V`.
+- `doc/resident_riscv_proof_tools_preparation.md` defines the proof-tools preparation boundary for `RISC-V`.
 
 `C3_RUN` exists only as a legacy artifact. It is not part of the active proof path.
 
@@ -60,11 +81,11 @@ The project is now organized around one active resident execution core:
 - Loads an image into `vm->space`.
 - Runs the VM for a bounded number of ticks.
 - Optionally dumps the final space image.
-- Optionally emits copy-trace diagnostics.
 
 It does not implement guest semantics.
 It does not interpret `RISC-V`.
-It is a thin execution shell around `space.c`.
+It is a thin temporary bootstrap shell around `space.c`.
+It does not own target-architecture semantics.
 
 ### 3. Resident Proof Gates
 
@@ -108,6 +129,11 @@ It is a thin execution shell around `space.c`.
 - No audit content.
 - No diagnostic content.
 
+`doc/glossary.md`:
+
+- Defines the project terms used in the active docs.
+- Adds a term whenever the active docs need a word that is not already defined.
+
 `doc/anticrisis_plan.md`:
 
 - Defines the crisis-mode operating policy.
@@ -116,7 +142,7 @@ It is a thin execution shell around `space.c`.
 `doc/space_minimal_host_contract.md`:
 
 - Defines the minimal host wrapper contract.
-- Draws the boundary between host responsibilities and resident semantics.
+- Draws the boundary between temporary bootstrap responsibilities and resident semantics.
 
 `doc/legacy_inventory.md`:
 
@@ -132,6 +158,66 @@ It is a thin execution shell around `space.c`.
 
 - Defines the execution steps for stage `9.4`.
 - Keeps host bootstrap, resident orchestration, and toolchain migration separated.
+
+`doc/resident_orchestration_runtime_boundary.md`:
+
+- Defines the runtime boundary for stage `15`.
+- Describes resident orchestration entrypoints, state model, interfaces, and verification hooks.
+
+`doc/resident_startup_contract.md`:
+
+- Defines the minimal startup contract for stage `16`.
+- Describes fixed slots, bootstrap payload, and first handoff responsibilities.
+
+`doc/resident_orchestration_execution_runtime.md`:
+
+- Defines the minimal resident orchestration execution runtime for stage `17`.
+- Describes the execution entrypoint, state model, interfaces, and verification hooks.
+
+`doc/resident_copy_scheduling_runtime.md`:
+
+- Defines the minimal resident copy scheduling runtime for stage `18`.
+- Describes the scheduling shape, state model, interfaces, and verification hooks.
+
+`doc/resident_test_orchestration_runtime.md`:
+
+- Defines the minimal resident test orchestration runtime for stage `19`.
+- Describes the job-selection shape, state model, interfaces, and verification hooks.
+
+`doc/resident_host_dependency_collapse_contract.md`:
+
+- Defines the minimal host-dependency collapse contract for stage `20`.
+- Describes the boundary conditions required before actual host-dependency collapse.
+
+`doc/resident_host_independent_launch_slice.md`:
+
+- Defines the minimal host-independent launch slice for stage `21`.
+- Describes the first tiny path where resident runtime owns launch/completion and host stays bootstrap-only.
+
+`doc/resident_launch_control_ownership.md`:
+
+- Defines the minimal resident launch control contract for stage `22`.
+- Describes the launch decision ownership boundary after bootstrap.
+
+`doc/resident_copy_scheduling_ownership.md`:
+
+- Defines the minimal resident copy scheduling contract for stage `23`.
+- Describes the copy decision ownership boundary after bootstrap.
+
+`doc/resident_completion_bookkeeping_ownership.md`:
+
+- Defines the minimal resident completion bookkeeping contract for stage `24`.
+- Describes the completion record ownership boundary after bootstrap.
+
+`doc/resident_job_selection_tool_dispatch_ownership.md`:
+
+- Defines the minimal resident job selection and tool dispatch contract for stage `25`.
+- Describes the job and tool ownership boundary after bootstrap.
+
+`doc/resident_control_plane_assembly_plan.md`:
+
+- Defines the resident control plane assembly plan for stage `26`.
+- Describes the minimal resident-owned control loop before host-dependency collapse.
 
 `doc/resident_job_descriptor.md`:
 
@@ -182,6 +268,46 @@ It is a thin execution shell around `space.c`.
 
 - Defines the resident copicode handoff record.
 - Serves as the contract for stage `10.3.2`.
+
+`doc/resident_copicode_decision_records.md`:
+
+- Defines the resident copicode decision record.
+- Serves as the contract for stage `10.3.3`.
+
+`doc/resident_copicode_toolchain_control_records.md`:
+
+- Defines the resident copicode toolchain control record.
+- Serves as the contract for stage `10.3.4`.
+
+`doc/resident_copicode_launch_completion.md`:
+
+- Defines the resident copicode launch-completion record.
+- Serves as the contract for stage `10.3.5`.
+
+`doc/riscv_migration_plan.md`:
+
+- Defines the staged migration path for resident `RISC-V`.
+- Covers boundary freeze, extraction, resident compute backend usage, orchestration migration, and host-dependency collapse.
+
+`doc/resident_riscv_boundary_freeze.md`:
+
+- Freezes `space.*` as the address-space emulator boundary.
+- Serves as the contract for stage `11`.
+
+`doc/resident_riscv_extraction_boundary.md`:
+
+- Freezes the extraction boundary for resident `RISC-V`.
+- Serves as the contract for stage `12`.
+
+`doc/resident_riscv_compute_backend.md`:
+
+- Defines the resident compute backend usage boundary.
+- Serves as the contract for stage `14`.
+
+`doc/resident_riscv_proof_tools_preparation.md`:
+
+- Defines the proof-tools preparation boundary.
+- Serves as the contract for stage `13`.
 
 ## Diagram
 

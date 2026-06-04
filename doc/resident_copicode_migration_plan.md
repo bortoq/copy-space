@@ -1,43 +1,49 @@
-# Resident Copicode Migration Plan
+# План миграции resident copicode
 
-This document defines the executable plan for stage `10.2`.
+Этот документ задает исполнимый план для этапа `10.2`.
 
-## Goal
+## Цель
 
-Move orchestration and toolchain control into resident copicode without adding non-emulator logic to `space.*`.
+Перенести orchestration и toolchain control в resident copicode, не добавляя non-emulator logic в `space.*`.
 
-## Phase 1. Define the resident copicode artifact boundary
+## Этап 1. Зафиксировать границу resident copicode artifact
 
-- Define the resident copicode artifact type.
-- Define how resident workload code is represented at runtime.
-- Define how the artifact is loaded without changing `space.*` behavior.
+- Определить тип resident copicode artifact.
+- Определить, как resident workload code представляется во время исполнения.
+- Определить, как artifact загружается без изменения поведения `space.*`.
 
-## Phase 2. Define the resident copicode execution boundary
+## Этап 2. Зафиксировать границу resident copicode execution
 
-- Define the resident execution entrypoint for the artifact.
-- Define how job selection feeds the entrypoint.
-- Define how tool invocation feeds the entrypoint.
-- Define how toolchain control feeds the entrypoint.
+- Определить точку входа resident execution для artifact.
+- Определить, как job selection подает данные в точку входа.
+- Определить, как tool invocation подает данные в точку входа.
+- Определить, как toolchain control подает данные в точку входа.
 
-## Phase 3. Define the migration shims
+## Этап 3. Зафиксировать migration shims
 
-- Keep host bootstrap only for loading the first resident artifact.
-- Keep host dump and diagnostics only as observability helpers.
-- Remove host-side orchestration from the active path once resident entrypoint takeover is proven.
+- Оставить host bootstrap только для загрузки первого resident artifact.
+- Оставить host dump и diagnostics только как наблюдаемость.
+- Убрать host-side orchestration из active path после подтверждения takeover.
 
-## Phase 4. Define verification gates
+## Этап 4. Зафиксировать проверки
 
-- Add one gate for artifact loading.
-- Add one gate for resident entrypoint handoff.
-- Add one gate for toolchain control takeover.
-- Add one gate for host-side orchestration removal.
+- Добавить одну проверку на загрузку artifact.
+- Добавить одну проверку на handoff в resident entrypoint.
+- Добавить одну проверку на takeover toolchain control.
+- Добавить одну проверку на удаление host-side orchestration.
 
-## Phase 5. Freeze the final state
+## Этап 5. Зафиксировать финальное состояние
 
-- Freeze the new resident copicode boundary.
-- Freeze the host responsibilities that remain bootstrap-only.
-- Update the structure documentation to reflect the migrated boundary.
+- Зафиксировать новую границу resident copicode.
+- Зафиксировать host responsibilities, которые остаются bootstrap-only.
+- Обновить документацию о структуре под новую границу.
 
-## Rule
+## Правило
 
-This plan does not add orchestration logic to `space.*`.
+Этот план не добавляет orchestration logic в `space.*`.
+
+## Связь с поздними этапами
+
+- Этап `18` задает минимальный resident runtime для copy scheduling.
+- Этап `19` задает минимальный resident runtime для test orchestration.
+- Этап `21` снимает зависимость от host для resident `RISC-V`.

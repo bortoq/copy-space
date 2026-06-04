@@ -1,54 +1,76 @@
-# RISC-V Migration Plan
+# План миграции RISC-V
 
-Goal: migrate all remaining host-side `RISC-V`-related functionality into resident copicode with minimal risk, while keeping `space.*` stable as the address-space emulator contract.
+Цель: перенести все оставшиеся host-side части, связанные с `RISC-V`, в resident copicode с минимальным риском и при этом сохранить `space.*` как контракт эмулятора адресного пространства.
 
-## Phase 1. Freeze the boundary
+Этот план отражен в `doc/roadmap.md` как этап `9.5` и этапы `11-27`.
 
-- Freeze `src/vm/space.*` against functional changes.
-- Preserve only performance, portability, reliability, diagnostics, and maintainability fixes there.
-- Keep `space.c` as the address-space emulator and nothing more.
+## Этап 1. Зафиксировать границу
 
-## Phase 2. Extract resident RISC-V implementation into isolated source
+- Заморозить `src/vm/space.*` для функциональных изменений.
+- Оставить там только улучшения производительности, переносимости, надежности, диагностики и сопровождаемости.
+- Держать `space.c` только как эмулятор адресного пространства.
+- Эта граница поддерживается `space_contract.md` и картой активной документации.
 
-- Move `RISC-V` resident execution logic into dedicated source files and keep clear interfaces to `space.*`.
-- Keep host wrapper and resident execution responsibilities separate.
-- Ensure the extraction is mechanically verifiable by the current gates.
+## Этап 2. Выделить resident реализацию RISC-V в отдельный source boundary
 
-## Phase 3. Rehost the proof tools into resident form
+- Перенести resident execution logic `RISC-V` в отдельные исходники и оставить понятные интерфейсы к `space.*`.
+- Развести host wrapper и resident execution responsibilities.
+- Сделать extraction механически проверяемым текущими gate'ами.
+- Не расширять ISA на этом этапе.
+- Использовать `doc/resident_riscv_extraction_boundary.md` как границу этого этапа.
 
-- Convert the current `rv32_space_*` proof tools into resident workloads or resident-controlled tests.
-- Preserve one machine-checkable gate per proof slice.
-- Remove any remaining dependence on synthetic traces or host-authored state.
+## Этап 3. Подготовить proof tools для resident execution
 
-## Phase 4. Convert orchestration into copicode
+- Перевести текущие `rv32_space_*` proof tools в resident-ready workloads или resident-controlled tests.
+- Оставить один machine-checkable gate на один proof slice.
+- Убрать зависимость от synthetic traces и host-authored state.
+- Не смешивать доказательства между разными утверждениями.
 
-- Move `vmrun`-style orchestration into resident copicode.
-- Move test orchestration into resident copicode.
-- Keep a tiny bootstrap host wrapper only for loading and kicking the first resident instruction.
-- Use `doc/resident_orchestration_boundary.md` as the scope boundary for this phase.
-- Use `doc/resident_orchestration_migration_plan.md` as the execution plan for this phase.
+## Этап 4. Использовать resident RISC-V как compute backend для переноса
 
-## Phase 5. Convert `forth0` and the compiler path
+- Использовать resident `RISC-V` для одного маленького migration payload.
+- Использовать resident `RISC-V` для одного proof/helper workload, которому полезен resident compute.
+- Оставить host-side helpers только как bootstrap-only, если они уже не нужны.
+- Держать scope маленьким и измеримым.
+- Использовать `doc/resident_riscv_compute_backend.md` как границу этого этапа.
 
-- Turn the compiler/runtime path into resident workloads.
-- Preserve bootstrap-only host code only as a temporary loader.
-- Migrate the compiler output and execution loop into address-space-managed code.
+## Этап 5. Зафиксировать minimal resident runtime для orchestration
 
-## Phase 6. Convert `RISC-V` toolchain components
+- Зафиксировать resident execution runtime для orchestration.
+- Ограничить runtime моделью состояния, интерфейсами и проверками.
+- Не переносить execution дальше на этом этапе.
+- Использовать `doc/resident_orchestration_runtime_boundary.md` как границу этого этапа.
+- Использовать `doc/resident_orchestration_execution_runtime.md` как контракт этого этапа.
 
-- Migrate any remaining `RISC-V`-specific host helpers into resident code.
-- Keep host helpers only when they are provably bootstrap-only.
-- Remove legacy host semantics once the resident path is verified.
+## Этап 6. Зафиксировать minimal resident runtime для copy scheduling
 
-## Phase 7. Collapse the host layer
+- Зафиксировать minimal resident copy scheduling runtime.
+- Ограничить runtime fixed-slot scheduling, учетом и минимальным channel service.
+- Не переносить более широкую orchestration.
+- Использовать `doc/resident_copy_scheduling_runtime.md` как контракт этого этапа.
 
-- Reduce the host wrapper to minimal boot and dump responsibilities.
-- Remove host-side semantics that have already been proven resident.
-- Preserve the `space.*` contract as a stable emulator boundary.
+## Этап 7. Зафиксировать minimal resident runtime для test orchestration
 
-## Risk Controls
+- Зафиксировать minimal resident test orchestration runtime.
+- Ограничить runtime выбором job, запуском tools, toolchain control и учетом записей.
+- Не переносить host-dependency collapse на этом этапе.
+- Использовать `doc/resident_test_orchestration_runtime.md` как контракт этого этапа.
 
-- One real-proof gate per step.
-- No synthetic traces as source of truth.
-- No bootstrap-only path counted as closure.
-- No functional changes to `space.*` unless explicitly approved as a new project decision.
+## Этап 8. Зафиксировать контракт на минимальное снятие зависимости от host
+
+- Зафиксировать минимальный loader, resident execution control и границу host-only.
+- Зафиксировать минимальный copy scheduling, test orchestration и completion ownership.
+- Зафиксировать безопасные контракты владения запуском, копированием, завершением, выбором job и передачей tool перед снятием зависимости.
+- Зафиксировать стабильную границу зависимости `space.*`.
+- Использовать `doc/resident_host_dependency_collapse_contract.md` как контракт этого этапа.
+
+## Этап 9. Снять зависимость от host для resident RISC-V
+
+- Убрать remaining bootstrap shims из active `RISC-V` path.
+- Сделать resident copicode единственным источником execution control.
+- Убрать `space.*` как active runtime dependency для resident `RISC-V`.
+- Обновить документацию после снятия зависимости.
+
+## Правило
+
+Этот план не добавляет orchestration logic в `space.*`.

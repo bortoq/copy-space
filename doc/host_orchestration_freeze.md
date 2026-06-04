@@ -1,32 +1,32 @@
-# Host Orchestration Freeze
+# Заморозка host orchestration
 
-This document freezes the active-path meaning of host orchestration.
+Этот документ фиксирует значение host orchestration в active path.
 
-## Rule
+## Правило
 
-- Host orchestration is bootstrap-only.
-- Host orchestration may prepare images, launch the first resident entrypoint, and dump results.
-- Host orchestration must not select jobs after bootstrap.
-- Host orchestration must not launch tools after resident takeover.
-- Host orchestration must not be treated as an active execution layer.
+- Host orchestration - bootstrap-only.
+- Host orchestration может подготовить image, запустить первый resident entrypoint и выгрузить результат.
+- Host orchestration не должен выбирать jobs после bootstrap.
+- Host orchestration не должен запускать tools после resident takeover.
+- Host orchestration не должен считаться active execution layer.
 
-## Active Path
+## Active path
 
-The active path begins in resident code after bootstrap and continues there.
+Active path начинается в resident code после bootstrap и продолжается там.
 
-## Frozen Host Responsibilities
+## Замороженные обязанности host
 
-- image loading
-- first-entry bootstrap
+- загрузка image
+- первый bootstrap entry
 - bounded run loop
 - optional dump
 - optional diagnostics
 
-## Not Active
+## Не active
 
 - job selection
 - tool invocation
 - scheduling
 - orchestration state machines
 
-This freeze is a documentation boundary only. It does not change `space.*` semantics.
+Эта заморозка только документальная. Она не меняет семантику `space.*`.

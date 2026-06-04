@@ -1,43 +1,44 @@
-# Resident Copicode Runtime Boundary
+# Граница resident copicode runtime
 
-This document defines the boundary for stage `10.1`.
+Этот документ задает границу resident runtime для этапа `10.1`.
 
-## Scope
+## Область
 
-Resident copicode runtime means the resident execution layer that will eventually own:
+Resident copicode runtime - это resident execution layer, который в итоге будет владеть:
 
-- orchestration entrypoints,
-- job lifecycle state,
-- job selection interfaces,
-- tool invocation interfaces,
-- toolchain control interfaces,
-- runtime verification hooks.
+- точками входа orchestration,
+- состоянием job lifecycle,
+- интерфейсами job selection,
+- интерфейсами tool invocation,
+- интерфейсами toolchain control,
+- проверками runtime.
 
-## Target State
+## Целевое состояние
 
-The target state is a resident runtime boundary that can host the orchestration and toolchain control behavior without adding non-emulator logic to `space.*`.
+Целевое состояние - это resident runtime boundary, который может нести orchestration и toolchain control behavior без добавления non-emulator logic в `space.*`.
 
-## Not In Scope
+## Что не входит
 
-This boundary does not include:
+Эта граница не включает:
 
-- `space.*` semantics changes,
-- new guest ISA support,
-- host orchestration expansion,
-- proof logic inside the emulator,
-- `C3_RUN` recovery,
-- unrelated service tracks.
+- изменения семантики `space.*`,
+- поддержку нового guest ISA,
+- расширение host orchestration,
+- proof logic внутри эмулятора,
+- восстановление `C3_RUN`,
+- другие служебные треки.
 
-## Rules
+## Правила
 
-- Runtime entrypoints must be resident-owned.
-- Runtime state must be resident-owned.
-- Runtime interfaces must be explicit and machine-checkable.
-- Verification gates must validate the boundary before execution migration.
-- `space.*` remains only the address-space emulator.
+- Runtime entrypoints должны принадлежать resident.
+- Runtime state должен принадлежать resident.
+- Runtime interfaces должны быть явными и machine-checkable.
+- Verification gates должны подтвердить границу до переноса исполнения.
+- `space.*` остается только эмулятором адресного пространства.
 
-## Relation to Existing Documents
+## Связь с другими документами
 
-- `doc/resident_orchestration_boundary.md` defines the orchestration scope.
-- `doc/resident_boundary_final.md` freezes the host/resident division.
-- This document defines the runtime layer that sits behind those boundaries.
+- `doc/resident_orchestration_boundary.md` задает scope orchestration.
+- `doc/resident_boundary_final.md` фиксирует границу между host и resident.
+- `doc/resident_orchestration_execution_runtime.md` задает минимальный resident orchestration execution runtime для этапа `17`.
+- Этот документ задает runtime layer, который стоит за этими границами.

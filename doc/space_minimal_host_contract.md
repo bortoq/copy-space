@@ -5,7 +5,6 @@ The host-side emulator wrapper is kept minimal. Its job is to:
 1. Load a full image into `vm->space`.
 2. Run ticks for a bounded `life`.
 3. Optionally dump the final `vm->space`.
-4. Optionally emit copy-trace diagnostics.
 
 It does not own guest semantics.
 It does not interpret RISC-V.

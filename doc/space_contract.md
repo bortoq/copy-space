@@ -1,35 +1,41 @@
-# Space Contract
+# Контракт пространства
 
-`src/vm/space.*` defines the emulator of the address space.
+`src/vm/space.*` задает эмулятор адресного пространства.
 
-The contract is stable:
+`host` в этом проекте - это временная bootstrap-обвязка вокруг `space.*`.
+Она нужна только для подготовки фиксированного стартового layout, запуска первого такта и получения bounded results.
+Она не является частью целевой архитектуры и должна исчезнуть из active path после переноса оставшейся логики в resident side.
 
-- The functional behavior of the emulator must not change.
-- Allowed changes are limited to:
-  - performance improvements,
-  - portability improvements,
-  - reliability improvements,
-  - diagnostics improvements,
-  - maintainability improvements,
-  - testability improvements.
-- Any change that alters observable space semantics must be treated as a separate project decision, not a refactoring.
-- `space.*` must remain only the address-space emulator.
-- `space.*` must not contain or accumulate residual logic from:
-  - proofs or checks,
+Контракт стабилен:
+
+- Функциональное поведение эмулятора не меняется.
+- Разрешены только:
+  - улучшения производительности,
+  - улучшения переносимости,
+  - улучшения надежности,
+  - улучшения диагностики,
+  - улучшения сопровождаемости,
+  - улучшения тестируемости.
+- Любое изменение, которое меняет observable space semantics, считается отдельным проектным решением, а не рефакторингом.
+- `space.*` должен оставаться только эмулятором адресного пространства.
+- `space.*` не должен содержать или накапливать остаточную логику из:
+  - proof или checks,
   - alternative emulators,
   - `forth0`,
   - `RISC-V` toolchains,
   - orchestration code,
   - compiler/runtime helpers,
   - test harness internals.
-- Any such functionality belongs outside `space.*` and must be implemented in separate source boundaries.
+- Вся такая функциональность должна жить вне `space.*` и в отдельных source boundaries.
+- Host bootstrap wrapper временный и не должен превращаться во второй runtime layer.
 
-The emulator must continue to provide:
+Эмулятор должен продолжать делать:
 
-- copying of semi-intervals in bit space,
-- copy-in/copy-out through stdin/stdout channels,
-- loading of a single boot instruction before the first tick,
-- bounded execution by the tick count passed at launch,
-- resident minimal host interaction only.
+- копирование полуинтервалов в bit space,
+- copy-in/copy-out через stdin/stdout channels,
+- загрузку одной boot instruction перед первым тактом,
+- bounded execution по tick count, который передан при запуске,
+- минимальное host interaction, которое нужно для контракта эмулятора,
+- только bootstrap-роль host, без постоянной orchestration-роли.
 
-This contract is the boundary for future iterations.
+Этот контракт задает границу для будущих итераций.

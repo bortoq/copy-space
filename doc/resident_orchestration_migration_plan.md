@@ -1,6 +1,6 @@
 # Resident Orchestration Migration Plan
 
-This plan covers stage `9.4`: migrate orchestration and toolchain control into resident copicode while keeping `space.*` free of non-emulator residue.
+This plan covers stage `17`: migrate orchestration and toolchain control into resident copicode while keeping `space.*` free of non-emulator residue.
 
 ## Goals
 
@@ -61,3 +61,7 @@ This plan covers stage `9.4`: migrate orchestration and toolchain control into r
 - No change to `space.*` semantics.
 - No synthetic proof source.
 - No orchestration logic inside `space.*`.
+
+## Boundary Link
+
+Stage `15` defines the resident orchestration runtime boundary in `doc/resident_orchestration_runtime_boundary.md`. Stage `16` defines the minimal startup contract in `doc/resident_startup_contract.md`. This migration plan assumes both are frozen before orchestration execution moves further into resident code.

@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 
-build/bin/vmrun --help 2>&1 | rg -n -- "--image|--life|--dump|--trace-jsonl" >/dev/null
+mkdir -p tmp
+
+build/bin/vmrun --help 2>&1 | rg -n -- "--image|--life|--dump" >/dev/null
 
 TMPDIR="$(mktemp -d tmp/space_host_contract.XXXXXX)"
 trap 'rm -rf "$TMPDIR"' EXIT

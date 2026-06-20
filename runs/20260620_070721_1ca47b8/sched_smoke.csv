@@ -1,0 +1,3 @@
+schema_version,bench,mode,seed,space_bytes,slots,addr_bits,ticks_total,moved_bits_total,vmrep_bits_sum_total,vmrep_bits_uniq_dst_total,vmrep_avg_bits_sum_per_tick,vmrep_avg_bits_uniq_dst_per_tick,thr_from,thr_len,thr_avg_bits_sum_per_tick,thr_avg_bits_uniq_dst_per_tick,notes,git_rev,copies_total,expected_bits_per_tick
+csv.v0,scheduler,demo_instance.json,0,0,20,0,39,71424,-,-,1831.384615,1831.384615,-,-,-,-,solver=baseline;lb=39;gap=0;gap_ratio=0.000000;bw=256;util=0.715385;solve_ms=50.783;validate_ms=40.768,1ca47b8,279,2560
+csv.v0,scheduler,demo_instance.json,0,0,20,0,39,71424,-,-,1831.384615,1831.384615,-,-,-,-,solver=greedy;lb=39;gap=0;gap_ratio=0.000000;bw=256;util=0.715385;solve_ms=45.584;validate_ms=36.370,1ca47b8,279,2560

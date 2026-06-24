@@ -1,0 +1,14 @@
+# bench summary: tmp/sched_smoke.csv
+# rows=2 groups=1
+
+## scheduler mode=demo_instance.json space_bytes=0 slots=20 addr_bits=0
+- best uniq_dst: 1,831 bits/tick (228.9 B/tick)
+- best sum:      1,831 bits/tick (228.9 B/tick)
+- expected:      2560 bits/tick  (util=71.5%)
+- git_rev: 1ca47b8
+
+| rank | uniq_dst avg | util vs expected | expected_bits/tick | copies_total | ticks_total | seed | notes | git_rev |
+|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 1 | 1,831.385 | 71.5% | 2560 | 279 | 39 | 0 | solver=baseline;lb=39;gap=0;gap_ratio=0.000000;bw=256;util=0.715385;solve_ms=47.775;validate_ms=40.082 | 1ca47b8 |
+| 2 | 1,831.385 | 71.5% | 2560 | 279 | 39 | 0 | solver=greedy;lb=39;gap=0;gap_ratio=0.000000;bw=256;util=0.715385;solve_ms=51.244;validate_ms=37.860 | 1ca47b8 |
+

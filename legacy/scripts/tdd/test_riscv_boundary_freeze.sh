@@ -21,6 +21,10 @@ grep -F -q '## 24. Контракт на владение completion bookkeeping
 grep -F -q '## 25. Контракт на владение job selection и tool dispatch после bootstrap' doc/roadmap.md
 grep -F -q '## 26. План сборки resident control plane' doc/roadmap.md
 grep -F -q '## 27. Сделать `space.*` единственным проектным executable boundary на стороне ОС' doc/roadmap.md
+grep -F -q '27.2. ✅ Свести `space.*` к чистому эмулятору адресного пространства.' doc/roadmap.md
+grep -F -q '27.2.1. ✅ Оставить в `space.*` только эмуляцию адресного пространства и минимальный host bootstrap contract.' doc/roadmap.md
+grep -F -q '27.2.2. ✅ Удалить из `space.*` всю остаточную управляющую логику, не нужную эмулятору.' doc/roadmap.md
+grep -F -q '27.2.3. ✅ Запретить рост host-side orchestration semantics в `space.*`.' doc/roadmap.md
 grep -F -q 'Финальная граница проекта на стороне ОС такова:' doc/space_contract.md
 
 echo "OK riscv boundary freeze"

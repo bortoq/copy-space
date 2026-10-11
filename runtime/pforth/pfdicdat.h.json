@@ -1,0 +1,14 @@
+{
+  "upstream_revision": "e5617638c3a397c644fe82c6301711867a0ca1bf",
+  "cell_bytes": 4,
+  "little_endian": true,
+  "names_bytes": 6140,
+  "code_bytes": 5328,
+  "relative_context": 6128,
+  "primitives": 206,
+  "headers_reserve_bytes": 32768,
+  "code_reserve_bytes": 65536,
+  "system_input_sha256": "95a822f947a7c6771a0f9d04cd035b247a1287b4c1bbd53298f412acecccc24a",
+  "dictionary_sha256": "cf3cdb50034dcb470beb3801e6d0815b4590c858a1bab920706626fcffb11fe5",
+  "header_sha256": "d36cc9726e49dea702fc1cf475247b78efdcb87bbe818d4bd39de9b868f5dba6"
+}

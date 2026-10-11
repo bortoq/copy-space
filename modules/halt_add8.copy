@@ -1,0 +1,7 @@
+; Вывести готовую сумму, затем обнулить весь PROCESSOR.
+include load_add8_lut.copy
+
+0 0 0
+0 0 0
+8 SUM_PACKED 0
+PROCESSOR_BITS PROCESSOR_START 131072

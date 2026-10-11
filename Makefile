@@ -1,9 +1,7 @@
 # file: Makefile
-# purpose: minimal build for Copy-Space anticrisis baseline
+# purpose: minimal build for Copy-Space demo1 baseline
 
 SHELL := /bin/sh
-
--include config.mk
 
 CC ?= cc
 CFLAGS ?= -O2 -g -std=c99 -Wall -Wextra
@@ -14,76 +12,91 @@ LDLIBS ?=
 OBJDIR := build/obj
 BINDIR := build/bin
 
-INCLUDES := -Isrc -Isrc/vm
+INCLUDES := -Isrc
 
-# -------------------- sources --------------------
+EMULATOR_SRCS := src/space.c src/bitcopy.c
+EMULATOR_OBJS := $(addprefix $(OBJDIR)/,$(EMULATOR_SRCS:.c=.o))
+RUN_SRCS := src/space_run.c src/core.c src/space_trace.c
+SPACE_SRCS := src/space_main.c $(RUN_SRCS) $(EMULATOR_SRCS)
+SPACE_OBJS := $(addprefix $(OBJDIR)/,$(SPACE_SRCS:.c=.o))
+SPACE_DEPS := $(SPACE_OBJS:.o=.d)
 
-VM_SRCS := \
-  src/vm/space.c \
-  src/vm/rv32.c \
-  src/vm/invariants.c \
-  src/vm/bitcpy.c
+ASM_SRCS := src/assembler.c src/bitcopy.c
+ASM_OBJS := $(addprefix $(OBJDIR)/,$(ASM_SRCS:.c=.o))
+ASM_DEPS := $(ASM_OBJS:.o=.d)
 
-# tools: build every src/tools/*.c into build/bin/<basename>
-TOOLS_SRCS := $(sort $(wildcard src/tools/*.c))
+PROOF_SRCS := tests/space_image_proof.c $(RUN_SRCS) $(EMULATOR_SRCS)
+PROOF_OBJS := $(addprefix $(OBJDIR)/,$(PROOF_SRCS:.c=.o))
+PROOF_DEPS := $(PROOF_OBJS:.o=.d)
 
-# mkimage std7_fixed
-ifneq ("$(wildcard src/mkimage/std7_fixed/legacy.c)","")
-MKIMAGE_SRCS := src/mkimage/mkimage_std7_fixed.c $(sort $(wildcard src/mkimage/std7_fixed/*.c))
-else
-MKIMAGE_SRCS := src/mkimage/mkimage_std7_fixed.c
-endif
+BIN := $(BINDIR)/space $(BINDIR)/assembler
+PROOF_BIN := $(BINDIR)/space_image_proof
+BITCOPY_BIN := $(BINDIR)/test_bitcopy
+BITCOPY_OBJ := $(OBJDIR)/tests/test_bitcopy.o
+RUNTIME_BIN := $(BINDIR)/test_space_runtime
+RUNTIME_OBJ := $(OBJDIR)/tests/test_space_runtime.o
+IO_PARTIAL_BIN := $(BINDIR)/test_rv32i_io_partial
+IO_PARTIAL_OBJ := $(OBJDIR)/tests/test_rv32i_io_partial.o
 
-# -------------------- objects --------------------
-
-VM_OBJS      := $(addprefix $(OBJDIR)/,$(VM_SRCS:.c=.o))
-TOOLS_OBJS   := $(addprefix $(OBJDIR)/,$(TOOLS_SRCS:.c=.o))
-MKIMAGE_OBJS := $(addprefix $(OBJDIR)/,$(MKIMAGE_SRCS:.c=.o))
-ALL_OBJS := $(VM_OBJS) $(TOOLS_OBJS) $(MKIMAGE_OBJS)
-DEPS := $(ALL_OBJS:.o=.d)
-
-# -------------------- binaries --------------------
-
-# tools binaries
-TOOLS_BINS := $(patsubst src/tools/%.c,$(BINDIR)/%,$(TOOLS_SRCS))
-
-# mkimage binary (fixed name)
-MKIMAGE := $(BINDIR)/mkimage_std7_fixed
-
-BINS := $(TOOLS_BINS) $(MKIMAGE)
-
-# -------------------- rules --------------------
-
-.PHONY: all bins clean test tdd list-tools
+.PHONY: all bins clean test tdd test-sanitize test-rv32i-c pforth test-pforth
 
 all: bins
 
-bins: $(BINS)
-
-list-tools:
-	@printf "%s\n" $(TOOLS_SRCS)
+bins: $(BIN)
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p "$(dir $@)"
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -MMD -MP -c "$<" -o "$@"
 
-# link tools: build/bin/<name> from build/obj/src/tools/<name>.o + vm objs
-$(TOOLS_BINS): $(BINDIR)/%: $(OBJDIR)/src/tools/%.o $(VM_OBJS)
+$(BINDIR)/space: $(SPACE_OBJS)
 	@mkdir -p "$(dir $@)"
 	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
 
-# mkimage
-$(MKIMAGE): $(MKIMAGE_OBJS) $(VM_OBJS)
+$(BINDIR)/assembler: $(ASM_OBJS)
 	@mkdir -p "$(dir $@)"
 	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
 
-test: bins
+$(BINDIR)/space_image_proof: $(PROOF_OBJS)
+	@mkdir -p "$(dir $@)"
+	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
+
+$(BITCOPY_BIN): $(BITCOPY_OBJ) $(OBJDIR)/src/bitcopy.o
+	@mkdir -p "$(dir $@)"
+	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
+
+$(RUNTIME_BIN): $(RUNTIME_OBJ) $(OBJDIR)/src/space_run.o $(EMULATOR_OBJS)
+	@mkdir -p "$(dir $@)"
+	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
+
+$(IO_PARTIAL_BIN): $(IO_PARTIAL_OBJ) $(addprefix $(OBJDIR)/,$(RUN_SRCS:.c=.o)) $(EMULATOR_OBJS)
+	@mkdir -p "$(dir $@)"
+	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
+
+test: bins $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(IO_PARTIAL_BIN)
 	./scripts/tdd/run_all.sh
 
-tdd: bins
-	./scripts/tdd/run_all.sh
+tdd: test
+
+test-rv32i-c: bins $(PROOF_BIN) $(IO_PARTIAL_BIN)
+	python3 tests/test_rv32i_c.py
+	python3 tests/test_rv32i_io_c.py
+	python3 tests/test_rv32i_stream.py
+	python3 tests/test_rv32i_memory.py --c
+
+pforth: bins
+	python3 scripts/pforth/build.py -o build/pforth/pforth.stream
+
+test-pforth: bins
+	python3 tests/test_pforth.py
+
+test-sanitize:
+	@mkdir -p "$(BINDIR)"
+	$(CC) $(CPPFLAGS) -O1 -g -std=c99 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer $(INCLUDES) tests/test_bitcopy.c src/bitcopy.c -o "$(BINDIR)/test_bitcopy_sanitize"
+	ASAN_OPTIONS=detect_leaks=0 "$(BINDIR)/test_bitcopy_sanitize"
+	$(CC) $(CPPFLAGS) -O1 -g -std=c99 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer $(INCLUDES) tests/test_space_runtime.c src/space_run.c src/space.c src/bitcopy.c -o "$(BINDIR)/test_space_runtime_sanitize"
+	ASAN_OPTIONS=detect_leaks=0 "$(BINDIR)/test_space_runtime_sanitize"
 
 clean:
 	rm -rf build tmp out
 
--include $(DEPS)
+-include $(SPACE_DEPS) $(ASM_DEPS) $(PROOF_DEPS) $(BITCOPY_OBJ:.o=.d) $(RUNTIME_OBJ:.o=.d) $(IO_PARTIAL_OBJ:.o=.d)

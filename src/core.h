@@ -1,0 +1,27 @@
+#ifndef CORE_H_
+#define CORE_H_
+
+#include "space.h"
+
+enum {
+  CORE_LAYER_BITS = 4 * INSTRUCTION_SIZE,
+  CORE_INPUT_BITS = ((CORE_LAYER_BITS + CHAR_BIT - 1) / CHAR_BIT + 1) * CHAR_BIT,
+  CORE_BUFFER_START = ((PROCESSOR_BITS + CHAR_BIT - 1) / CHAR_BIT) * CHAR_BIT,
+  CORE_STATUS_BITS = CEIL_LOG2_U32(2 * CORE_INPUT_BITS + 2),
+  CORE_ENTRY_SHIFT = CEIL_LOG2_U32(CORE_LAYER_BITS),
+  CORE_BOOT_BITS = 1u << CORE_ENTRY_SHIFT,
+  CORE_RESTART_START = CORE_BUFFER_START + CORE_BOOT_BITS,
+  CORE_TABLE_BITS = 1u << (CORE_STATUS_BITS + CORE_ENTRY_SHIFT),
+  CORE_TABLE_START = ((CORE_RESTART_START + CORE_LAYER_BITS + CORE_TABLE_BITS - 1)
+                      / CORE_TABLE_BITS) * CORE_TABLE_BITS,
+};
+
+typedef char core_configuration_valid[
+  (CORE_TABLE_START + CORE_TABLE_BITS <= SPACE_SIZE &&
+   CORE_INPUT_BITS < SPACE_SIZE / 2) ? 1 : -1];
+
+extern const size core[];
+int core_init(void);
+int core_load_file(const char *path);
+
+#endif

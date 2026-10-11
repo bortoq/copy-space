@@ -14,6 +14,24 @@
 - `src/tools/space.c` является активной точкой запуска проекта на стороне ОС;
 - `src/tools/vmrun.c` - legacy bootstrap helper, выведенный из active path.
 
+## Нерушимый функционал
+
+Функциональное поведение `space.*` не меняется.
+
+Запрещено менять:
+
+- семантику исполнения инструкций;
+- поведение `PC`;
+- поведение `stop reasons`;
+- поведение `trace`;
+- поведение `fault`;
+- формат состояния гостя;
+- порядок тиков;
+- поведение каналов;
+- поведение `MMIO`;
+- границы памяти `space`;
+- observable output любых proof-gates.
+
 Контракт стабилен:
 
 - Функциональное поведение эмулятора не меняется.
@@ -36,6 +54,48 @@
   - test harness internals.
 - Вся такая функциональность должна жить вне `space.*` и в отдельных source boundaries.
 - Legacy bootstrap helper не должен возвращаться в active path.
+
+## Разрешено
+
+Разрешены только:
+
+- улучшения производительности;
+- улучшения переносимости;
+- улучшения надежности;
+- улучшения диагностики;
+- улучшения сопровождаемости;
+- улучшения тестируемости.
+
+## Запрещено
+
+`space.*` не должен содержать или накапливать:
+
+- proof или checks;
+- alternative emulators;
+- `forth0`;
+- `RISC-V` toolchains;
+- orchestration code;
+- compiler/runtime helpers;
+- test harness internals;
+- loader/bootstrap logic;
+- любые новые guest semantics.
+
+Любая попытка добавить в `space.*` новую observable semantics или новую управляющую логику является отдельным проектным решением, а не рефакторингом.
+
+## Критерий изменения
+
+Если изменение меняет observable space semantics, оно запрещено без отдельного решения в `roadmap`.
+
+Если изменение не меняет observable semantics и относится только к:
+
+- performance,
+- portability,
+- reliability,
+- diagnostics,
+- maintainability,
+- testability,
+
+то оно допустимо.
 
 Эмулятор должен продолжать делать:
 

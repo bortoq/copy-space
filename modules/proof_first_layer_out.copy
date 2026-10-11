@@ -1,0 +1,15 @@
+; proof_first_layer_out.copy
+; Первый слой для доказательства загрузки образа через IN в PROCESSOR.
+; Ожидаемый результат:
+; 1. Ядро загружает этот слой в PROCESSOR.
+; 2. На следующем такте OUT возвращает байт 0x03 по адресу BUF_CONST.
+; 3. Слой зануляет свои 4 инструкции, чтобы после вывода они больше не исполнялись.
+
+BUF CORE_BUFFER_START
+BUF_CONST BUF+CORE_INPUT_BITS-8
+ZERO_SRC 131072
+
+0 0 0
+0 0 0
+8 BUF_CONST BUF_CONST
+CORE_LAYER_BITS PROCESSOR_START ZERO_SRC

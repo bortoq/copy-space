@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+sh scripts/tdd/run_rv32_space_closure.sh
+sh scripts/tdd/test_space_minimal_host_contract.sh
+sh scripts/tdd/test_resident_job_descriptor_proof.sh
+sh scripts/tdd/test_resident_job_selection_proof.sh
+sh scripts/tdd/test_resident_tool_invocation_proof.sh
+sh scripts/tdd/test_resident_toolchain_control_proof.sh
+sh scripts/tdd/test_resident_copicode_artifact_proof.sh
+sh scripts/tdd/test_resident_copicode_handoff_proof.sh
+sh scripts/tdd/test_resident_copicode_decision_records_proof.sh
+sh scripts/tdd/test_resident_copicode_toolchain_control_records_proof.sh
+sh scripts/tdd/test_resident_copicode_launch_completion_proof.sh
+sh scripts/tdd/test_resident_orchestration_runtime_boundary.sh
+sh scripts/tdd/test_resident_startup_contract.sh
+sh scripts/tdd/test_resident_orchestration_execution_runtime.sh
+sh scripts/tdd/test_resident_copy_scheduling_runtime.sh
+sh scripts/tdd/test_resident_test_orchestration_runtime.sh
+sh scripts/tdd/test_resident_host_dependency_collapse_contract.sh
+sh scripts/tdd/test_resident_host_independent_launch_slice.sh
+sh scripts/tdd/test_resident_launch_control_ownership.sh
+sh scripts/tdd/test_resident_copy_scheduling_ownership.sh
+sh scripts/tdd/test_resident_completion_bookkeeping_ownership.sh
+sh scripts/tdd/test_resident_job_selection_tool_dispatch_ownership.sh
+sh scripts/tdd/test_resident_control_plane_assembly.sh
+sh scripts/tdd/test_riscv_boundary_freeze.sh
+sh scripts/tdd/test_riscv_extraction_boundary.sh
+sh scripts/tdd/test_riscv_proof_tools_preparation.sh
+sh scripts/tdd/test_riscv_compute_backend.sh
+sh scripts/tdd/test_riscv_blocker_removal_plans.sh
+
+echo "OK anticrisis minimal baseline"

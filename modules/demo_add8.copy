@@ -1,0 +1,9 @@
+; demo_add8.copy
+; Bootstrap-слой для proof сложения 1+2 через LUT.
+
+include load_add8_lut.copy
+
+0 0 0
+LOAD_ADD8_LUT_BITS ADD8_IMAGE_BASE ADD8_IMAGE_BASE
+0 0 0
+ADD8_IMAGE_BITS PROCESSOR_START ADD8_IMAGE_BASE

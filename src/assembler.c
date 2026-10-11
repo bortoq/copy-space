@@ -2,6 +2,7 @@
  * ASSEMPLER
  *
  * copyright 2022-12-21, dmitri bortoq, mit license
+ * SPDX-License-Identifier: MIT
  */
 #include "core.h"
 #include <ctype.h>
@@ -243,8 +244,11 @@ static FILE *open_include(const char *base_path, const char *include_name, char 
   return fopen(resolved, "r");
 }
 
-static void emit_instruction(size_t *instruction_n, size a, size b, size c)
+static void emit_instruction(size_t *instruction_n, size a, size b, size c,
+                             const char *path, size_t line_no)
 {
+  if(*instruction_n >= PROCESSOR_N)
+    fail(path, line_no, "too many instructions (PROCESSOR_N limit)");
   size i = (size)*instruction_n;
   processor[i][0] = a;
   processor[i][1] = b;
@@ -281,7 +285,8 @@ static void compile_line(char *line, const char *path, size_t line_no, size_t *i
       fail(path, line_no, "copy requires 3 arguments");
     if(read_token(&p, extra, sizeof extra))
       fail(path, line_no, "extra token after instruction");
-  emit_instruction(instruction_n, (size)eval_expr(t1), (size)eval_expr(t2), (size)eval_expr(t3));
+    emit_instruction(instruction_n, (size)eval_expr(t1), (size)eval_expr(t2),
+                     (size)eval_expr(t3), path, line_no);
     return;
   }
   if(!read_token(&p, t1, sizeof t1))
@@ -295,7 +300,8 @@ static void compile_line(char *line, const char *path, size_t line_no, size_t *i
   }
   if(read_token(&p, extra, sizeof extra))
     fail(path, line_no, "extra token after instruction");
-  emit_instruction(instruction_n, (size)eval_expr(t0), (size)eval_expr(t1), (size)eval_expr(t2));
+  emit_instruction(instruction_n, (size)eval_expr(t0), (size)eval_expr(t1),
+                   (size)eval_expr(t2), path, line_no);
 }
 
 static void compile_file(FILE *in, const char *path, size_t *instruction_n)

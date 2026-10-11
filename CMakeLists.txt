@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.16)
 
 project(copy_space_native C)
 
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Put runtime binaries into the existing repo location used by scripts: build/bin
-set(_OUTDIR "${CMAKE_SOURCE_DIR}/build/bin")
+# With -B build, binaries have the same paths as the Make build.
+set(_OUTDIR "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${_OUTDIR}")
 foreach(cfg DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
   string(TOUPPER "${cfg}" cfg_u)
@@ -20,47 +20,35 @@ else()
   add_compile_options(-Wall -Wextra)
 endif()
 
-# -------------------- core VM library --------------------
+add_library(bitcopy STATIC src/bitcopy.c)
+target_include_directories(bitcopy PUBLIC "${CMAKE_SOURCE_DIR}/src")
+add_library(space_kernel STATIC src/space.c)
+target_link_libraries(space_kernel PUBLIC bitcopy)
+add_library(space_runtime STATIC src/space_run.c src/core.c src/space_trace.c)
+target_link_libraries(space_runtime PUBLIC space_kernel)
 
-set(VM_SRCS
-  src/vm/space.c
-  src/vm/invariants.c
-  src/vm/bitcpy.c
-)
+add_executable(space src/space_main.c)
+target_link_libraries(space PRIVATE space_runtime)
+add_executable(assembler src/assembler.c)
+target_link_libraries(assembler PRIVATE bitcopy)
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/src/vm/diag/vmrep.c")
-  list(APPEND VM_SRCS src/vm/diag/vmrep.c src/vm/diag/vmrep_attach.c)
+include(CTest)
+if(BUILD_TESTING)
+  find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+  add_executable(test_bitcopy tests/test_bitcopy.c)
+  target_link_libraries(test_bitcopy PRIVATE bitcopy)
+  add_test(NAME bitcopy COMMAND test_bitcopy)
+  add_executable(test_space_runtime tests/test_space_runtime.c)
+  target_link_libraries(test_space_runtime PRIVATE space_runtime)
+  add_test(NAME space_runtime COMMAND test_space_runtime)
+  add_executable(space_image_proof tests/space_image_proof.c)
+  target_link_libraries(space_image_proof PRIVATE space_runtime)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(test_rv32i_io_partial tests/test_rv32i_io_partial.c)
+    target_link_libraries(test_rv32i_io_partial PRIVATE space_runtime)
+  endif()
+  add_test(NAME assembler_limits
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_assembler.py"
+            --assembler "$<TARGET_FILE:assembler>"
+            --artifacts "${CMAKE_BINARY_DIR}/assembler-test-artifacts")
 endif()
-
-add_library(vmcore STATIC ${VM_SRCS})
-target_include_directories(vmcore PUBLIC
-  "${CMAKE_SOURCE_DIR}/src"
-  "${CMAKE_SOURCE_DIR}/src/vm"
-)
-
-# -------------------- tools (5 bins total) --------------------
-
-add_executable(vmrun src/tools/vmrun.c)
-target_link_libraries(vmrun PRIVATE vmcore)
-
-add_executable(vmprep_forth0 src/tools/vmprep_forth0.c)
-target_link_libraries(vmprep_forth0 PRIVATE vmcore)
-
-add_executable(forth0c src/tools/forth0c.c)
-target_link_libraries(forth0c PRIVATE vmcore)
-
-add_executable(mkbench_bulkcopy src/tools/mkbench_bulkcopy.c)
-target_link_libraries(mkbench_bulkcopy PRIVATE vmcore)
-
-file(GLOB MKIMAGE_STD7_FIXED_SRCS
-  "${CMAKE_SOURCE_DIR}/src/mkimage/mkimage_std7_fixed.c"
-  "${CMAKE_SOURCE_DIR}/src/mkimage/std7_fixed/*.c"
-)
-
-add_executable(mkimage_std7_fixed ${MKIMAGE_STD7_FIXED_SRCS})
-target_include_directories(mkimage_std7_fixed PRIVATE
-  "${CMAKE_SOURCE_DIR}/src"
-  "${CMAKE_SOURCE_DIR}/src/vm"
-  "${CMAKE_SOURCE_DIR}/src/mkimage/std7_fixed"
-)
-target_link_libraries(mkimage_std7_fixed PRIVATE vmcore)

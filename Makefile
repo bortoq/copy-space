@@ -38,7 +38,7 @@ RUNTIME_OBJ := $(OBJDIR)/tests/test_space_runtime.o
 IO_PARTIAL_BIN := $(BINDIR)/test_rv32i_io_partial
 IO_PARTIAL_OBJ := $(OBJDIR)/tests/test_rv32i_io_partial.o
 
-.PHONY: all bins clean test tdd test-sanitize test-rv32i-c pforth pforth-job test-pforth test-file-job
+.PHONY: all bins clean test test-clean tdd test-sanitize test-rv32i-c pforth pforth-job test-pforth test-file-job copy-c copy-c-job test-copy-c
 
 all: bins
 
@@ -72,7 +72,7 @@ $(IO_PARTIAL_BIN): $(IO_PARTIAL_OBJ) $(addprefix $(OBJDIR)/,$(RUN_SRCS:.c=.o)) $
 	@mkdir -p "$(dir $@)"
 	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
 
-test: bins $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(IO_PARTIAL_BIN)
+test: bins $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(IO_PARTIAL_BIN) test-clean
 	./scripts/tdd/run_all.sh
 
 tdd: test
@@ -97,14 +97,30 @@ test-file-job: bins
 test-pforth: bins
 	python3 tests/test_pforth.py
 
+copy-c: bins
+	python3 scripts/copy_c/build.py -o build/copy-c/compiler.stream
+
+COPY_C_SOURCE ?= examples/copy_c/sum.c
+COPY_C_JOB ?= build/copy-c/job.in
+copy-c-job: copy-c
+	python3 scripts/copy_c/job.py "$(COPY_C_SOURCE)" -o "$(COPY_C_JOB)"
+
+test-copy-c: copy-c
+	python3 tests/test_copy_c.py
+
 test-sanitize:
 	@mkdir -p "$(BINDIR)"
 	$(CC) $(CPPFLAGS) -O1 -g -std=c99 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer $(INCLUDES) tests/test_bitcopy.c src/bitcopy.c -o "$(BINDIR)/test_bitcopy_sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(BINDIR)/test_bitcopy_sanitize"
 	$(CC) $(CPPFLAGS) -O1 -g -std=c99 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer $(INCLUDES) tests/test_space_runtime.c src/space_run.c src/space.c src/bitcopy.c -o "$(BINDIR)/test_space_runtime_sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(BINDIR)/test_space_runtime_sanitize"
+	$(CC) $(CPPFLAGS) -O1 -g -std=c99 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer $(INCLUDES) src/assembler.c src/bitcopy.c -o "$(BINDIR)/assembler_sanitize"
+	ASAN_OPTIONS=detect_leaks=0 python3 tests/test_assembler.py --assembler "$(BINDIR)/assembler_sanitize"
 
 clean:
-	rm -rf build tmp out
+	python3 scripts/clean.py
+
+test-clean:
+	python3 tests/test_clean.py
 
 -include $(SPACE_DEPS) $(ASM_DEPS) $(PROOF_DEPS) $(BITCOPY_OBJ:.o=.d) $(RUNTIME_OBJ:.o=.d) $(IO_PARTIAL_OBJ:.o=.d)

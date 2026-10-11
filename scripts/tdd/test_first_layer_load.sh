@@ -15,14 +15,14 @@ build/bin/space_image_proof \
   --out "$out_bin" \
   --ticks 3
 
-got_hex="$(xxd -p "$out_bin" | tr -d '\n')"
+got_hex="$(python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_bytes().hex())' "$out_bin")"
 [ "$got_hex" = "03" ] || {
   echo "FAIL: expected OUT=03 got=${got_hex:-<empty>}" >&2
   exit 1
 }
 
 build/bin/space < "$layer_bin" > "$space_out_bin"
-space_hex="$(xxd -p "$space_out_bin" | tr -d '\n')"
+space_hex="$(python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_bytes().hex())' "$space_out_bin")"
 [ "$space_hex" = "03" ] || {
   echo "FAIL: expected space OUT=03 got=${space_hex:-<empty>}" >&2
   exit 1

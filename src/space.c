@@ -2,6 +2,7 @@
  * EMULATION OF PARALLEL ADDRESS SPACE
  *
  * copyright 2022-12-17, dmitri bortoq, mit license
+ * SPDX-License-Identifier: MIT
  */
 #include "space.h"
 

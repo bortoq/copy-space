@@ -2,6 +2,7 @@
  * ADDRESS SPACE DEFINITIONS
  *
  * copyright 2024-10-31, dmitri bortoq, mit license
+ * SPDX-License-Identifier: MIT
  */
 #ifndef SPACE_H_
 #define SPACE_H_

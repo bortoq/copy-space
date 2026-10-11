@@ -11,9 +11,28 @@ bak/
 *.dylib
 *.bin
 *.elf
+*.core
+*.stream
+*.d
+*.gcda
+*.gcno
+*.gcov
+*.bin.json
+*.core.json
+*.stream.json
+*.build/
+/job.in
+/job.in.json
+
+# Downloaded installers
+*.deb
 
 # Logs and output
 *.log
+*.log.gz
+*.out
+trace*.txt
+trace*.txt.gz
 *.meta
 *.csv
 
@@ -39,11 +58,25 @@ __pycache__/
 .Python
 *.egg-info/
 dist/
-build/
+
+# CMake/Ninja artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+install_manifest.txt
+build.ninja
+.ninja_deps
+.ninja_log
 
 # Testing artifacts
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
 
 # OS-specific

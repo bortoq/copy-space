@@ -1,0 +1,6 @@
+Copy-Space
+
+Project files without separate license notices are licensed under Apache-2.0.
+src/space.c, src/space.h and src/assembler.c retain their MIT license and
+Dmitri Bortoq copyright notices. See LICENSING.md and LICENSES/MIT.txt.
+pForth retains the terms in third_party/pforth/license.txt.

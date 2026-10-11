@@ -11,23 +11,25 @@ from pathlib import Path
 from common import ROOT, PORT, UPSTREAM, REVISION, sources, flags
 
 
-def prepare(output):
+def prepare(output, additions=(), extra_cflags=(), artifacts=None):
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    artifacts = ROOT / "tmp/pforth-prepare"
+    artifacts = artifacts or ROOT / "tmp/pforth-prepare"
     artifacts.mkdir(parents=True, exist_ok=True)
     source = (UPSTREAM / "fth/system.fth").read_bytes()
     marker = b"\\ Auto Initialization"
     if source.count(marker) != 1:
         raise ValueError("pinned system.fth boundary changed")
     source = source[:source.index(marker)]
+    for path in additions:
+        source += b"\n" + path.read_bytes() + b"\n"
     (artifacts / "system-input.fth").write_bytes(source)
     executable = artifacts / "prepare32"
     command = shlex.split(os.environ.get("CC", "cc")) + [
         "-m32", "-O2", "-std=c99", "-ffreestanding", "-nostdlib", "-fno-pie", "-no-pie",
         "-fno-stack-protector", "-Wall", "-Wextra", "-Werror",
         "-Wl,--build-id=none", "-Wl,-e,_start",
-    ] + flags(True) + [str(path) for path in sources(True)] + ["-o", str(executable)]
+    ] + flags(True) + list(extra_cflags) + [str(path) for path in sources(True)] + ["-o", str(executable)]
     (artifacts / "compile.json").write_text(json.dumps(command, indent=2)+"\n")
     result = subprocess.run(command, capture_output=True)
     (artifacts / "compile.stderr").write_bytes(result.stderr)

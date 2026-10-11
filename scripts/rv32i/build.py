@@ -13,8 +13,8 @@ from rv32i_toolchain import Toolchain
 
 
 def build(sources, output, optimization="-O2", compiler=None, stack=None, stream=False,
-          memory_bytes=MEMORY_BYTES, *, extra_cflags=()):
-    generator = Image(io=True, memory_bytes=memory_bytes).build()
+          memory_bytes=MEMORY_BYTES, *, extra_cflags=(), report_status=False):
+    generator = Image(io=True, memory_bytes=memory_bytes, report_status=report_status).build()
     if stack is None:
         stack = memory_bytes-16
     if not 1024 < stack <= memory_bytes or stack % 16:
@@ -59,12 +59,13 @@ def main():
     parser.add_argument("--optimization", choices=["O0", "O1", "O2", "O3", "Os"], default="O2")
     parser.add_argument("--compiler")
     parser.add_argument("--stream", action="store_true", help="produce a checked IN stream instead of a core image")
+    parser.add_argument("--report-status", action="store_true", help="emit a terminal OUT record inside space")
     parser.add_argument("--stack", type=lambda text: int(text, 0))
     parser.add_argument("--memory-bytes", type=lambda text: int(text, 0), default=MEMORY_BYTES)
     args = parser.parse_args()
     try:
         build(args.sources, args.output, "-"+args.optimization, args.compiler, args.stack,
-              args.stream, args.memory_bytes)
+              args.stream, args.memory_bytes, report_status=args.report_status)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, str(error)+"\n")
 

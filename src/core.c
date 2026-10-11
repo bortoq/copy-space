@@ -26,14 +26,22 @@ int core_init(void)
 {
   const size activate[] = {0, 0, 0, 0, 0, 0, 0, 0, 0,
                           CORE_LAYER_BITS, PROCESSOR_START, CORE_BUFFER_START};
+  const size failure[] = {0, 0, 0, 0, 0, 0,
+                         CORE_ERROR_MESSAGE_BITS, CORE_ERROR_MESSAGE_START, 0,
+                         CORE_LAYER_BITS, PROCESSOR_START, CORE_ERROR_ZERO_START};
   size_t bytes = (CORE_TABLE_START + CORE_TABLE_BITS + CHAR_BIT - 1) / CHAR_BIT;
+  size entry;
   unsigned char *image = calloc(bytes, 1);
   int result;
   if(!image)
     return -1;
   encode(image, PROCESSOR_START, core);
   encode(image, CORE_RESTART_START, core);
-  encode(image, CORE_TABLE_START + 2 * CORE_INPUT_BITS * CORE_BOOT_BITS, activate);
+  memcpy(image + CORE_ERROR_MESSAGE_START / CHAR_BIT,
+         CORE_ERROR_MESSAGE, sizeof CORE_ERROR_MESSAGE - 1);
+  for(entry = 0; entry < (1u << CORE_STATUS_BITS); ++entry)
+    encode(image, CORE_TABLE_START + entry * CORE_BOOT_BITS,
+           entry == 2 * CORE_INPUT_BITS ? activate : failure);
   result = space_init(image, bytes);
   free(image);
   return result;

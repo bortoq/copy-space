@@ -26,6 +26,8 @@ SCRATCH = 0x21000
  COND, REDUCE, ULT, SLT, EQUAL, RD_ADDRESS, JUMP, DISCARD, SHIFT0,
  SHIFT1) = (SCRATCH + 32*i for i in range(22))
 IO_STATUS = SCRATCH + 22*32
+REPORT_DETAIL = SCRATCH + 23*32
+REPORT_BUFFER = SCRATCH + 24*32
 
 
 @dataclass(eq=False)
@@ -47,11 +49,12 @@ class Field:
 class Image:
     def __init__(self, state_output=False, io=False, *, code_base=CODE,
                  constant_base=0x24000, table_base=0x30000, code_limit=MEMORY,
-                 memory_bytes=MEMORY_BYTES):
-        if state_output and io:
-            raise ValueError("--io and --state-output cannot share OUT")
+                 memory_bytes=MEMORY_BYTES, report_status=False):
+        if state_output and (io or report_status):
+            raise ValueError("--state-output cannot share OUT with I/O or status reports")
         self.state_output = state_output
         self.io = io
+        self.report_status = report_status
         if memory_bytes not in (65536, 131072, 262144, 524288):
             raise ValueError("guest memory must be 65536, 131072, 262144 or 524288 bytes")
         self.memory_bytes = memory_bytes
@@ -77,6 +80,30 @@ class Image:
             if self.constant_end > self.constant_limit:
                 raise ValueError("constant region exhausted")
         return self.constants[value]
+
+    def literal(self, raw):
+        address = self.constant_end
+        self.constant_end += len(raw)*8
+        if self.constant_end > self.constant_limit:
+            raise ValueError("constant region exhausted")
+        value = sum(((raw[i//8] >> (7-i%8)) & 1) << i for i in range(len(raw)*8))
+        self.data.append((address, len(raw)*8, value))
+        return address
+
+    def build_report(self, stage, status=STATUS, detail=REPORT_DETAIL):
+        template = b"\n[space:"+stage.encode("ascii")+b":00000000:00000000]\n"
+        # LUT output is an ordinary ASCII byte, not a packed RV32I integer.
+        digits = self.table([int(f"{c:08b}"[::-1], 2) for c in b"0123456789ABCDEF"], 3)
+        self.start("report_prepare")
+        self.emit(len(template)*8, REPORT_BUFFER, self.literal(template))
+        for source, offset in [(status, 10), (detail, 19)]:
+            for digit in range(8):
+                self.lookup(REPORT_BUFFER+(offset+digit)*8, digits,
+                            list(range(source+(7-digit)*4, source+(8-digit)*4)), 8, 3)
+        self.jump("report_out")
+        self.start("report_out")
+        self.channels["report_out"] = (2, Copy(len(template)*8, REPORT_BUFFER, 0))
+        self.blocks[self.current] = ([], Copy(LAYER_BITS, 0, ZERO))
 
     def table(self, values, stride=5):
         size = len(values) << stride
@@ -402,12 +429,16 @@ class Image:
                                      "store_access", "store_align"], 1):
             self.start(name)
             self.emit(32, STATUS, self.constant(code))
-            self.jump("halt")
+            if self.report_status:
+                self.emit(32, REPORT_DETAIL, PC)
+            self.jump("report_prepare" if self.report_status else "halt")
         self.start("halt")
         # No link: this copy clears all PROCESSOR slots after the final OUT.
         self.blocks[self.current] = ([], Copy(LAYER_BITS, 0, ZERO))
         if self.io:
             self.build_io()
+        if self.report_status:
+            self.build_report("R")
         return self
 
     def build_io(self):
@@ -458,7 +489,9 @@ class Image:
         self.start("io_exit")
         self.emit(32, EXIT_CODE, a0)
         self.emit(32, STATUS, self.constant(10))
-        self.jump("halt")
+        if self.report_status:
+            self.emit(32, REPORT_DETAIL, a0)
+        self.jump("report_prepare" if self.report_status else "halt")
 
     def encode(self, program=b"", entry=0, registers=None, *, initial_label="fetch",
                image_bytes=None):
@@ -534,6 +567,7 @@ class Image:
             "space_bytes": SPACE_BYTES, "processor_n": SLOTS, "layer_bits": LAYER_BITS,
             "registers_bit": REGS, "pc_bit": PC, "status_bit": STATUS,
             "io": self.io, "exit_code_bit": EXIT_CODE,
+            "report_status": self.report_status,
             "guest_memory_bit": MEMORY, "guest_memory_bytes": self.memory_bytes,
             "initial_stack": registers.get(2, 0),
             "state_output": self.state_output, "frame_bits": FRAME_BITS,
@@ -555,9 +589,11 @@ def main():
     parser.add_argument("--memory-bytes", type=lambda value: int(value, 0), default=MEMORY_BYTES)
     parser.add_argument("--state-output", action="store_true")
     parser.add_argument("--io", action="store_true", help="enable read/write/exit ECALL profile")
+    parser.add_argument("--report-status", action="store_true")
     args = parser.parse_args()
     try:
-        image, manifest = Image(args.state_output, args.io, memory_bytes=args.memory_bytes).build().encode(
+        image, manifest = Image(args.state_output, args.io, memory_bytes=args.memory_bytes,
+                                report_status=args.report_status).build().encode(
             args.program.read_bytes(), args.entry,
             None if args.stack is None else {2: args.stack})
     except (OSError, ValueError) as error:

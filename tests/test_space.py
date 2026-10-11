@@ -77,7 +77,13 @@ raw, out, _ = run("initial", b"", 0, completed=0)
 expected = bytearray(SPACE_BYTES)
 expected[:36] = instructions(CORE)
 expected[2336:2336+36] = instructions(CORE)
-expected[103424:103424+36] = instructions([NOP, NOP, NOP, (284, 0, 18176)])
+core_error = b"\n[space:C:00000001:00000000]\n"
+expected[2372:2372+len(core_error)] = core_error
+for entry in range(1024):
+    at = 65536+entry*64
+    rows = ([NOP, NOP, NOP, (284, 0, 18176)] if entry == 592 else
+            [NOP, NOP, (232, 18976, 0), (284, 0, 19208)])
+    expected[at:at+36] = instructions(rows)
 initial_space = bytes(expected)
 assert raw == expected and out == b""
 

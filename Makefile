@@ -38,7 +38,7 @@ RUNTIME_OBJ := $(OBJDIR)/tests/test_space_runtime.o
 IO_PARTIAL_BIN := $(BINDIR)/test_rv32i_io_partial
 IO_PARTIAL_OBJ := $(OBJDIR)/tests/test_rv32i_io_partial.o
 
-.PHONY: all bins clean test tdd test-sanitize test-rv32i-c pforth test-pforth
+.PHONY: all bins clean test tdd test-sanitize test-rv32i-c pforth pforth-job test-pforth test-file-job
 
 all: bins
 
@@ -85,6 +85,14 @@ test-rv32i-c: bins $(PROOF_BIN) $(IO_PARTIAL_BIN)
 
 pforth: bins
 	python3 scripts/pforth/build.py -o build/pforth/pforth.stream
+
+TASK ?= examples/pforth/demo.fth
+JOB ?= build/pforth/job.in
+pforth-job: bins
+	python3 scripts/pforth/build.py --task "$(TASK)" -o "$(JOB)"
+
+test-file-job: bins
+	python3 tests/test_file_job.py
 
 test-pforth: bins
 	python3 tests/test_pforth.py

@@ -12,6 +12,7 @@ from rv32i_stream import encode_stream
 ROOT = Path("tmp/space-tests/rv32i-stream")
 ROOT.mkdir(parents=True, exist_ok=True)
 cases = 0
+CORE_ERROR = b"\n[space:C:00000001:00000000]\n"
 
 
 def word(raw, address):
@@ -62,11 +63,11 @@ assert f"{manifest['labels']['add']}\n" in trace
 
 # Standard core rejects every possible incomplete first installation record.
 for count in range(37):
-    raw, trace = run(f"first-short-{count}", packet[:count], 0)
-    assert trace.endswith("stop 1 idle\n")
-run("first-device-error", b"", 0, input_path=ROOT)
-run("later-record-short", packet[:37+20], 0)
-run("last-record-short", packet[:manifest["installation_bytes"]-1], 0)
+    raw, trace = run(f"first-short-{count}", packet[:count], 0, CORE_ERROR)
+    assert trace.endswith("stop 2 idle\n")
+run("first-device-error", b"", 0, CORE_ERROR, input_path=ROOT)
+run("later-record-short", packet[:37+20], 0, CORE_ERROR)
+run("last-record-short", packet[:manifest["installation_bytes"]-1], 0, CORE_ERROR)
 
 installed = manifest["installation_bytes"]
 header_at = manifest["header_offset"]

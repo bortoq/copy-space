@@ -6,7 +6,7 @@ from pathlib import Path
 
 from rv32i import (Image, Copy, Field, N_BITS, ADDRESS_BITS, INSN_BITS,
                    LAYER_BITS, SPACE_BYTES, REGS, PC, STATUS, MEMORY, MEMORY_BYTES,
-                   ZERO, IO_STATUS, COND, CARRY, EA, IMM)
+                   ZERO, IO_STATUS, COND, CARRY, EA, IMM, REPORT_DETAIL)
 
 CORE_BUFFER = LAYER_BITS
 CORE_RESTART = CORE_BUFFER + 512
@@ -30,9 +30,10 @@ def record(rows):
 
 
 class Loader(Image):
-    def __init__(self, cpu_bytes, first_cpu_layer, memory_bytes):
+    def __init__(self, cpu_bytes, first_cpu_layer, memory_bytes, report_status=False):
         super().__init__(code_base=LOADER_CODE, constant_base=CONSTANT_BASE,
-                         table_base=TABLE_BASE, code_limit=HEADER, memory_bytes=memory_bytes)
+                         table_base=TABLE_BASE, code_limit=HEADER, memory_bytes=memory_bytes,
+                         report_status=report_status)
         self.start("handoff")
         self.jump("cpu")
         self.start("cpu")
@@ -75,9 +76,13 @@ class Loader(Image):
                                     Copy(LAYER_BITS, 0, first_cpu_layer))
         self.start("load_error")
         self.emit(32, STATUS, self.constant(11))
-        self.jump("halt")
+        if report_status:
+            self.emit(32, REPORT_DETAIL, self.constant(0))
+        self.jump("report_prepare" if report_status else "halt")
         self.start("halt")
         self.blocks[self.current] = ([], Copy(LAYER_BITS, 0, ZERO))
+        if report_status:
+            self.build_report("L")
 
     def read(self, name, bits, destination):
         channel = Copy(bits, destination, 0)
@@ -96,7 +101,8 @@ def encode_stream(cpu_image, cpu_manifest, program):
         raise ValueError("program length/entry is outside the stream contract")
     cpu_end = cpu_manifest["code_end_bit"]//8
     cpu = cpu_image[REGS//8:cpu_end]
-    loader, layout = Loader(len(cpu), cpu_manifest["labels"]["fetch"], memory_bytes).encode(
+    loader, layout = Loader(len(cpu), cpu_manifest["labels"]["fetch"], memory_bytes,
+                            cpu_manifest.get("report_status", False)).encode(
         registers={}, initial_label="handoff", image_bytes=SPACE_BYTES)
     installation = bytearray()
     # Only nonzero chunks need installation into initially zero memory.
@@ -136,10 +142,12 @@ def main():
     parser.add_argument("--stack", type=lambda s: int(s, 0))
     parser.add_argument("--memory-bytes", type=lambda s: int(s, 0), default=MEMORY_BYTES)
     parser.add_argument("--io", action="store_true")
+    parser.add_argument("--report-status", action="store_true")
     args = parser.parse_args()
     try:
         program = args.program.read_bytes()
-        cpu, manifest = Image(io=args.io, memory_bytes=args.memory_bytes).build().encode(
+        cpu, manifest = Image(io=args.io, memory_bytes=args.memory_bytes,
+                              report_status=args.report_status).build().encode(
             program, args.entry, None if args.stack is None else {2: args.stack})
         packet, manifest = encode_stream(cpu, manifest, program)
         args.output.write_bytes(packet)

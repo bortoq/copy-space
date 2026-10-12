@@ -24,10 +24,9 @@ valid = [
 invalid = [
     ("designator-index-overflow", b'int a[2]={[2]=7};int main(){return 0;}'),
     ("designator-index-negative", b'int a[2]={[-1]=7};int main(){return 0;}'),
+    ("designator-index-wrap", b'int a[2]={[1073741824]=7};int main(){return 0;}'),
     ("designator-unknown-member", b'struct S{int x;}s={.y=7};int main(){return 0;}'),
     ("designator-nonconstant", b'int x=1;int a[2]={[x]=7};int main(){return 0;}'),
-    ("designator-nested-array-pending", b'int a[2][2]={[1][0]=7};int main(){return 0;}'),
-    ("designator-nested-member-pending", b'struct S{int a[2];}s={.a[1]=7};int main(){return 0;}'),
     ("designator-range-pending", b'int a[3]={[0 ... 2]=7};int main(){return 0;}'),
     ("designator-static-capacity", b'int a[1025];int main(){return 0;}'),
 ]

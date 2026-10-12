@@ -128,6 +128,7 @@ variable cc-data
 variable cc-origin
 create cc-fold-flags 2048 allot
 create cc-fold-values 2048 cells allot
+create cc-pointer-origins 2048 cells allot
 create cc-literal-values 512 cells allot
 : cc-current ( -- target ) cc-layer @ cc-layer-bits * cc-origin @ + ;
 : cc-new 1 cc-layer +! cc-layer @ cc-layer-max >= cc-limit 3 cc-slot ! ;
@@ -156,6 +157,7 @@ create cc-literal-values 512 cells allot
   cc-data @ 31 + 31 invert and cc-data !
   cc-data @ 32 + 147456 > cc-limit
   0 cc-fold-flags cc-data @ cc-data-base - 8 / + c!
+  0 cc-pointer-origins cc-data @ cc-data-base - 8 / cells + !
   cc-data @ 32 cc-data +! ;
 : cc-const ( value -- target )
   cc-constants @ 32 cc-constants +!
@@ -819,6 +821,15 @@ defer cc-qualify-array
 : cc-fold@ ( source -- bits )
   dup cc-frame? if cc-data-base - 8 / cells cc-fold-values + @ else
     cc-constant-base - 32 / cells cc-literal-values + @ then ;
+: cc-pointer-origin ( pointer -- origin )
+  dup cc-type cc-kind 3 = if
+    dup cc-lvalue 2 = if cc-lvalue-pointer @ recurse then exit then
+  dup cc-lvalue 0<> if drop 0 exit then
+  dup cc-known? if cc-fold@ 8 * exit then
+  dup cc-frame? if cc-data-base - 8 / cells cc-pointer-origins + @ else drop 0 then ;
+: cc-pointer-origin! ( origin pointer -- ) cc-data-base - 8 / cells cc-pointer-origins + ! ;
+: cc-object-origin ( target -- origin )
+  dup cc-lvalue 2 = if cc-lvalue-pointer @ cc-pointer-origin then ;
 : cc-fold! ( bits target -- )
   cc-data-base - 8 / dup cc-fold-flags + 1 swap c!
   cells cc-fold-values + ! ;
@@ -873,7 +884,8 @@ defer cc-qualify-array
   width 32 = if 32 value source cc-op else
     32 value cc-zero @ cc-op width value source cc-op
     type cc-signed? if 32 width do 1 value i + source width 1- + cc-op loop then
-  then source type value cc-fold-load value ;
+  then source type value cc-fold-load
+  type cc-kind 1 = source cc-lvalue 0= and if source cc-pointer-origin value cc-pointer-origin! then value ;
 defer cc-decay
 ' cc-raw-value is cc-decay
 defer cc-indirect-value
@@ -1112,6 +1124,7 @@ variable cc-loop-level
   cc-cell L{ target result }
   target cc-lvalue 2 = if
     32 result target cc-lvalue-pointer @ cc-value cc-op
+    target cc-lvalue-pointer @ cc-pointer-origin result cc-pointer-origin!
     target cc-lvalue-pointer @ dup cc-known? if cc-fold@ result cc-fold! else drop then
     result target cc-type cc-pointer-to cc-type! result exit then
   target cc-static-base >= target cc-data-base < and if
@@ -1120,6 +1133,7 @@ variable cc-loop-level
     result target cc-type cc-pointer-to cc-type! result exit then
   32 result target cc-data-base - cc-stack-base + 8 / cc-const cc-op
   10 result 11 + cc-sp 14 + cc-op
+  target result cc-pointer-origin!
   result target cc-type cc-pointer-to cc-type! result ;
 : cc-decay-body ( source -- pointer )
   dup cc-type cc-kind 3 = if
@@ -1277,12 +1291,17 @@ variable cc-loop-level
   lhs cc-pointer? if
     lhs rhs lhs cc-pointee-size cc-scale-index
     token 43 = if cc-add-entry @ else cc-sub-entry @ then
-    cc-invoke dup lhs cc-effective-type cc-unqualified cc-type! exit
+    cc-invoke 5 (local!) result lhs cc-effective-type cc-unqualified cc-type!
+    lhs cc-pointer-origin rhs cc-known? and if
+      rhs cc-fold@ lhs cc-pointee-size * 8 * token 45 = if negate then
+      lhs cc-pointer-origin + result cc-pointer-origin! then result exit
   then
   rhs cc-pointer? if
     token 43 <> if s" cannot subtract pointer from int" cc-fail then
     rhs lhs rhs cc-pointee-size cc-scale-index cc-add-entry @ cc-invoke
-    dup rhs cc-effective-type cc-unqualified cc-type! exit
+    5 (local!) result rhs cc-effective-type cc-unqualified cc-type!
+    rhs cc-pointer-origin lhs cc-known? and if
+      lhs cc-fold@ rhs cc-pointee-size * 8 * rhs cc-pointer-origin + result cc-pointer-origin! then result exit
   then
   lhs rhs token 43 = if cc-add-entry @ else cc-sub-entry @ then cc-integer-op ;
  : cc-subscript-body ( base -- value )
@@ -1570,7 +1589,8 @@ variable cc-constant-type
 : cc-field-view ( pointer index -- value ) 0 0 L{ pointer index quals result }
   pointer cc-type cc-pointee cc-quals 3 (local!)
   cc-cell 4 (local!) result 6 cc-pointer-to cc-type! 32 result pointer cc-op
-  pointer 6 cc-pointer-to result cc-fold-load result 1 (local!)
+  pointer 6 cc-pointer-to result cc-fold-load
+  pointer cc-pointer-origin result cc-pointer-origin! result 1 (local!)
   pointer cc-member-offsets index cells + @ cc-const 43 cc-additive-op 1 (local!)
   pointer cc-member-types index + c@ quals cc-qualify cc-pointer-to cc-type!
   pointer cc-pointer-read ;
@@ -1782,19 +1802,53 @@ variable cc-generic-depth
   cc-truth cc-branch dup 32 + head cc-patch cc-current cc-patch
   condition cc-current breaks continues cc-loop-finish ;
 : cc-declarator-type ( base -- type ) cc-read-stars ;
+create cc-union-origins 4096 cells allot
+create cc-union-members 4096 cells allot
+create cc-union-types 4096 cells allot
+variable cc-union-count
+: cc-union-wipe ( target bytes -- ) 0 L{ target bytes origin }
+  cc-union-count @ 0= if exit then target cc-object-origin 3 (local!)
+  origin 0= if s" unknown initializer destination" cc-fail then
+  cc-union-count @ 0 ?do
+    cc-union-origins i cells + @ dup origin >=
+    swap cc-union-types i cells + @ cc-size 8 * + origin bytes 8 * + <= and if
+      -1 cc-union-members i cells + ! then
+  loop ;
 : cc-clear-object ( target bytes -- ) L{ target bytes }
+  target bytes cc-union-wipe
   cc-static-initializing @ if target cc-static-location cc-image-base - 8 / cc-image +
     bytes 0 fill exit then
   bytes 0 ?do 8 target i 8 * + cc-zero @ cc-op loop ;
+: cc-union-slot ( target -- slot ) dup cc-object-origin swap cc-type cc-unqualified L{ origin type }
+  origin 0= if s" unknown initializer destination" cc-fail then
+  cc-union-count @ 0 ?do cc-union-origins i cells + @ origin =
+    cc-union-types i cells + @ type = and if i unloop exit then loop
+  cc-union-count @ 4096 >= cc-limit
+  origin cc-union-origins cc-union-count @ cells + !
+  type cc-union-types cc-union-count @ cells + !
+  -1 cc-union-members cc-union-count @ cells + !
+  cc-union-count @ 1 cc-union-count +! ;
+: cc-select-union ( target member -- ) 0 L{ target member slot }
+  target cc-union-slot 3 (local!)
+  cc-union-members slot cells + @ member = if exit then
+  target target cc-type cc-size cc-clear-object member cc-union-members slot cells + ! ;
 : cc-scalar-initializer ( -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-expression then ;
 : cc-initialize-write ( target value -- value )
   1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
 defer cc-initialize-object
-: cc-designator-equal
-  cc-token @ dup 46 = swap 91 = or if s" nested designator pending" cc-fail then
-  61 cc-expect ;
+: cc-designator? cc-token @ dup 46 = swap 91 = or ;
+: cc-initialize-chain ( target -- )
+  dup cc-type cc-kind 3 = if cc-token @ 91 <> if s" expected array designator" cc-fail then else
+    dup cc-type cc-record? 0= if s" designator into scalar" cc-fail then
+    cc-token @ 46 <> if s" expected member designator" cc-fail then then
+  cc-nest cc-initialize-object cc-unnest ;
+: cc-initialize-view ( view designated -- ) L{ view designated }
+  designated if cc-designator? if view cc-initialize-chain exit then 61 cc-expect then
+  view cc-type dup cc-kind 3 = swap cc-record? or if
+    view view cc-type cc-size cc-clear-object view cc-initialize-object else
+    view cc-scalar-initializer cc-initialize-write drop then ;
 : cc-initializer-comma ( braces -- continue )
   if cc-next -1 exit then
   cc-token-start @ >r cc-next
@@ -1821,23 +1875,22 @@ defer cc-initialize-object
     cc-cell dup 4 cc-type! dup 32 swap cc-zero @ cc-op
     dup 8 swap start i 8 * + cc-op pointer swap cc-initialize-write drop
   loop ;
-: cc-initialize-array ( target -- ) 0 0 0 0 L{ target type index pointer braces }
+: cc-initialize-array ( target -- ) 0 0 0 0 0 L{ target type index pointer braces designated }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   braces if cc-next then
   cc-token @ 34 = type cc-pointee cc-kind dup 0= swap 6 = or and if target cc-initialize-string
     braces if cc-token @ 44 = if cc-next then 125 cc-expect then exit then
   begin cc-token @ 125 <> while
-    cc-token @ 91 = if cc-next cc-read-constant 3 (local!) 93 cc-expect cc-designator-equal then
+    cc-token @ 91 = 6 (local!)
+    designated if cc-next cc-read-constant 3 (local!) 93 cc-expect then
     index 0< if s" negative initializer index" cc-fail then
-    index type cc-pointee cc-size * type cc-size >= if
-      braces if s" too many array initializers" cc-fail else exit then then
+    index type cc-size type cc-pointee cc-size / >= if
+      braces designated or if s" too many array initializers" cc-fail else exit then then
     target cc-decay index cc-const 43 cc-additive-op 4 (local!)
-    type cc-pointee dup cc-kind 3 = swap cc-record? or if
-      pointer cc-pointer-read dup dup cc-type cc-size cc-clear-object cc-initialize-object else
-      pointer cc-pointer-read cc-scalar-initializer cc-initialize-write drop then
+    pointer cc-pointer-read designated cc-initialize-view
     index 1+ 3 (local!)
     cc-token @ 44 = if
-      braces 0= index type cc-pointee cc-size * type cc-size >= and if exit then
+      braces 0= index type cc-size type cc-pointee cc-size / >= and if exit then
       braces cc-initializer-comma 0= if exit then
     else cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
   repeat braces if cc-next then ;
@@ -1848,21 +1901,21 @@ defer cc-initialize-object
       number 0= if i unloop exit then number 1- 2 (local!)
     then
   loop -1 ;
-: cc-initialize-record ( target -- ) 0 0 0 0 0 L{ target type number member braces view }
+: cc-initialize-record ( target -- ) 0 0 0 0 0 0 L{ target type number member braces view designated }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   braces if cc-next then
   begin cc-token @ 125 <> while
-    cc-token @ 46 = if cc-next type cc-find-member 4 (local!)
+    cc-token @ 46 = 7 (local!)
+    designated if cc-next type cc-find-member 4 (local!)
       member 0< if s" unknown initializer member" cc-fail then
-      type member cc-member-ordinal 3 (local!) cc-next cc-designator-equal
-      type cc-kind 5 = if target type cc-size cc-clear-object then
+      type member cc-member-ordinal 3 (local!) cc-next
     else type number cc-member-number 4 (local!)
       member 0< type cc-kind 5 = number 0<> and or if
         braces if s" too many aggregate initializers" cc-fail else exit then then then
+    type cc-kind 5 = if target member cc-select-union then
     target cc-address member cc-field-view 6 (local!)
-    view cc-type dup cc-kind 3 = swap cc-record? or if
-      view view cc-type cc-size cc-clear-object view cc-initialize-object else
-      view cc-scalar-initializer cc-initialize-write drop then
+    view designated cc-initialize-view
+    type cc-kind 5 = if member cc-union-members target cc-union-slot cells + ! then
     number 1+ 3 (local!)
     cc-token @ 44 = if
       braces 0= if type number cc-member-number 0< type cc-kind 5 = or if exit then then
@@ -2161,6 +2214,7 @@ defer cc-initialize-object
   0 cc-generic-depth !
   0 cc-initializing !
   0 cc-static-initializing !
+  0 cc-union-count ! cc-pointer-origins 2048 cells 0 fill
   0 cc-alias-count ! 0 cc-symbol-count !
   0 cc-global-ref-count ! cc-global-state 128 0 fill
   0 cc-global-evaluation-level !

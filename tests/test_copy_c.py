@@ -30,6 +30,7 @@ from copy_c_static_pointer_cases import valid as static_pointer_valid, invalid a
 from copy_c_linkage_cases import valid as linkage_valid, invalid as linkage_invalid
 from copy_c_global_aggregate_cases import valid as global_aggregate_valid, invalid as global_aggregate_invalid
 from copy_c_designator_cases import valid as designator_valid, invalid as designator_invalid
+from copy_c_nested_designator_cases import valid as nested_designator_valid, invalid as nested_designator_invalid
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -37,7 +38,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -210,6 +211,7 @@ valid += static_pointer_valid
 valid += linkage_valid
 valid += global_aggregate_valid
 valid += designator_valid
+valid += nested_designator_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -301,6 +303,7 @@ invalid += static_pointer_invalid
 invalid += linkage_invalid
 invalid += global_aggregate_invalid
 invalid += designator_invalid
+invalid += nested_designator_invalid
 for name, source in invalid:
     compile_native(name, source, True)
     print(f"OK copy-c rejects {name}", flush=True)

@@ -42,6 +42,7 @@ valid = [
 ]
 
 invalid = [
+    ("array-cast", b"int main(){return ((int[3])1)[0];}"),
     ("array-zero-size", b"int main(){int a[0];return 0;}"),
     ("array-negative-size", b"int main(){return sizeof(char[-1]);}"),
     ("array-size-variable", b"int main(){int n=3;return sizeof(int[n]);}"),

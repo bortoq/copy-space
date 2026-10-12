@@ -27,9 +27,15 @@ def build(output, compiler=None, prepare_only=False):
     dictionary = artifacts / "dictionary/pfdicdat.h"
     signature = hashlib.sha256(FORTH.read_bytes()).hexdigest()
     metadata = dictionary.with_name(dictionary.name+".json")
-    if not metadata.is_file() or json.loads(metadata.read_text()).get("compiler_forth_sha256") != signature:
-        manifest = prepare(dictionary, [FORTH], ["-DCOPY_SPACE_C_COMPILER"],
-                           artifacts / "prepare")
+    cached = json.loads(metadata.read_text()) if metadata.is_file() else {}
+    if (cached.get("compiler_forth_sha256") != signature
+            or cached.get("headers_reserve_bytes") != 4096
+            or cached.get("code_reserve_bytes") != 8192):
+        prepare_flags = ["-DCOPY_SPACE_C_COMPILER", "-UPF_DEFAULT_HEADER_SIZE",
+                         "-DPF_DEFAULT_HEADER_SIZE=65536", "-UPF_DEFAULT_CODE_SIZE",
+                         "-DPF_DEFAULT_CODE_SIZE=393216"]
+        manifest = prepare(dictionary, [FORTH], prepare_flags, artifacts / "prepare",
+                           headers_reserve=4096, code_reserve=8192)
         manifest["compiler_forth_sha256"] = signature
         metadata.write_text(json.dumps(manifest, indent=2)+"\n")
     manifest = json.loads(metadata.read_text())

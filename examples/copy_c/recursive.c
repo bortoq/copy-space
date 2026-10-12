@@ -1,0 +1,12 @@
+/* Each recursive invocation keeps its own local value. */
+int sum(int n)
+{
+    if (n == 0)
+        return 0;
+    return n + sum(n - 1);
+}
+
+int main(void)
+{
+    return sum(10);
+}

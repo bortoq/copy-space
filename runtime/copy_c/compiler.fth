@@ -649,6 +649,9 @@ create cc-type-signs 128 allot
 create cc-type-ranks 128 allot
 create cc-type-bases 128 allot
 create cc-type-complete 128 allot
+create cc-type-unqualified 128 allot
+create cc-type-qualifiers 128 allot
+variable cc-initializing
 create cc-tag-names 128 32 * allot
 create cc-tag-types 128 cells allot
 variable cc-tag-count
@@ -665,6 +668,8 @@ variable cc-type-count
   cc-type-kinds 128 0 fill cc-type-signs 128 0 fill
   cc-type-bases 128 0 fill
   cc-type-complete 128 1 fill
+  cc-type-qualifiers 128 0 fill
+  128 0 do i cc-type-unqualified i + c! loop
   12 cc-type-count !
   12 0 do 4 cc-type-sizes i cells + ! 3 cc-type-ranks i + c! loop
   1 cc-type-kinds 2 + c! 2 cc-type-kinds 3 + c!
@@ -677,13 +682,23 @@ variable cc-type-count
   1 cc-type-sizes 11 cells + ! 0 cc-type-ranks 11 + c!
   cc-type-sizes cc-type-aligns 128 cells cmove ;
 cc-init-types
-: cc-size ( type -- bytes ) cells cc-type-sizes + @ ;
-: cc-alignment ( type -- bytes ) cells cc-type-aligns + @ ;
-: cc-kind ( type -- kind ) cc-type-kinds + c@ ;
+: cc-unqualified ( type -- type ) cc-type-unqualified + c@ ;
+: cc-quals ( type -- mask ) cc-type-qualifiers + c@ ;
+: cc-size ( type -- bytes ) cc-unqualified cells cc-type-sizes + @ ;
+: cc-alignment ( type -- bytes ) cc-unqualified cells cc-type-aligns + @ ;
+: cc-kind ( type -- kind ) cc-unqualified cc-type-kinds + c@ ;
 : cc-record? ( type -- flag ) cc-kind dup 4 = swap 5 = or ;
-: cc-signed? ( type -- flag ) cc-type-signs + c@ ;
-: cc-rank ( type -- rank ) cc-type-ranks + c@ ;
-: cc-pointee ( type -- type ) cc-type-bases + c@ ;
+: cc-signed? ( type -- flag ) cc-unqualified cc-type-signs + c@ ;
+: cc-rank ( type -- rank ) cc-unqualified cc-type-ranks + c@ ;
+: cc-pointee ( type -- type ) cc-unqualified cc-type-bases + c@ ;
+: cc-qualify ( type mask -- type ) 0 L{ type mask result }
+  type cc-quals mask or 2 (local!) type cc-unqualified 1 (local!)
+  mask 0= if type exit then
+  type 3 = if s" qualified void pending" cc-fail then
+  cc-type-count @ 0 do i cc-unqualified type = i cc-quals mask = and
+    if i unloop exit then loop
+  cc-type-count @ dup 128 >= cc-limit 3 (local!) 1 cc-type-count +!
+  type cc-type-unqualified result + c! mask cc-type-qualifiers result + c! result ;
 : cc-pointer-to ( type -- pointer-type ) 0 L{ base result }
   cc-type-count @ 0 do
     i cc-kind 1 = i cc-pointee base = and if i unloop exit then
@@ -729,6 +744,7 @@ cc-init-types
   cells cc-fold-values + ! ;
 : cc-forget ( target -- ) cc-data-base - 8 / cc-fold-flags + 0 swap c! ;
 : cc-fold-convert ( bits type -- bits ) L{ bits type }
+  type cc-unqualified 2 (local!)
   type 11 = if bits if 1 else 0 then exit then
   type cc-width dup 32 = if drop bits exit then
   dup 0= if drop 0 exit then
@@ -773,7 +789,7 @@ cc-init-types
   source cc-known? if source cc-fold@ 1 and 0= if 1 else 0 then result cc-fold! then ;
 ' cc-fold-invert-body is cc-fold-invert
 : cc-load-value ( source type -- value ) cc-cell 0 L{ source type value width }
-  type cc-width 4 (local!) value type cc-type!
+  type cc-width 4 (local!) value type cc-unqualified cc-type!
   width 32 = if 32 value source cc-op else
     32 value cc-zero @ cc-op width value source cc-op
     type cc-signed? if 32 width do 1 value i + source width 1- + cc-op loop then
@@ -792,6 +808,7 @@ defer cc-decay
   3 = if s" void value unsupported here" cc-fail then ;
 ' cc-value-check is cc-check-truth
 : cc-promoted ( type -- type )
+  cc-unqualified
   dup cc-kind 0= over cc-size 4 < and if drop 0 then ;
 : cc-common-type ( left right -- type ) cc-type swap cc-type L{ right left }
   right cc-promoted 1 (local!) left cc-promoted 2 (local!)
@@ -805,7 +822,7 @@ defer cc-decay
   source cc-decay 1 (local!)
   type 3 <> if source cc-value-check then
   source cc-materialize 1 (local!)
-  type 11 = if source cc-truth dup 11 cc-type! else source type cc-load-value then ;
+  type cc-unqualified 11 = if source cc-truth dup 11 cc-type! else source type cc-load-value then ;
 : cc-pointer-compatible ( left-type right-type -- flag )
   2dup = >r cc-pointee 3 = swap cc-pointee 3 = or r> or ;
 : cc-null-constant? ( target -- flag )
@@ -832,13 +849,17 @@ defer cc-read-record
   s" char" cc-is or s" short" cc-is or s" long" cc-is or
   s" _Bool" cc-is or s" void" cc-is or ;
 : cc-typeof-token? s" typeof" cc-is s" __typeof" cc-is or s" __typeof__" cc-is or ;
+: cc-qualifier? s" const" cc-is s" volatile" cc-is or ;
+: cc-read-qualifiers ( mask -- mask )
+  begin cc-qualifier? while s" const" cc-is if 1 else 2 then or cc-next repeat ;
 : cc-type-start ( -- flag ) cc-basic-type-start cc-typeof-token? or
-  s" struct" cc-is or s" union" cc-is or ;
+  s" struct" cc-is or s" union" cc-is or cc-qualifier? or ;
 : cc-read-stars ( base -- type )
-  begin cc-token @ 42 = while cc-next cc-pointer-to repeat ;
-: cc-read-basic-type 0 0 0 L{ saw-int sign base }
-  cc-basic-type-start 0= if s" expected scalar type" cc-fail then
-  begin cc-basic-type-start while
+  begin cc-token @ 42 = while cc-next cc-pointer-to 0 cc-read-qualifiers cc-qualify repeat ;
+: cc-read-basic-type 0 0 0 0 L{ saw-int sign base quals }
+  cc-basic-type-start cc-qualifier? or 0= if s" expected scalar type" cc-fail then
+  begin cc-basic-type-start cc-qualifier? or while
+    cc-qualifier? if s" const" cc-is if 1 else 2 then quals or 4 (local!) else
     s" int" cc-is if
       saw-int base 4 = or base 11 = or base 3 = or
       if s" conflicting int type" cc-fail then -1 1 (local!)
@@ -852,13 +873,13 @@ defer cc-read-record
       3 (local!)
       saw-int base 4 = base 11 = or base 3 = or and
       if s" conflicting scalar type" cc-fail then
-    then then cc-next
+    then then then cc-next
   repeat
   base 3 = base 11 = or if sign if s" signed void or bool" cc-fail then else
     base 4 = if sign 1 = if 5 3 (local!) else sign 2 = if 6 3 (local!) then then
     else sign 2 = if base 1+ 3 (local!) then then
   then
-  base dup cc-base-type ! cc-read-stars cc-declared-type ! ;
+  base quals cc-qualify dup cc-base-type ! cc-read-stars cc-declared-type ! ;
 : cc-read-type
   s" struct" cc-is s" union" cc-is or if
     cc-read-record dup cc-base-type ! cc-read-stars cc-array-suffix
@@ -990,6 +1011,8 @@ variable cc-loop-level
   21 slot 71 * 26 + pointer cc-op pointer cc-type cc-pointee cc-width 0 value cc-op ;
 : cc-lvalue-write ( destination source -- value ) 0 L{ destination source result }
   destination cc-lvalue 0= if s" assignment requires lvalue" cc-fail then
+  destination cc-type cc-quals 1 and cc-initializing @ 0= and if
+    s" assignment to const object" cc-fail then
   destination cc-type cc-kind 3 = if s" array assignment unsupported" cc-fail then
   destination source cc-assignment-check
   source destination cc-type cc-convert 3 (local!)
@@ -1508,6 +1531,8 @@ variable cc-generic-depth
 : cc-scalar-initializer ( -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-expression then ;
+: cc-initialize-write ( target value -- value )
+  1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
 defer cc-initialize-object
 : cc-initialize-array ( target -- ) 0 0 0 0 L{ target type index pointer braces }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
@@ -1518,7 +1543,7 @@ defer cc-initialize-object
     target cc-decay index cc-const 43 cc-additive-op 4 (local!)
     type cc-pointee dup cc-kind 3 = swap cc-record? or if
       pointer cc-pointer-read cc-initialize-object else
-      pointer cc-pointer-read cc-scalar-initializer cc-lvalue-write drop then
+      pointer cc-pointer-read cc-scalar-initializer cc-initialize-write drop then
     index 1+ 3 (local!)
     cc-token @ 44 = if
       braces 0= index type cc-pointee cc-size * type cc-size >= and if exit then
@@ -1540,7 +1565,7 @@ defer cc-initialize-object
       braces if s" too many aggregate initializers" cc-fail else exit then then
     target cc-address member cc-field-view 6 (local!)
     view cc-type dup cc-kind 3 = swap cc-record? or if view cc-initialize-object else
-      view cc-scalar-initializer cc-lvalue-write drop then
+      view cc-scalar-initializer cc-initialize-write drop then
     number 1+ 3 (local!)
     cc-token @ 44 = if
       braces 0= if type number cc-member-number 0< type cc-kind 5 = or if exit then then
@@ -1570,7 +1595,7 @@ defer cc-initialize-object
         target cc-initialize-object then
     else
       cc-token @ 61 = if cc-next cc-scalar-initializer else cc-zero @ then
-      target swap cc-lvalue-write drop
+      target swap cc-initialize-write drop
     then
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
   until 59 cc-expect ;
@@ -1734,6 +1759,7 @@ defer cc-initialize-object
   0 cc-address-only !
   0 cc-in-for-declaration !
   0 cc-generic-depth !
+  0 cc-initializing !
   -1 cc-main-index ! cc-data-base cc-data !
   cc-init-types cc-fold-flags 2048 0 fill cc-types 2048 0 fill
   0 cc-tag-count ! 0 cc-tag-scope ! 0 cc-member-count !

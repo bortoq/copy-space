@@ -60,6 +60,7 @@ valid = [
  ('qual-volatile-direct-store',b'int main(){volatile int x=1;x=7;return 7;}',7),
 ]
 volatile_reads = {
+ 'range-volatile-once':1,
  'qual-discard-volatile':1,'qual-sizeof-volatile':0,
  'qual-volatile-block':1,'qual-volatile-gnu-discard':1,
  'qual-volatile-gnu-return':1,'qual-volatile-comma':1,

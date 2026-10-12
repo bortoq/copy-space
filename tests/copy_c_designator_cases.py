@@ -27,6 +27,5 @@ invalid = [
     ("designator-index-wrap", b'int a[2]={[1073741824]=7};int main(){return 0;}'),
     ("designator-unknown-member", b'struct S{int x;}s={.y=7};int main(){return 0;}'),
     ("designator-nonconstant", b'int x=1;int a[2]={[x]=7};int main(){return 0;}'),
-    ("designator-range-pending", b'int a[3]={[0 ... 2]=7};int main(){return 0;}'),
     ("designator-static-capacity", b'int a[1025];int main(){return 0;}'),
 ]

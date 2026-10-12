@@ -875,7 +875,7 @@ defer cc-read-record
   s" unsigned" cc-is or s" sizeof" cc-is or s" for" cc-is or
   s" _Alignof" cc-is or s" __alignof" cc-is or s" __alignof__" cc-is or
   s" do" cc-is or s" break" cc-is or s" continue" cc-is or
-  s" _Static_assert" cc-is or s" __builtin_offsetof" cc-is or
+  s" _Static_assert" cc-is or s" _Generic" cc-is or s" default" cc-is or s" __builtin_offsetof" cc-is or
   s" __builtin_types_compatible_p" cc-is or
   cc-type-start or
   if s" reserved name" cc-fail then
@@ -902,6 +902,7 @@ defer cc-sizeof
 defer cc-alignof
 defer cc-offsetof
 defer cc-compatible
+defer cc-generic
 create cc-break-fields 128 cells allot
 create cc-continue-fields 128 cells allot
 variable cc-break-count
@@ -997,6 +998,7 @@ variable cc-loop-level
   result cc-forget result ;
 
 : cc-primary ( -- target )
+  s" _Generic" cc-is if cc-next cc-generic exit then
   s" __builtin_offsetof" cc-is if cc-next cc-offsetof exit then
   s" __builtin_types_compatible_p" cc-is if cc-next cc-compatible exit then
   cc-token @ 40 = if cc-next cc-nest
@@ -1212,7 +1214,8 @@ defer cc-conditional
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ 0
   L{ unary data constants calls symbols type }
   1 cc-unevaluated +! cc-nest
-  unary if cc-unary else cc-full-expression then cc-type 6 (local!)
+  unary 1 = if cc-unary else unary 2 = if cc-expression else cc-full-expression then then
+  cc-type 6 (local!)
   cc-unnest -1 cc-unevaluated +!
   data cc-data-base - 8 / cc-data @ data - 8 / >r
   dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
@@ -1359,6 +1362,62 @@ defer cc-conditional
   cc-read-type cc-declared-type @ r> swap cc-types-compatible?
   if 1 else 0 then 41 cc-expect cc-const ;
 ' cc-compatible-body is cc-compatible
+create cc-generic-state 32 12 * cells allot
+create cc-generic-types 32 16 * cells allot
+variable cc-generic-depth
+\ State: default seen/value/start/end/calls-before/calls-after,
+\ selected value/start/end/seen, entry jump, association count.
+: cc-generic-type ( type context types -- ) L{ type context types }
+  type 3 = type cc-size 0= or if s" incomplete generic association" cc-fail then
+  type cc-record? if cc-type-complete type + c@ 1 <> if
+    s" incomplete generic association" cc-fail then then
+  11 context cc-fget dup 16 >= cc-limit
+  0 ?do type i types cc-fget cc-types-compatible? if
+    s" duplicate compatible generic type" cc-fail then loop
+  type 11 context cc-fget types cc-fset
+  11 context cc-fget 1+ 11 context cc-fset ;
+: cc-generic-emit ( context default -- ) 0 0 L{ context default start value }
+  cc-boundary 3 (local!)
+  default if cc-call-count @ 4 context cc-fset then
+  cc-nest cc-expression cc-unnest 4 (local!)
+  default if value 1 context cc-fset start 2 context cc-fset
+    cc-forward 3 context cc-fset cc-call-count @ 5 context cc-fset
+  else value 6 context cc-fset start 7 context cc-fset
+    cc-forward 8 context cc-fset 1 9 context cc-fset then ;
+: cc-generic-prune ( before after -- ) L{ before after }
+  cc-call-count @ after ?do
+    cc-call-functions i cells + @ cc-call-functions i after - before + cells + !
+    cc-call-fields i cells + @ cc-call-fields i after - before + cells + !
+  loop before after - cc-call-count +! ;
+: cc-generic-body ( -- value ) 0 0 0 0 L{ context types control type }
+  cc-generic-depth @ dup 32 >= cc-limit
+  dup 12 * cells cc-generic-state + 1 (local!)
+  16 * cells cc-generic-types + 2 (local!)
+  context 12 cells 0 fill 1 cc-generic-depth +!
+  40 cc-expect 2 cc-inspect dup cc-kind 3 = if cc-pointee cc-pointer-to then 3 (local!)
+  44 cc-expect cc-boundary drop cc-forward 10 context cc-fset
+  begin
+    s" default" cc-is if
+      0 context cc-fget if s" duplicate generic default" cc-fail then
+      1 0 context cc-fset cc-next 58 cc-expect
+      9 context cc-fget if 2 cc-inspect drop else context -1 cc-generic-emit then
+    else
+      cc-read-type cc-declared-type @ 4 (local!)
+      type context types cc-generic-type 58 cc-expect
+      control type cc-types-compatible? if context 0 cc-generic-emit else 2 cc-inspect drop then
+    then
+    cc-token @ 44 = if cc-next 0 else -1 then
+  until 41 cc-expect
+  cc-boundary >r
+  3 context cc-fget dup if r@ cc-link! else drop then
+  8 context cc-fget dup if r@ cc-link! else drop then r> drop
+  9 context cc-fget if
+    3 context cc-fget if 4 context cc-fget 5 context cc-fget cc-generic-prune then
+    10 context cc-fget 7 context cc-fget cc-link! 6 context cc-fget
+  else 0 context cc-fget 0= if s" no matching generic association" cc-fail then
+    10 context cc-fget 2 context cc-fget cc-link! 1 context cc-fget then
+  -1 cc-generic-depth +! ;
+' cc-generic-body is cc-generic
 : cc-hex? ( c -- flag ) dup cc-digit over 65 71 cc-within or
   swap 97 103 cc-within or ;
 : cc-assert-message ( -- )
@@ -1674,6 +1733,7 @@ defer cc-initialize-object
   0 cc-in-function !
   0 cc-address-only !
   0 cc-in-for-declaration !
+  0 cc-generic-depth !
   -1 cc-main-index ! cc-data-base cc-data !
   cc-init-types cc-fold-flags 2048 0 fill cc-types 2048 0 fill
   0 cc-tag-count ! 0 cc-tag-scope ! 0 cc-member-count !

@@ -125,6 +125,9 @@ variable cc-layer
 variable cc-slot
 variable cc-constants
 variable cc-data
+variable cc-infer-depth
+variable cc-infer-target
+variable cc-infer-length
 variable cc-origin
 create cc-fold-flags 2048 allot
 create cc-fold-values 2048 cells allot
@@ -1193,6 +1196,7 @@ variable cc-loop-level
   destination cc-type cc-kind 3 = if s" array assignment unsupported" cc-fail then
   destination source cc-assignment-check
   source destination cc-type cc-convert 3 (local!)
+  cc-infer-depth @ if result exit then
   cc-static-initializing @ if destination result cc-static-store exit then
   destination cc-lvalue 1 = if destination cc-type cc-width destination result cc-op else
     destination cc-lvalue-pointer @ result cc-pointer-write then
@@ -1815,6 +1819,7 @@ variable cc-union-count
       -1 cc-union-members i cells + ! then
   loop ;
 : cc-clear-object ( target bytes -- ) L{ target bytes }
+  cc-infer-depth @ if exit then
   target bytes cc-union-wipe
   cc-static-initializing @ if target cc-static-location cc-image-base - 8 / cc-image +
     bytes 0 fill exit then
@@ -1829,6 +1834,7 @@ variable cc-union-count
   -1 cc-union-members cc-union-count @ cells + !
   cc-union-count @ 1 cc-union-count +! ;
 : cc-select-union ( target member -- ) 0 L{ target member slot }
+  cc-infer-depth @ if exit then
   target cc-union-slot 3 (local!)
   cc-union-members slot cells + @ member = if exit then
   target target cc-type cc-size cc-clear-object member cc-union-members slot cells + ! ;
@@ -1863,8 +1869,11 @@ defer cc-initialize-object
   target cc-type cc-pointee cc-unqualified dup 4 < swap 6 > or if
     s" string initializer requires character array" cc-fail then
   cc-string 2 (local!) source cc-type cc-size 3 (local!)
+  cc-infer-depth @ target cc-infer-target @ = and if
+    count cc-infer-length ! exit then
   target cc-type cc-size count 1- < if s" string initializer too long" cc-fail then
   count target cc-type cc-size min 3 (local!)
+  cc-infer-depth @ if exit then
   source cc-lvalue-pointer @ cc-fold@ 8 * 5 (local!)
   cc-static-initializing @ if
     start cc-image-base - 8 / cc-image +
@@ -1875,8 +1884,9 @@ defer cc-initialize-object
     cc-cell dup 4 cc-type! dup 32 swap cc-zero @ cc-op
     dup 8 swap start i 8 * + cc-op pointer swap cc-initialize-write drop
   loop ;
-: cc-initialize-array ( target -- ) 0 0 0 0 0 L{ target type index pointer braces designated }
+: cc-initialize-array ( target -- ) 0 0 0 0 0 0 L{ target type index pointer braces designated measuring }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
+  cc-infer-depth @ target cc-infer-target @ = and 7 (local!)
   braces if cc-next then
   cc-token @ 34 = type cc-pointee cc-kind dup 0= swap 6 = or and if target cc-initialize-string
     braces if cc-token @ 44 = if cc-next then 125 cc-expect then exit then
@@ -1884,13 +1894,17 @@ defer cc-initialize-object
     cc-token @ 91 = 6 (local!)
     designated if cc-next cc-read-constant 3 (local!) 93 cc-expect then
     index 0< if s" negative initializer index" cc-fail then
-    index type cc-size type cc-pointee cc-size / >= if
+    measuring if
+      index 2097152 type cc-pointee cc-size / >= cc-limit
+      index 1+ cc-infer-length @ max cc-infer-length !
+    else index type cc-size type cc-pointee cc-size / >= if
       braces designated or if s" too many array initializers" cc-fail else exit then then
+    then
     target cc-decay index cc-const 43 cc-additive-op 4 (local!)
     pointer cc-pointer-read designated cc-initialize-view
     index 1+ 3 (local!)
     cc-token @ 44 = if
-      braces 0= index type cc-size type cc-pointee cc-size / >= and if exit then
+      measuring 0= braces 0= and index type cc-size type cc-pointee cc-size / >= and if exit then
       braces cc-initializer-comma 0= if exit then
     else cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
   repeat braces if cc-next then ;
@@ -1915,7 +1929,7 @@ defer cc-initialize-object
     type cc-kind 5 = if target member cc-select-union then
     target cc-address member cc-field-view 6 (local!)
     view designated cc-initialize-view
-    type cc-kind 5 = if member cc-union-members target cc-union-slot cells + ! then
+    type cc-kind 5 = cc-infer-depth @ 0= and if member cc-union-members target cc-union-slot cells + ! then
     number 1+ 3 (local!)
     cc-token @ 44 = if
       braces 0= if type number cc-member-number 0< type cc-kind 5 = or if exit then then
@@ -1925,24 +1939,45 @@ defer cc-initialize-object
 : cc-initialize-object-body ( target -- )
   dup cc-type cc-kind 3 = if cc-initialize-array else cc-initialize-record then ;
 ' cc-initialize-object-body is cc-initialize-object
+here cc-function-names - constant cc-infer-snapshot-bytes
+: cc-infer-array ( type name start -- complete-type )
+  cc-data @ cc-constants @ cc-static-data @ cc-infer-target @ cc-infer-length @
+  L{ type name start data constants static target length }
+  cc-infer-snapshot-bytes allocate dup if s" inference memory exhausted" cc-fail then drop >r
+  cc-function-names r@ cc-infer-snapshot-bytes cmove
+  1 cc-infer-depth +! 1 cc-unevaluated +!
+  name cc-pos ! cc-next cc-cell dup type cc-type! dup cc-infer-target ! cc-symbol-at drop
+  0 cc-infer-length ! start cc-pos ! cc-next 61 cc-expect
+  cc-token @ 123 <> cc-token @ 34 <> and if s" expected array initializer" cc-fail then
+  cc-nest cc-infer-target @ cc-initialize-object cc-unnest
+  cc-infer-length @ dup 0= if s" empty inferred array pending" cc-fail then
+  -1 cc-infer-depth +! -1 cc-unevaluated +!
+  data cc-data-base - 8 / cc-data @ data - 8 / dup >r
+  over cc-fold-flags + swap 0 fill cells cc-pointer-origins + r> cells 0 fill
+  static cc-image-base - 8 / cc-image + cc-static-data @ static - 8 / 0 fill
+  r@ cc-function-names cc-infer-snapshot-bytes cmove r> free if s" inference memory error" cc-fail then
+  data cc-data ! constants cc-constants ! static cc-static-data !
+  target cc-infer-target ! length cc-infer-length !
+  type cc-pointee swap cc-array-to start cc-pos ! cc-next ;
+: cc-array-self-view ( target type -- view ) >r cc-address cc-pointer-read dup r> cc-type! ;
 : cc-declaration
-  cc-read-type cc-base-type @ cc-declared-type @ 0 0 0 cc-in-for-declaration @
-  L{ base type name after target is-for }
+  cc-read-type cc-base-type @ cc-declared-type @ 0 0 0 cc-in-for-declaration @ 0 0
+  L{ base type name after target is-for original symbol }
   cc-token @ 59 = if is-for if s" for initializer requires object declaration" cc-fail then
     cc-next exit then
   begin
+    0 7 (local!)
     is-for cc-in-for-declaration !
     type cc-kind 2 = if s" void object unsupported" cc-fail then
     cc-token-start @ 3 (local!) cc-next
     type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 3 = type cc-size 0= and if
       cc-token @ 61 <> if s" incomplete array object" cc-fail then
-      cc-next cc-token @ 123 = if cc-next then
-      cc-token @ 34 <> if s" inferred array initializer pending" cc-fail then
-      type cc-pointee cc-string-size cc-array-to 2 (local!)
-      after cc-pos ! cc-next then
+      type 7 (local!) type name after cc-infer-array 2 (local!) then
     name cc-pos ! cc-next type cc-symbol dup type cc-type! 5 (local!)
     after cc-pos ! cc-next
+    cc-symbol-count @ 1- 8 (local!)
+    original if target original cc-array-self-view cc-symbol-address symbol cells + ! then
     0 cc-in-for-declaration !
     type cc-kind 3 = type cc-record? or if
       target type cc-size cc-clear-object
@@ -1954,6 +1989,7 @@ defer cc-initialize-object
       cc-token @ 61 = if cc-next cc-scalar-initializer else cc-zero @ then
       target swap cc-initialize-write drop
     then
+    target cc-symbol-address symbol cells + !
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
   until 59 cc-expect ;
 : cc-for
@@ -2107,31 +2143,39 @@ defer cc-initialize-object
 : cc-static-scalar ( target -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-static-expression then ;
-: cc-static-aggregate ( target -- )
+: cc-static-aggregate ( target alias original -- )
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ cc-global-evaluation-level @
-  L{ target data constants calls symbols level }
+  L{ target alias original data constants calls symbols level }
   1 cc-unevaluated +! cc-unevaluated @ cc-global-evaluation-level !
+  original if target original cc-array-self-view cc-binding-values alias cells + ! then
   1 cc-static-initializing ! target target cc-type cc-size cc-clear-object
   cc-token @ 123 <> cc-token @ 34 = target cc-type cc-kind 3 = and 0= and if
     s" expected aggregate initializer braces" cc-fail then
   cc-nest target cc-initialize-object cc-unnest 0 cc-static-initializing !
+  target cc-binding-values alias cells + !
   -1 cc-unevaluated +! level cc-global-evaluation-level !
   data cc-data-base - 8 / cc-data @ data - 8 / >r
   dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
   constants cc-constant-base - 32 / cc-constant-types + cc-constants @ constants - 32 / 0 fill
   data cc-data ! constants cc-constants ! calls cc-call-count ! symbols cc-symbol-count ! ;
-: cc-global ( -- ) cc-base-type @ cc-declared-type @ 0 0 0 0 0
-  L{ base type name after target value alias }
+: cc-global-array-type ( type name after -- type ) L{ type name after }
+  name cc-pos ! cc-next cc-find-alias-raw dup 0< 0= if
+    dup cc-binding-kinds + c@ 2 = if cc-alias-types + c@ dup type cc-types-compatible? if
+      after cc-pos ! cc-next exit then drop else drop then else drop then
+  after cc-pos ! cc-next type ;
+: cc-global ( -- ) cc-base-type @ cc-declared-type @ 0 0 0 0 0 0
+  L{ base type name after target value alias original }
   begin
+    0 8 (local!)
     type cc-kind 2 = if s" void global object" cc-fail then
     type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
       s" incomplete global object" cc-fail then then
     cc-token-start @ 3 (local!) cc-next type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 3 = type cc-size 0= and if
-      cc-token @ 61 <> if s" incomplete global array pending" cc-fail then
-      cc-next cc-token @ 123 = if cc-next then
-      cc-token @ 34 <> if s" inferred global array initializer pending" cc-fail then
-      type cc-pointee cc-string-size cc-array-to 2 (local!) after cc-pos ! cc-next then
+      type name after cc-global-array-type 2 (local!)
+      type cc-size 0= if
+        cc-token @ 61 <> if s" incomplete global array pending" cc-fail then
+        type 8 (local!) type name after cc-infer-array 2 (local!) then then
     name cc-pos ! cc-next
     cc-find-alias-raw 7 (local!)
     cc-find-function 0< 0= if s" global object conflicts with function" cc-fail then
@@ -2155,7 +2199,7 @@ defer cc-initialize-object
     after cc-pos ! cc-next
     cc-token @ 61 = if
       cc-global-state alias + c@ 2 = if s" duplicate global definition" cc-fail then
-      cc-next type cc-kind 3 = type cc-record? or if target cc-static-aggregate else
+      cc-next type cc-kind 3 = type cc-record? or if target alias original cc-static-aggregate else
         target cc-static-scalar 6 (local!) value type cc-width target cc-value! then
       2 cc-global-state alias + c!
     else cc-storage @ 1 <> cc-global-state alias + c@ 0= and if
@@ -2213,6 +2257,7 @@ defer cc-initialize-object
   0 cc-in-for-declaration !
   0 cc-generic-depth !
   0 cc-initializing !
+  0 cc-infer-depth ! 0 cc-infer-target ! 0 cc-infer-length !
   0 cc-static-initializing !
   0 cc-union-count ! cc-pointer-origins 2048 cells 0 fill
   0 cc-alias-count ! 0 cc-symbol-count !

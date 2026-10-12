@@ -51,6 +51,7 @@ def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
     if hashlib.sha256(dictionary.read_bytes()).hexdigest() != manifest["header_sha256"]:
         raise ValueError("compiler dictionary checksum mismatch")
     port_flags = ["-I"+str(dictionary.parent), "-DCOPY_SPACE_C_COMPILER"] + flags()
+    port_flags += ["-UPF_MEM_POOL_SIZE", "-DPF_MEM_POOL_SIZE=4194304"]
     native = artifacts / "compiler32"
     command = shlex.split(os.environ.get("CC", "cc")) + [
         "-m32", "-O2", "-g", "-std=c99", "-ffreestanding", "-nostdlib", "-fno-pie", "-no-pie",

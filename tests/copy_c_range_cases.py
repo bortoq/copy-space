@@ -37,5 +37,4 @@ invalid = [
     ("range-pointer-integer", b'int*a[2]={[0 ... 1]=1};int main(){return 0;}'),
     ("range-aggregate-global-value", b'struct S{int x;}s={7};struct S a[2]={[0 ... 1]=s};int main(){return 0;}'),
     ("range-aggregate-wrong-type", b'int main(){struct S{int x;}s={7};struct T{int x;}a[2]={[0 ... 1]=s};return 0;}'),
-    ("range-chain-pending", b'struct S{int x;}a[2]={[0 ... 1].x=7};int main(){return 0;}'),
 ]

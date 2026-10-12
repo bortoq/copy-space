@@ -1859,6 +1859,9 @@ variable cc-pending-initializer
 : cc-initialize-write ( target value -- value )
   1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
 defer cc-initialize-object
+defer cc-initialize-tail
+defer cc-initialize-range-chain
+variable cc-initializer-start
 : cc-designator? cc-token @ dup 46 = swap 91 = or ;
 : cc-initialize-chain ( target -- )
   dup cc-type cc-kind 3 = if cc-token @ 91 <> if s" expected array designator" cc-fail then else
@@ -1912,7 +1915,7 @@ defer cc-initialize-object
 : cc-range-view ( target index -- view ) cc-const 43 cc-additive-op cc-pointer-read ;
 : cc-initialize-range ( target low high -- ) 0 0 0 0
   L{ target low high type seed source data }
-  cc-designator? if s" chain after range pending" cc-fail then 61 cc-expect
+  cc-designator? if target low high cc-initialize-range-chain exit then 61 cc-expect
   target cc-type cc-pointee 4 (local!)
   target cc-decay low cc-range-view 6 (local!)
   type cc-kind 3 = type cc-record? or if
@@ -1952,8 +1955,9 @@ defer cc-initialize-object
 : cc-initialize-array ( target -- ) 0 0 0 0 0 0 0 L{ target type index pointer braces designated measuring high }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   cc-infer-depth @ target cc-infer-target @ = and 7 (local!)
+  cc-initializer-start @ 3 (local!) 0 cc-initializer-start !
   braces if cc-next then
-  cc-token @ 34 = type cc-pointee cc-kind dup 0= swap 6 = or and if target cc-initialize-string
+  cc-token @ 34 = type cc-pointee cc-kind dup 0= swap 6 = or and index 0= and if target cc-initialize-string
     braces if cc-token @ 44 = if cc-next then 125 cc-expect then exit then
   begin cc-token @ 125 <> cc-pending-initializer @ 0<> or while
     cc-token @ 91 = 6 (local!)
@@ -1986,6 +1990,7 @@ defer cc-initialize-object
   loop -1 ;
 : cc-initialize-record ( target -- ) 0 0 0 0 0 0 L{ target type number member braces view designated }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
+  cc-initializer-start @ 3 (local!) 0 cc-initializer-start !
   braces if cc-next then
   begin cc-token @ 125 <> cc-pending-initializer @ 0<> or while
     cc-token @ 46 = 7 (local!)
@@ -2008,6 +2013,106 @@ defer cc-initialize-object
 : cc-initialize-object-body ( target -- )
   dup cc-type cc-kind 3 = if cc-initialize-array else cc-initialize-record then ;
 ' cc-initialize-object-body is cc-initialize-object
+: cc-initialize-tail-body ( target start -- ) L{ target start }
+  cc-token @ 44 <> if exit then
+  target cc-type dup cc-kind 5 = if drop exit then
+  dup cc-kind 3 = if cc-size target cc-type cc-pointee cc-size / start <= else
+    start cc-member-number 0< then if exit then
+  0 cc-initializer-comma if start cc-initializer-start ! target cc-initialize-object then ;
+' cc-initialize-tail-body is cc-initialize-tail
+create cc-range-paths 32 168 * cells allot
+variable cc-range-path-depth
+: cc-range-node ( context level -- node ) 5 * 8 + cells + ;
+: cc-range-child ( context level parent index -- view ) 0 L{ context level parent index node }
+  context level cc-range-node 5 (local!)
+  0 node cc-fget 0= if
+    parent cc-type cc-kind 3 <> if s" expected array range path" cc-fail then
+    1 node cc-fget 0< if s" negative initializer index" cc-fail then
+    2 node cc-fget 1 node cc-fget < if s" reversed initializer range" cc-fail then
+    parent cc-infer-target @ = cc-infer-depth @ and if
+      2 node cc-fget 2097152 parent cc-type cc-pointee cc-size / >= cc-limit else
+      2 node cc-fget parent cc-type cc-size parent cc-type cc-pointee cc-size / >= if
+        s" too many array initializers" cc-fail then then
+    parent cc-decay index cc-range-view
+  else
+    parent cc-type cc-record? 0= if s" expected member range path" cc-fail then
+    parent cc-type cc-kind 5 = if parent 1 node cc-fget cc-select-union then
+    parent cc-address 1 node cc-fget cc-field-view
+  then ;
+: cc-range-restore-parent ( parent node -- ) L{ parent node }
+  0 node cc-fget parent cc-type cc-kind 5 = and cc-infer-depth @ 0= and if
+    1 node cc-fget cc-union-members parent cc-union-slot cells + ! then ;
+: cc-range-last-path ( context -- leaf ) 0 0 L{ context parent node }
+  3 context cc-fget 2 (local!)
+  0 context cc-fget 0 ?do
+    context i cc-range-node 3 (local!) parent 3 node cc-fset
+    2 node cc-fget 1+ 4 node cc-fset
+    context i parent 2 node cc-fget cc-range-child 2 (local!)
+  loop parent ;
+: cc-range-write-leaf ( context leaf -- ) 0 0 L{ context leaf seed type }
+  1 context cc-fget 3 (local!) 2 context cc-fget 4 (local!)
+  type cc-kind 3 = type cc-record? or if
+    cc-static-initializing @ if
+      seed cc-static-location cc-image-base - 8 / cc-image +
+      leaf cc-static-location cc-image-base - 8 / cc-image + type cc-size cmove else
+      leaf cc-lvalue-pointer @ seed cc-pointer-write then
+    seed cc-object-origin leaf cc-object-origin type cc-size cc-clone-unions
+  else leaf seed cc-initialize-write drop then ;
+: cc-range-emit-path ( context level parent -- ) 0 0 0 0
+  L{ context level parent node low high data }
+  level 0 context cc-fget = if context parent cc-range-write-leaf exit then
+  context level cc-range-node 4 (local!)
+  0 node cc-fget 0= if 1 node cc-fget 5 (local!) 2 node cc-fget 6 (local!) else
+    0 5 (local!) 0 6 (local!) then
+  high 1+ low ?do
+    cc-data @ 7 (local!) context level parent i cc-range-child
+    context level 1+ rot recurse parent node cc-range-restore-parent data cc-rewind-temps
+  loop ;
+: cc-range-freeze ( context leaf -- ) 0 0 L{ context leaf seed type }
+  leaf cc-type 4 (local!) type 2 context cc-fset
+  type cc-kind 3 = type cc-record? or if
+    cc-static-initializing @ cc-infer-depth @ 0= and if leaf 3 (local!) else
+      type cc-unqualified cc-object dup type cc-unqualified cc-type! dup 1 cc-lvalue! 3 (local!) then
+    cc-token @ 123 = cc-token @ 34 = or if seed 0 cc-initialize-view else
+      type cc-kind 3 = if s" array range requires braces or string" cc-fail then
+      cc-expression dup cc-type cc-record? if
+        dup cc-type cc-unqualified type cc-unqualified cc-types-compatible? 0= if
+          s" incompatible aggregate range value" cc-fail then
+        cc-static-initializing @ cc-infer-depth @ 0= and if s" nonconstant aggregate range value" cc-fail then
+        seed swap cc-copy-to-direct
+      else cc-pending-initializer ! seed 0 cc-initialize-view then then
+  else cc-scalar-initializer cc-value leaf swap cc-initialize-write 3 (local!) then
+  seed 1 context cc-fset ;
+: cc-initialize-range-chain-body ( target low high -- ) 0 0 0 0 0
+  L{ target low high context parent node member level }
+  cc-range-path-depth @ dup 32 >= cc-limit 168 * cells cc-range-paths + 4 (local!)
+  context 168 cells 0 fill 1 cc-range-path-depth +!
+  target 3 context cc-fset 1 0 context cc-fset
+  context 0 cc-range-node 6 (local!) low 1 node cc-fset high 2 node cc-fset
+  target 3 node cc-fset high 1+ 4 node cc-fset
+  context 0 target low cc-range-child 5 (local!)
+  begin cc-designator? while
+    0 context cc-fget 8 (local!) level 32 >= cc-limit
+    context level cc-range-node 6 (local!) parent 3 node cc-fset
+    cc-token @ 46 = if cc-next parent cc-type cc-find-member 7 (local!)
+      member 0< if s" unknown initializer member" cc-fail then
+      1 0 node cc-fset member 1 node cc-fset
+      parent cc-type member cc-member-ordinal dup 2 node cc-fset 1+ 4 node cc-fset cc-next else
+      cc-next cc-read-constant dup 1 node cc-fset 2 node cc-fset
+      cc-token @ 267 = if cc-next cc-read-constant 2 node cc-fset then 93 cc-expect
+      2 node cc-fget 1+ 4 node cc-fset then
+    context level parent 1 node cc-fget cc-range-child 5 (local!)
+    level 1+ 0 context cc-fset
+  repeat 61 cc-expect context parent cc-range-freeze
+  0 context cc-fget 0 ?do
+    context i cc-range-node dup 3 swap cc-fget swap cc-range-restore-parent
+  loop
+  cc-infer-depth @ 0= if context 0 target cc-range-emit-path then
+  context cc-range-last-path drop
+  0 context cc-fget 1- begin dup 0> while
+    context over cc-range-node dup 3 swap cc-fget swap 4 swap cc-fget cc-initialize-tail 1-
+  repeat drop -1 cc-range-path-depth +! ;
+' cc-initialize-range-chain-body is cc-initialize-range-chain
 here cc-function-names - constant cc-infer-snapshot-bytes
 : cc-infer-array ( type name start -- complete-type )
   cc-data @ cc-constants @ cc-static-data @ cc-infer-target @ cc-infer-length @
@@ -2327,6 +2432,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   0 cc-generic-depth !
   0 cc-initializing !
   0 cc-pending-initializer !
+  0 cc-initializer-start ! 0 cc-range-path-depth !
   0 cc-infer-depth ! 0 cc-infer-target ! 0 cc-infer-length !
   0 cc-static-initializing !
   0 cc-union-count ! cc-pointer-origins 2048 cells 0 fill

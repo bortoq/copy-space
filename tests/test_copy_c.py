@@ -20,6 +20,7 @@ from copy_c_builtin_cases import valid as builtin_valid, invalid as builtin_inva
 from copy_c_generic_cases import valid as generic_valid, invalid as generic_invalid
 from copy_c_qualifier_cases import valid as qualifier_valid, invalid as qualifier_invalid
 from copy_c_qualifier_cases import volatile_reads
+from copy_c_typedef_cases import valid as typedef_valid, invalid as typedef_invalid
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -27,7 +28,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -190,6 +191,7 @@ valid += record_valid
 valid += builtin_valid
 valid += generic_valid
 valid += qualifier_valid
+valid += typedef_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -271,6 +273,7 @@ invalid += record_invalid
 invalid += builtin_invalid
 invalid += generic_invalid
 invalid += qualifier_invalid
+invalid += typedef_invalid
 for name, source in invalid:
     compile_native(name, source, True)
     print(f"OK copy-c rejects {name}", flush=True)
@@ -424,6 +427,8 @@ def guest(name, source, expected=None):
     assert raw[:layer_bytes] == bytes(layer_bytes) and word(132128) == 10
     if expected is None:
         assert word(132160) == 2 and output.startswith(b"copy-c error at byte ")
+        if name == "qualifier-error":
+            assert output.endswith(b"assignment to const object\n"), output
     else:
         assert word(132160) == 0 and output == packets[name]
         target("guest-"+name, output, expected)

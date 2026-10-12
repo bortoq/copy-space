@@ -639,6 +639,17 @@ variable cc-in-for-declaration
   loop -1 ;
 : cc-find-symbol cc-symbol-names cc-symbol-count @ cc-find ;
 : cc-find-function cc-function-names cc-function-count @ cc-find ;
+create cc-alias-names 128 32 * allot
+create cc-alias-types 128 allot
+create cc-alias-levels 128 cells allot
+variable cc-alias-count
+variable cc-function-aliases
+: cc-find-alias-raw cc-alias-names cc-alias-count @ cc-find ;
+: cc-find-alias ( -- index ) cc-find-alias-raw cc-find-symbol L{ alias symbol }
+  alias 0< if alias exit then
+  cc-scope-level @ symbol 0< 0= and if
+    cc-symbol-levels symbol cells + @ cc-alias-levels alias cells + @ >=
+    if -1 exit then then alias ;
 
 \ Type IDs: int=0, uint=1, int*=2, void=3, char=4, schar=5,
 \ uchar=6, short=7, ushort=8, long=9, ulong=10, bool=11.
@@ -876,8 +887,9 @@ defer cc-read-record
   s" __volatile" cc-is or s" __volatile__" cc-is or ;
 : cc-read-qualifiers ( mask -- mask )
   begin cc-qualifier? while cc-const-token? if 1 else 2 then or cc-next repeat ;
-: cc-type-start ( -- flag ) cc-basic-type-start cc-typeof-token? or
+: cc-keyword-type? ( -- flag ) cc-basic-type-start cc-typeof-token? or
   s" struct" cc-is or s" union" cc-is or cc-qualifier? or ;
+: cc-type-start ( -- flag ) cc-keyword-type? cc-find-alias 0< 0= or ;
 : cc-read-stars ( base -- type )
   begin cc-token @ 42 = while cc-next cc-pointer-to 0 cc-read-qualifiers cc-qualify repeat ;
 variable cc-prefix-quals
@@ -906,6 +918,9 @@ variable cc-prefix-quals
   then
   base quals cc-qualify dup cc-base-type ! cc-read-stars cc-declared-type ! ;
 : cc-read-type 0 cc-read-qualifiers L{ quals }
+  cc-find-alias dup 0< 0= if cc-alias-types + c@ cc-next
+    quals cc-read-qualifiers cc-qualify dup cc-base-type !
+    cc-read-stars cc-array-suffix cc-declared-type ! exit then drop
   s" struct" cc-is s" union" cc-is or if
     cc-read-record quals cc-read-qualifiers cc-qualify dup cc-base-type ! cc-read-stars cc-array-suffix
     cc-declared-type ! exit then
@@ -923,10 +938,12 @@ variable cc-prefix-quals
   s" do" cc-is or s" break" cc-is or s" continue" cc-is or
   s" _Static_assert" cc-is or s" _Generic" cc-is or s" default" cc-is or s" __builtin_offsetof" cc-is or
   s" __builtin_types_compatible_p" cc-is or
-  cc-type-start or
+  s" typedef" cc-is or cc-keyword-type? or
   if s" reserved name" cc-fail then
   cc-token @ 2 <> cc-token-size @ 31 > or cc-limit cc-text rot place ;
 : cc-symbol-at ( target -- target )
+  cc-find-alias-raw dup 0< 0= if cells cc-alias-levels + @ cc-scope-level @ =
+    if s" object conflicts with typedef" cc-fail then else drop then
   cc-find-symbol dup 0< 0= if cells cc-symbol-levels + @ cc-scope-level @ =
     if s" duplicate local name" cc-fail then else drop then
   cc-symbol-count @ 128 >= cc-limit
@@ -938,6 +955,27 @@ variable cc-prefix-quals
 : cc-symbol ( type -- target ) cc-object cc-symbol-at ;
 : cc-fget ( index array -- value ) swap cells + @ ;
 : cc-fset ( value index array -- ) swap cells + ! ;
+: cc-bind-alias ( type -- ) cc-find-alias-raw cc-find-symbol L{ type alias symbol }
+  symbol 0< 0= cc-scope-level @ 0<> and if
+    cc-symbol-levels symbol cells + @ cc-scope-level @ = if
+      s" typedef conflicts with object" cc-fail then then
+  cc-scope-level @ 0= cc-find-function 0< 0= and if
+    s" typedef conflicts with function" cc-fail then
+  alias 0< 0= if cc-alias-levels alias cells + @ cc-scope-level @ = if
+    type cc-alias-types alias + c@ cc-types-compatible? 0= if
+      s" conflicting typedef" cc-fail then
+    type cc-alias-types alias + c! exit then then
+  cc-alias-count @ 128 >= cc-limit
+  cc-alias-names cc-alias-count @ 32 * + cc-name!
+  type cc-alias-types cc-alias-count @ + c!
+  cc-scope-level @ cc-alias-levels cc-alias-count @ cells + ! 1 cc-alias-count +! ;
+: cc-typedef ( -- ) 0 0 0 0 L{ base type name after }
+  cc-next cc-read-type cc-base-type @ 1 (local!) cc-declared-type @ 2 (local!)
+  begin cc-token-start @ 3 (local!) cc-next
+    type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
+    name cc-pos ! cc-next type cc-bind-alias after cc-pos ! cc-next
+    cc-token @ 44 = if cc-next base cc-read-stars 2 (local!) 0 else -1 then
+  until 59 cc-expect ;
 : cc-param ( fn index -- target ) swap 8 * + cells cc-function-params + @ ;
 defer cc-statement
 defer cc-increment
@@ -1062,6 +1100,7 @@ variable cc-loop-level
     else cc-full-expression then cc-unnest 41 cc-expect exit then
   cc-token @ 1 = if cc-number @ cc-const dup cc-number-type @ cc-type! cc-next exit then
   cc-token @ 2 = if
+    cc-find-alias 0< 0= if s" typedef used as expression" cc-fail then
     cc-find-symbol >r cc-find-function >r cc-next
     cc-token @ 40 = if r> r> 0< 0= if s" indirect call unsupported" cc-fail then
       cc-nest cc-call cc-unnest else
@@ -1651,9 +1690,9 @@ defer cc-initialize-object
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
   until 59 cc-expect ;
 : cc-for
-  cc-symbol-count @ 0 0 0 0 0 cc-tag-count @ cc-tag-scope @
+  cc-symbol-count @ 0 0 0 0 0 cc-tag-count @ 256 * cc-alias-count @ + cc-tag-scope @
   L{ symbols head table step breaks continues tags scope }
-  tags cc-tag-scope !
+  tags 8 rshift cc-tag-scope !
   cc-next 40 cc-expect
   1 cc-scope-level +!
   cc-type-start if 1 cc-in-for-declaration ! cc-declaration else
@@ -1667,9 +1706,11 @@ defer cc-initialize-object
   cc-break-count @ 5 (local!) cc-continue-count @ 6 (local!) 1 cc-loop-level +!
   cc-nest cc-statement cc-unnest cc-statement-result @ cc-discard-value step cc-jump
   table cc-current cc-patch step cc-current breaks continues cc-loop-finish
-  symbols cc-symbol-count ! tags cc-tag-count ! scope cc-tag-scope ! -1 cc-scope-level +! ;
+  symbols cc-symbol-count ! tags 8 rshift cc-tag-count ! tags 255 and cc-alias-count !
+  scope cc-tag-scope ! -1 cc-scope-level +! ;
 : cc-block-body
-  cc-symbol-count @ cc-first-block @ cc-tag-count @ cc-tag-scope @ L{ symbols first tags scope }
+  cc-symbol-count @ cc-first-block @ cc-tag-count @ cc-tag-scope @ cc-alias-count @
+  L{ symbols first tags scope aliases }
   first 0= if tags cc-tag-scope ! then
   0 cc-first-block ! first 0= if 1 cc-scope-level +! then
   0 cc-statement-result ! cc-next begin cc-token @ 125 <> while
@@ -1677,10 +1718,12 @@ defer cc-initialize-object
     cc-nest cc-statement cc-unnest
     cc-token @ 125 <> if cc-statement-result @ cc-discard-value then
   repeat cc-next symbols cc-symbol-count ! tags cc-tag-count ! scope cc-tag-scope !
+  aliases cc-alias-count !
   first 0= if -1 cc-scope-level +! then cc-statement-result @ ;
 ' cc-block-body is cc-block
 : cc-statement-body
   0 cc-statement-result !
+  s" typedef" cc-is if cc-typedef exit then
   s" _Static_assert" cc-is if cc-static-assert exit then
   cc-token @ 123 = if
     cc-block cc-discard-value 0 cc-statement-result ! exit then
@@ -1706,6 +1749,8 @@ defer cc-initialize-object
   cc-read-type cc-declared-type @ cc-function-type !
   cc-token @ 59 = if cc-next exit then
   cc-function-type @ cc-record? if s" aggregate return unsupported" cc-fail then
+  cc-find-alias-raw 0< 0= if s" function conflicts with typedef" cc-fail then
+  cc-alias-count @ cc-function-aliases !
   cc-tag-count @ cc-function-tags ! cc-tag-count @ cc-tag-scope !
   cc-find-function dup -1 = if drop
     -1 cc-new-function !
@@ -1760,7 +1805,8 @@ defer cc-initialize-object
   else cc-parameter-count @ cc-function-index @ cc-function-argc cc-fget <>
     if s" conflicting prototype" cc-fail then
   then
-  cc-token @ 59 = if cc-next cc-function-tags @ cc-tag-count ! 0 cc-tag-scope ! exit then
+  cc-token @ 59 = if cc-next cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
+    cc-function-aliases @ cc-alias-count ! 0 cc-symbol-count ! 0 cc-scope-level ! exit then
   cc-function-index @ cc-function-entry cc-fget
   if s" duplicate function definition" cc-fail then
   cc-symbol-count @ cc-parameter-count @ <>
@@ -1774,7 +1820,8 @@ defer cc-initialize-object
   -1 cc-first-block !
   -1 cc-in-function ! cc-statement 0 cc-in-function !
   cc-function-type @ cc-kind 2 = if cc-cell dup 3 cc-type! else cc-zero @ then cc-return-value
-  cc-function-tags @ cc-tag-count ! 0 cc-tag-scope ! ;
+  cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
+  cc-function-aliases @ cc-alias-count ! 0 cc-symbol-count ! 0 cc-scope-level ! ;
 
 : cc-finish
   cc-main-index @ 0< if s" main missing" cc-fail then
@@ -1813,6 +1860,7 @@ defer cc-initialize-object
   0 cc-in-for-declaration !
   0 cc-generic-depth !
   0 cc-initializing !
+  0 cc-alias-count ! 0 cc-symbol-count !
   -1 cc-main-index ! cc-data-base cc-data !
   cc-init-types cc-fold-flags 2048 0 fill cc-types 2048 0 fill
   0 cc-tag-count ! 0 cc-tag-scope ! 0 cc-member-count !
@@ -1822,5 +1870,6 @@ defer cc-initialize-object
   cc-library-layer @ cc-layer ! 3 cc-slot !
   cc-library-constants @ cc-constants !
   cc-read-source cc-next begin cc-token @ while
-    s" _Static_assert" cc-is if cc-static-assert else cc-function then repeat
+    s" typedef" cc-is if cc-typedef else
+    s" _Static_assert" cc-is if cc-static-assert else cc-function then then repeat
   cc-finish cc-export 0 cs-exit ;

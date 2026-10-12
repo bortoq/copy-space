@@ -123,6 +123,9 @@ variable cc-slot
 variable cc-constants
 variable cc-data
 variable cc-origin
+create cc-fold-flags 2048 allot
+create cc-fold-values 2048 cells allot
+create cc-literal-values 512 cells allot
 : cc-current ( -- target ) cc-layer @ cc-layer-bits * cc-origin @ + ;
 : cc-new 1 cc-layer +! cc-layer @ cc-layer-max >= cc-limit 3 cc-slot ! ;
 : cc-end ( target -- )
@@ -148,10 +151,14 @@ variable cc-origin
   cc-slot @ 3 <> if cc-current cc-layer-bits + cc-jump then cc-current ;
 : cc-cell ( -- target )
   cc-data @ 31 + 31 invert and cc-data !
-  cc-data @ 32 cc-data +! cc-data @ 147456 > cc-limit ;
+  cc-data @ 32 + 147456 > cc-limit
+  0 cc-fold-flags cc-data @ cc-data-base - 8 / + c!
+  cc-data @ 32 cc-data +! ;
 : cc-const ( value -- target )
   cc-constants @ 32 cc-constants +!
-  cc-constants @ 180224 > cc-limit >r 32 r@ cc-value! r> ;
+  cc-constants @ 180224 > cc-limit >r
+  dup cc-literal-values r@ cc-constant-base - 32 / cells + !
+  32 r@ cc-value! r> ;
 : cc-patch ( target value -- ) cc-unevaluated @ if 2drop exit then swap 32 swap cc-value! ;
 : cc-dynamic ( source -- )
   1 cc-room 24 18152 rot cc-op 0 cc-jump ;
@@ -470,6 +477,12 @@ variable cc-preparing
 cc-prepare-guard
 
 : cc-raw-value ;
+defer cc-fold-invoke
+: cc-no-fold ( lhs rhs entry result -- ) 2drop 2drop ;
+' cc-no-fold is cc-fold-invoke
+defer cc-fold-invert
+: cc-no-invert-fold ( source result -- ) 2drop ;
+' cc-no-invert-fold is cc-fold-invert
 defer cc-materialize
 ' cc-raw-value is cc-materialize
 : cc-invoke ( lhs rhs entry -- result ) L{ lhs rhs entry }
@@ -477,12 +490,13 @@ defer cc-materialize
   3 lhs cc-frame-extra + rhs cc-frame-extra + cc-room
   32 cc-a lhs cc-op 32 cc-b rhs cc-op
   cc-current cc-layer-bits + cc-const 24 cc-lret rot cc-op
-  entry cc-jump cc-cell dup 32 swap cc-r cc-op ;
+  entry cc-jump cc-cell dup 32 swap cc-r cc-op
+  lhs rhs entry 3 pick cc-fold-invoke ;
 defer cc-check-truth
 : cc-truth ( value -- result ) dup cc-check-truth cc-zero @ cc-bool-entry @ cc-invoke ;
 : cc-invert ( value -- result ) cc-cell L{ value result }
   32 result cc-zero @ cc-op
-  result cc-table-base 40 + value cc-lut1 result ;
+  result cc-table-base 40 + value cc-lut1 value result cc-fold-invert result ;
 \ Lexer: names and numbers refer to source bytes, never to host parsing.
 : cc-peek cc-pos @ cc-length @ < if cc-source cc-pos @ + c@ else -1 then ;
 : cc-step 1 cc-pos +! ;
@@ -598,6 +612,7 @@ create cc-call-fields 128 cells allot
 variable cc-call-count
 variable cc-new-function
 variable cc-parameter-count
+variable cc-parameter-after
 create cc-types 2048 allot
 create cc-lvalues 2048 allot
 create cc-lvalue-pointers 2048 cells allot
@@ -615,6 +630,7 @@ variable cc-scope-level
 variable cc-first-block
 variable cc-statement-result
 variable cc-in-function
+variable cc-address-only
 : cc-find ( names count -- index ) L{ names entries }
   entries 0 ?do cc-text names entries 1- i - 32 * + count compare 0= if
     entries 1- i - unloop exit then
@@ -624,31 +640,31 @@ variable cc-in-function
 
 \ Type IDs: int=0, uint=1, int*=2, void=3, char=4, schar=5,
 \ uchar=6, short=7, ushort=8, long=9, ulong=10, bool=11.
-create cc-type-sizes 128 allot
-create cc-type-aligns 128 allot
+create cc-type-sizes 128 cells allot
+create cc-type-aligns 128 cells allot
 create cc-type-kinds 128 allot
 create cc-type-signs 128 allot
 create cc-type-ranks 128 allot
 create cc-type-bases 128 allot
 variable cc-type-count
 : cc-init-types
-  cc-type-sizes 128 0 fill
+  cc-type-sizes 128 cells 0 fill
   cc-type-kinds 128 0 fill cc-type-signs 128 0 fill
   cc-type-bases 128 0 fill
   12 cc-type-count !
-  12 0 do 4 cc-type-sizes i + c! 3 cc-type-ranks i + c! loop
+  12 0 do 4 cc-type-sizes i cells + ! 3 cc-type-ranks i + c! loop
   1 cc-type-kinds 2 + c! 2 cc-type-kinds 3 + c!
-  1 cc-type-sizes 3 + c!
+  1 cc-type-sizes 3 cells + !
   1 cc-type-signs c! 1 cc-type-signs 4 + c!
   1 cc-type-signs 5 + c! 1 cc-type-signs 7 + c! 1 cc-type-signs 9 + c!
-  7 4 do 1 cc-type-sizes i + c! 1 cc-type-ranks i + c! loop
-  9 7 do 2 cc-type-sizes i + c! 2 cc-type-ranks i + c! loop
+  7 4 do 1 cc-type-sizes i cells + ! 1 cc-type-ranks i + c! loop
+  9 7 do 2 cc-type-sizes i cells + ! 2 cc-type-ranks i + c! loop
   4 cc-type-ranks 9 + c! 4 cc-type-ranks 10 + c!
-  1 cc-type-sizes 11 + c! 0 cc-type-ranks 11 + c!
-  cc-type-sizes cc-type-aligns 128 cmove ;
+  1 cc-type-sizes 11 cells + ! 0 cc-type-ranks 11 + c!
+  cc-type-sizes cc-type-aligns 128 cells cmove ;
 cc-init-types
-: cc-size ( type -- bytes ) cc-type-sizes + c@ ;
-: cc-alignment ( type -- bytes ) cc-type-aligns + c@ ;
+: cc-size ( type -- bytes ) cells cc-type-sizes + @ ;
+: cc-alignment ( type -- bytes ) cells cc-type-aligns + @ ;
 : cc-kind ( type -- kind ) cc-type-kinds + c@ ;
 : cc-signed? ( type -- flag ) cc-type-signs + c@ ;
 : cc-rank ( type -- rank ) cc-type-ranks + c@ ;
@@ -659,7 +675,7 @@ cc-init-types
   loop
   cc-type-count @ 128 >= cc-limit
   cc-type-count @ 2 (local!)
-  4 cc-type-sizes result + c! 4 cc-type-aligns result + c!
+  4 cc-type-sizes result cells + ! 4 cc-type-aligns result cells + !
   1 cc-type-kinds result + c!
   base cc-type-bases result + c! 1 cc-type-count +! result ;
 : cc-width ( type -- bits ) dup cc-kind 2 = if drop 0 else cc-size 8 * then ;
@@ -674,20 +690,78 @@ cc-init-types
 : cc-type! ( target type -- ) swap dup cc-frame? if
     cc-data-base - 8 / cc-types + c! else
     cc-constant-base - 32 / cc-constant-types + c! then ;
-: cc-pointer? ( target -- flag ) cc-type cc-kind 1 = ;
+: cc-effective-type ( target -- type ) cc-type dup cc-kind 3 = if cc-pointee cc-pointer-to then ;
+: cc-pointer? ( target -- flag ) cc-effective-type cc-kind 1 = ;
 : cc-lvalue ( target -- kind )
   dup cc-frame? if cc-data-base - 8 / cc-lvalues + c@ else drop 0 then ;
 : cc-lvalue! ( target kind -- ) swap cc-data-base - 8 / cc-lvalues + c! ;
 : cc-lvalue-pointer ( target -- address ) cc-data-base - 8 / cells cc-lvalue-pointers + ;
+\ Constant-expression metadata is separate from object storage.
+: cc-known? ( source -- flag )
+  dup cc-constant-base >= over 180224 < and if drop -1 exit then
+  dup cc-frame? if dup cc-lvalue 0= swap cc-data-base - 8 / cc-fold-flags + c@ and else drop 0 then ;
+: cc-fold@ ( source -- bits )
+  dup cc-frame? if cc-data-base - 8 / cells cc-fold-values + @ else
+    cc-constant-base - 32 / cells cc-literal-values + @ then ;
+: cc-fold! ( bits target -- )
+  cc-data-base - 8 / dup cc-fold-flags + 1 swap c!
+  cells cc-fold-values + ! ;
+: cc-forget ( target -- ) cc-data-base - 8 / cc-fold-flags + 0 swap c! ;
+: cc-fold-convert ( bits type -- bits ) L{ bits type }
+  type 11 = if bits if 1 else 0 then exit then
+  type cc-width dup 32 = if drop bits exit then
+  dup 0= if drop 0 exit then
+  1 over lshift 1- bits and swap
+  type cc-signed? if
+    1 over 1- lshift 2 pick and if 1 swap lshift negate or else drop then
+  else drop then ;
+: cc-fold-load ( source type result -- ) L{ source type result }
+  source cc-known? if source cc-fold@ type cc-fold-convert result cc-fold! then ;
+: cc-fold-operation ( lhs rhs entry result -- ) 0 0 L{ lhs rhs entry result a b }
+  lhs cc-known? rhs cc-known? and 0= if exit then
+  lhs cc-fold@ 5 (local!) rhs cc-fold@ 6 (local!)
+  entry cc-add-entry @ = if a b + result cc-fold! exit then
+  entry cc-sub-entry @ = if a b - result cc-fold! exit then
+  entry cc-mul-entry @ = if a b * result cc-fold! exit then
+  entry cc-and-entry @ = if a b and result cc-fold! exit then
+  entry cc-or-entry @ = if a b or result cc-fold! exit then
+  entry cc-xor-entry @ = if a b xor result cc-fold! exit then
+  entry cc-not-entry @ = if a invert result cc-fold! exit then
+  entry cc-bool-entry @ = if a if 1 else 0 then result cc-fold! exit then
+  entry cc-eq-entry @ = if a b = if 1 else 0 then result cc-fold! exit then
+  entry cc-lt-entry @ = if a b < if 1 else 0 then result cc-fold! exit then
+  entry cc-ult-entry @ = if a b u< if 1 else 0 then result cc-fold! exit then
+  entry cc-shl-entry @ = entry cc-shr-entry @ = or entry cc-sar-entry @ = or if
+    b 31 u> if exit then
+    entry cc-shl-entry @ = if a b lshift else
+      a b rshift entry cc-sar-entry @ = a 0< and b 0<> and if
+        -1 32 b - lshift or then then result cc-fold! exit
+  then
+  entry cc-div-entry @ = entry cc-mod-entry @ = or if
+    b 0= a -2147483648 = b -1 = and or if exit then
+    a abs 0 b abs um/mod
+    entry cc-div-entry @ = if nip a 0< b 0< xor else drop a 0< then
+    if negate then result cc-fold! exit
+  then
+  entry cc-udiv-entry @ = entry cc-umod-entry @ = or if
+    b 0= if exit then a 0 b um/mod
+    entry cc-udiv-entry @ = if nip else drop then result cc-fold! exit
+  then ;
+' cc-fold-operation is cc-fold-invoke
+: cc-fold-invert-body ( source result -- ) L{ source result }
+  source cc-known? if source cc-fold@ 1 and 0= if 1 else 0 then result cc-fold! then ;
+' cc-fold-invert-body is cc-fold-invert
 : cc-load-value ( source type -- value ) cc-cell 0 L{ source type value width }
   type cc-width 4 (local!) value type cc-type!
   width 32 = if 32 value source cc-op else
     32 value cc-zero @ cc-op width value source cc-op
     type cc-signed? if 32 width do 1 value i + source width 1- + cc-op loop then
-  then value ;
-: cc-value ( source -- value ) dup cc-type cc-load-value ;
+  then source type value cc-fold-load value ;
+defer cc-decay
+' cc-raw-value is cc-decay
+: cc-value ( source -- value ) cc-decay dup cc-type cc-load-value ;
 : cc-materialize-body ( source -- value )
-  dup cc-lvalue 1 = over cc-type cc-width 32 < and if cc-value then ;
+  cc-decay dup cc-lvalue 1 = over cc-type cc-width 32 < and if cc-value then ;
 ' cc-materialize-body is cc-materialize
 : cc-integer-check ( target -- )
   cc-type cc-kind if s" expected integer operand" cc-fail then ;
@@ -702,20 +776,18 @@ cc-init-types
     right cc-size left cc-size <= if right 1+ exit then
   then right ;
 : cc-convert ( source type -- value ) L{ source type }
+  source cc-decay 1 (local!)
   type 3 <> if source cc-value-check then
   source cc-materialize 1 (local!)
   type 11 = if source cc-truth dup 11 cc-type! else source type cc-load-value then ;
 : cc-pointer-compatible ( left-type right-type -- flag )
   2dup = >r cc-pointee 3 = swap cc-pointee 3 = or r> or ;
 : cc-null-constant? ( target -- flag )
-  dup cc-constant-base >= over 180224 < and if
-    cc-data-base - 8 / cc-image + dup c@ over 1+ c@ or
-    over 2 + c@ or swap 3 + c@ or 0=
-  else drop 0 then ;
+  dup cc-known? if dup cc-type cc-kind 0= swap cc-fold@ 0= and else drop 0 then ;
 : cc-assignment-check ( destination source -- ) L{ destination source }
   destination cc-value-check source cc-value-check
   destination cc-pointer? source cc-pointer? and if
-    destination cc-type source cc-type cc-pointer-compatible if exit then
+    destination cc-type source cc-effective-type cc-pointer-compatible if exit then
     s" incompatible pointer types" cc-fail then
   destination cc-pointer? source cc-pointer? = if exit then
   destination cc-pointer? source cc-null-constant? and if exit then
@@ -726,6 +798,8 @@ defer cc-expression
 defer cc-full-expression
 defer cc-unary
 defer cc-inspect
+defer cc-read-constant
+defer cc-array-suffix
 : cc-basic-type-start ( -- flag )
   s" int" cc-is s" signed" cc-is or s" unsigned" cc-is or
   s" char" cc-is or s" short" cc-is or s" long" cc-is or
@@ -762,8 +836,8 @@ defer cc-inspect
     cc-next 40 cc-expect cc-nest
     cc-type-start if recurse else 0 cc-inspect cc-declared-type ! then
     cc-unnest 41 cc-expect cc-declared-type @ dup cc-base-type !
-    cc-read-stars cc-declared-type !
-  else cc-read-basic-type then ;
+    cc-read-stars cc-array-suffix cc-declared-type !
+  else cc-read-basic-type cc-declared-type @ cc-array-suffix cc-declared-type ! then ;
 : cc-name! ( destination -- )
   s" int" cc-is s" void" cc-is or s" if" cc-is or s" else" cc-is or
   s" while" cc-is or s" return" cc-is or s" signed" cc-is or
@@ -788,6 +862,7 @@ defer cc-inspect
 : cc-param ( fn index -- target ) swap 8 * + cells cc-function-params + @ ;
 defer cc-statement
 defer cc-increment
+defer cc-subscript
 defer cc-block
 defer cc-sizeof
 defer cc-alignof
@@ -833,10 +908,20 @@ variable cc-loop-level
   cc-cell dup fn cc-function-value cc-fget cc-type cc-type!
   dup 32 swap cc-saved-result cc-op ;
 
-: cc-address ( target -- pointer ) cc-cell L{ target result }
+: cc-address ( target -- pointer )
+  dup cc-lvalue 0= if s" address requires lvalue" cc-fail then
+  dup cc-lvalue 2 = if cc-lvalue-pointer @ cc-value exit then
+  cc-cell L{ target result }
   32 result target cc-data-base - cc-stack-base + 8 / cc-const cc-op
   10 result 11 + cc-sp 14 + cc-op
   result target cc-type cc-pointer-to cc-type! result ;
+: cc-decay-body ( source -- pointer )
+  dup cc-type cc-kind 3 = if
+    dup cc-type cc-pointee cc-pointer-to >r
+    dup cc-lvalue 2 = if cc-lvalue-pointer @ cc-value else cc-address then
+    dup r> cc-type!
+  then ;
+' cc-decay-body is cc-decay
 : cc-pointer-check ( pointer -- ) 0 0 L{ pointer alignment bad }
   pointer cc-pointer? 0= if s" expected pointer" cc-fail then
   pointer cc-type cc-pointee dup 3 = if s" dereference of void pointer" cc-fail then
@@ -852,6 +937,7 @@ variable cc-loop-level
 : cc-pointer-read ( pointer -- value ) cc-value cc-cell 0 0 L{ pointer result slot type }
   pointer cc-type cc-pointee 4 (local!) result type cc-type!
   result 2 cc-lvalue! pointer result cc-lvalue-pointer !
+  type cc-kind 3 = cc-address-only @ 0<> or if result exit then
   pointer cc-pointer-check
   32 result cc-zero @ cc-op
   2 pointer cc-frame-extra + result cc-frame-extra + cc-room
@@ -867,16 +953,20 @@ variable cc-loop-level
   21 slot 71 * 26 + pointer cc-op pointer cc-type cc-pointee cc-width 0 value cc-op ;
 : cc-lvalue-write ( destination source -- value ) 0 L{ destination source result }
   destination cc-lvalue 0= if s" assignment requires lvalue" cc-fail then
+  destination cc-type cc-kind 3 = if s" array assignment unsupported" cc-fail then
   destination source cc-assignment-check
   source destination cc-type cc-convert 3 (local!)
   destination cc-lvalue 1 = if destination cc-type cc-width destination result cc-op else
-    destination cc-lvalue-pointer @ result cc-pointer-write then result ;
+    destination cc-lvalue-pointer @ result cc-pointer-write then
+  result cc-forget result ;
 
 : cc-primary ( -- target )
   cc-token @ 40 = if cc-next cc-nest
     cc-token @ 123 = if
       cc-in-function @ 0= if s" statement expression outside function" cc-fail then
-      cc-block dup 0= if drop cc-cell dup 3 cc-type! then
+      cc-block dup 0= if drop cc-cell dup 3 cc-type! else
+        dup cc-type cc-kind 3 = over cc-lvalue 0= or if cc-value dup cc-forget then
+      then
     else cc-full-expression then cc-unnest 41 cc-expect exit then
   cc-token @ 1 = if cc-number @ cc-const dup cc-number-type @ cc-type! cc-next exit then
   cc-token @ 2 = if
@@ -887,8 +977,12 @@ variable cc-loop-level
       cells cc-symbol-address + @ then exit
   then s" expected expression" cc-fail ;
 : cc-postfix ( -- value )
-  cc-primary begin cc-token @ dup 264 = swap 265 = or while
-    cc-token @ cc-next -1 cc-increment repeat ;
+  cc-primary begin
+    cc-token @ 91 = if cc-subscript else
+      cc-token @ dup 264 = swap 265 = or if
+        cc-token @ cc-next -1 cc-increment else exit then
+    then
+  again ;
 : cc-unary-body ( -- target )
   s" sizeof" cc-is if cc-next cc-sizeof exit then
   s" _Alignof" cc-is s" __alignof" cc-is or s" __alignof__" cc-is or
@@ -899,9 +993,8 @@ variable cc-loop-level
     then r> cc-pos ! cc-next then
   cc-token @ dup 264 = swap 265 = or if cc-token @ >r cc-next
     cc-nest recurse cc-unnest r> 0 cc-increment exit then
-  cc-token @ 38 = if cc-next cc-find-symbol dup 0<
-    if s" expected local object after &" cc-fail then
-    cells cc-symbol-address + @ cc-next cc-address exit then
+  cc-token @ 38 = if cc-next 1 cc-address-only +!
+    cc-nest recurse cc-unnest -1 cc-address-only +! cc-address exit then
   cc-token @ 42 = if cc-next cc-nest recurse cc-unnest cc-pointer-read exit then
   cc-token @ 45 = if cc-next cc-nest recurse cc-unnest
     dup cc-integer-check dup cc-type cc-promoted >r
@@ -926,6 +1019,8 @@ variable cc-loop-level
     cc-token @ >r cc-next cc-unary r> cc-multiplicative-op repeat ;
 : cc-scale-index ( value bytes -- value ) cc-cell L{ value bytes result }
   value cc-integer-check value cc-materialize 1 (local!)
+  bytes 1 <> bytes 2 <> and bytes 4 <> and if
+    value bytes cc-const cc-mul-entry @ cc-invoke exit then
   bytes 1 = if 32 result value cc-op else
     32 result cc-zero @ cc-op
     bytes 2 = if 31 result 1+ value cc-op else 30 result 2 + value cc-op then
@@ -933,24 +1028,31 @@ variable cc-loop-level
 : cc-additive-op ( lhs rhs token -- value ) 0 0 0 L{ lhs rhs token difference result shift }
   lhs cc-pointer? rhs cc-pointer? and if
     token 45 <> if s" cannot add pointers" cc-fail then
-    lhs cc-type rhs cc-type <> if s" incompatible pointer difference" cc-fail then
+    lhs cc-effective-type rhs cc-effective-type <> if s" incompatible pointer difference" cc-fail then
     lhs rhs cc-sub-entry @ cc-invoke 4 (local!)
-    lhs cc-type cc-pointee cc-size dup 4 = if drop 2 else 2 = if 1 else 0 then then 6 (local!)
-    shift 0= if difference exit then
+    lhs cc-effective-type cc-pointee cc-size dup 4 = if drop 2 else 2 = if 1 else 0 then then 6 (local!)
+    shift 0= if
+      lhs cc-effective-type cc-pointee cc-size dup 1 = if drop difference else
+        cc-const difference swap cc-div-entry @ cc-invoke then exit
+    then
     cc-cell 5 (local!) 32 shift - result difference shift + cc-op
     32 32 shift - do 1 result i + difference 31 + cc-op loop result exit
   then
   lhs cc-pointer? if
-    lhs rhs lhs cc-type cc-pointee cc-size cc-scale-index
+    lhs rhs lhs cc-effective-type cc-pointee cc-size cc-scale-index
     token 43 = if cc-add-entry @ else cc-sub-entry @ then
-    cc-invoke dup lhs cc-type cc-type! exit
+    cc-invoke dup lhs cc-effective-type cc-type! exit
   then
   rhs cc-pointer? if
     token 43 <> if s" cannot subtract pointer from int" cc-fail then
-    rhs lhs rhs cc-type cc-pointee cc-size cc-scale-index cc-add-entry @ cc-invoke
-    dup rhs cc-type cc-type! exit
+    rhs lhs rhs cc-effective-type cc-pointee cc-size cc-scale-index cc-add-entry @ cc-invoke
+    dup rhs cc-effective-type cc-type! exit
   then
   lhs rhs token 43 = if cc-add-entry @ else cc-sub-entry @ then cc-integer-op ;
+ : cc-subscript-body ( base -- value )
+  cc-next cc-nest cc-full-expression cc-unnest 93 cc-expect
+  43 cc-additive-op cc-pointer-read ;
+' cc-subscript-body is cc-subscript
 : cc-increment-body ( destination token postfix -- value ) 0 L{ destination token postfix old }
   destination cc-lvalue 0= if s" increment requires lvalue" cc-fail then
   postfix if destination cc-value 4 (local!) then
@@ -971,7 +1073,7 @@ variable cc-loop-level
 : cc-relational-op ( lhs rhs op -- target ) L{ lhs rhs op }
   lhs cc-value-check rhs cc-value-check
   lhs cc-pointer? rhs cc-pointer? <> if s" incompatible comparison" cc-fail then
-  lhs cc-pointer? if lhs cc-type rhs cc-type cc-pointer-compatible 0=
+  lhs cc-pointer? if lhs cc-effective-type rhs cc-effective-type cc-pointer-compatible 0=
     if s" incompatible comparison pointers" cc-fail then then
   lhs cc-pointer? if cc-ult-entry @ else
     lhs rhs cc-common-type cc-signed? if cc-lt-entry @ else cc-ult-entry @ then then >r
@@ -987,7 +1089,7 @@ variable cc-loop-level
     cc-token @ >r cc-next cc-relational
     dup cc-value-check over cc-value-check
     2dup cc-pointer? swap cc-pointer? and if
-      2dup cc-type swap cc-type cc-pointer-compatible 0=
+      2dup cc-effective-type swap cc-effective-type cc-pointer-compatible 0=
       if s" incompatible comparison pointers" cc-fail then
     then
     2dup cc-pointer? swap cc-pointer? <> if
@@ -1005,21 +1107,26 @@ variable cc-loop-level
 : cc-link! ( field target -- ) cc-unevaluated @ if 2drop exit then swap 24 swap cc-value! ;
 defer cc-logical-and
 defer cc-conditional
-: cc-logical-step ( lhs token -- result ) cc-cell 0 0 L{ lhs token result table skip }
+: cc-logical-step ( lhs token -- result ) cc-cell 0 0 0 L{ lhs token result table skip rhs }
   lhs cc-truth cc-branch 4 (local!)
   table token 262 = if 0 else 32 then + cc-current cc-patch
   32 result token 262 = if cc-zero @ else cc-one @ then cc-op
   cc-forward 5 (local!)
   table token 262 = if 32 else 0 then + cc-current cc-patch
-  cc-next token 262 = if cc-bit-or else cc-logical-and then cc-truth
-  32 result rot cc-op skip cc-boundary cc-link! result ;
+  cc-next token 262 = if cc-bit-or else cc-logical-and then cc-truth 6 (local!)
+  32 result rhs cc-op skip cc-boundary cc-link!
+  lhs cc-known? if
+    lhs cc-fold@ 0<> token 262 = xor if
+      token 263 = if 1 else 0 then result cc-fold!
+    else rhs cc-known? if rhs cc-fold@ result cc-fold! then then
+  then result ;
 : cc-logical-and-body ( -- value )
   cc-bit-or begin cc-token @ 262 = while 262 cc-logical-step repeat ;
 ' cc-logical-and-body is cc-logical-and
 : cc-logical-or ( -- value )
   cc-logical-and begin cc-token @ 263 = while 263 cc-logical-step repeat ;
 : cc-conditional-step ( condition -- result )
-    cc-truth cc-branch cc-cell 0 0 0 L{ table result yes no skip }
+    cc-truth dup >r cc-branch cc-cell 0 0 0 r> L{ table result yes no skip condition }
     table 32 + cc-current cc-patch cc-next
     cc-nest cc-full-expression cc-unnest 3 (local!)
     32 result yes cc-materialize cc-op cc-forward 5 (local!)
@@ -1029,12 +1136,16 @@ defer cc-conditional
     yes cc-pointer? no cc-pointer? <> if
       yes cc-pointer? if no else yes then cc-null-constant? 0=
       if s" incompatible conditional operands" cc-fail then
-      result yes cc-pointer? if yes else no then cc-type cc-type!
+      result yes cc-pointer? if yes else no then cc-effective-type cc-type!
     else yes cc-pointer? if
-      yes cc-type no cc-type cc-pointer-compatible 0= if s" incompatible conditional pointers" cc-fail then
-      result yes cc-type cc-pointee 3 = if yes else no then cc-type cc-type!
+      yes cc-effective-type no cc-effective-type cc-pointer-compatible 0= if s" incompatible conditional pointers" cc-fail then
+      result yes cc-effective-type cc-pointee 3 = if yes else no then cc-effective-type cc-type!
     else result yes no cc-common-type cc-type! then then then
-    skip cc-boundary cc-link! result ;
+    skip cc-boundary cc-link!
+    condition cc-known? if
+      condition cc-fold@ if yes else no then dup cc-known? if
+        cc-fold@ result cc-type cc-fold-convert result cc-fold! else drop then
+    then result ;
 : cc-conditional-body ( -- result )
   cc-logical-or cc-token @ 63 = if cc-conditional-step then ;
 ' cc-conditional-body is cc-conditional
@@ -1055,7 +1166,8 @@ defer cc-conditional
 ' cc-assignment-expression is cc-expression
 : cc-full-expression-body ( -- value )
   cc-expression cc-token @ 44 = if
-    begin drop cc-next cc-expression cc-token @ 44 <> until cc-value then ;
+    begin drop cc-next cc-expression cc-token @ 44 <> until cc-value
+    dup cc-forget then ;
 ' cc-full-expression-body is cc-full-expression
 : cc-inspect-body ( unary -- type )
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ 0
@@ -1064,18 +1176,52 @@ defer cc-conditional
   unary if cc-unary else cc-full-expression then cc-type 6 (local!)
   cc-unnest -1 cc-unevaluated +!
   data cc-data-base - 8 / cc-data @ data - 8 / >r
-  dup cc-types + r@ 0 fill cc-lvalues + r> 0 fill
+  dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
   constants cc-constant-base - 32 / cc-constant-types +
   cc-constants @ constants - 32 / 0 fill
   data cc-data ! constants cc-constants ! calls cc-call-count ! symbols cc-symbol-count ! type ;
 ' cc-inspect-body is cc-inspect
+ : cc-read-constant-body ( -- bits )
+  cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ 0
+  L{ data constants calls symbols result }
+  1 cc-unevaluated +! cc-nest cc-conditional
+  dup cc-integer-check dup cc-known? 0= if s" expected integer constant expression" cc-fail then
+  cc-fold@ 5 (local!) cc-unnest -1 cc-unevaluated +!
+  data cc-data-base - 8 / cc-data @ data - 8 / >r
+  dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
+  constants cc-constant-base - 32 / cc-constant-types + cc-constants @ constants - 32 / 0 fill
+  data cc-data ! constants cc-constants ! calls cc-call-count ! symbols cc-symbol-count ! result ;
+' cc-read-constant-body is cc-read-constant
+: cc-array-to ( base count -- type ) 0 0 L{ base length size result }
+  base 3 = if s" array of void" cc-fail then
+  base cc-size 0= if s" incomplete array element" cc-fail then
+  length 0< if s" nonpositive array size" cc-fail then
+  length 2097152 base cc-size / u> if s" array size overflow" cc-fail then
+  length base cc-size * 3 (local!)
+  size 2097152 u> if s" array size overflow" cc-fail then
+  cc-type-count @ 0 do
+    i cc-kind 3 = i cc-pointee base = and i cc-size size = and
+    if i unloop exit then
+  loop
+  cc-type-count @ 128 >= cc-limit cc-type-count @ 4 (local!)
+  3 cc-type-kinds result + c! base cc-type-bases result + c!
+  size cc-type-sizes result cells + ! base cc-alignment cc-type-aligns result cells + !
+  1 cc-type-count +! result ;
+: cc-array-suffix-body ( base -- type ) 0 L{ base length }
+  cc-token @ 91 = if
+    cc-next cc-token @ 93 = if 0 else cc-read-constant dup 1 <
+      if s" nonpositive array size" cc-fail then then 2 (local!) 93 cc-expect
+    cc-nest base recurse cc-unnest length cc-array-to
+  else base then ;
+' cc-array-suffix-body is cc-array-suffix
 : cc-query-type
   cc-token @ 40 = if
     cc-token-start @ >r cc-next cc-type-start if
       cc-read-type cc-declared-type @ r> drop 41 cc-expect
     else r> cc-pos ! cc-next 1 cc-inspect then
   else 1 cc-inspect then ;
-: cc-sizeof-body cc-query-type cc-size cc-const dup 1 cc-type! ;
+: cc-sizeof-body cc-query-type dup cc-kind 3 = over cc-size 0= and
+  if s" sizeof incomplete array" cc-fail then cc-size cc-const dup 1 cc-type! ;
 ' cc-sizeof-body is cc-sizeof
 : cc-alignof-body cc-query-type cc-alignment cc-const dup 1 cc-type! ;
 ' cc-alignof-body is cc-alignof
@@ -1128,13 +1274,41 @@ defer cc-conditional
   cc-truth cc-branch dup 32 + head cc-patch cc-current cc-patch
   condition cc-current breaks continues cc-loop-finish ;
 : cc-declarator-type ( base -- type ) cc-read-stars ;
+: cc-clear-object ( target bytes -- ) L{ target bytes }
+  bytes 0 ?do 8 target i 8 * + cc-zero @ cc-op loop ;
+: cc-scalar-initializer ( -- value )
+  cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
+    cc-token @ 44 = if cc-next then 125 cc-expect else cc-expression then ;
+: cc-initialize-array ( target -- ) 0 0 0 0 L{ target type index pointer braces }
+  target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
+  braces if cc-next then
+  begin cc-token @ 125 <> while
+    index type cc-pointee cc-size * type cc-size >= if
+      braces if s" too many array initializers" cc-fail else exit then then
+    target cc-decay index cc-const 43 cc-additive-op 4 (local!)
+    type cc-pointee cc-kind 3 = if pointer cc-pointer-read recurse else
+      pointer cc-pointer-read cc-scalar-initializer cc-lvalue-write drop then
+    index 1+ 3 (local!)
+    cc-token @ 44 = if
+      braces 0= index type cc-pointee cc-size * type cc-size >= and if exit then
+      cc-next
+    else cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
+  repeat braces if cc-next then ;
 : cc-declaration
-  cc-read-type cc-base-type @ cc-declared-type @ L{ base type }
+  cc-read-type cc-base-type @ cc-declared-type @ 0 0 0 L{ base type name after target }
   begin
     type 3 = if s" void object unsupported" cc-fail then
-    type cc-symbol dup type cc-type! >r cc-next
-    cc-token @ 61 = if cc-next cc-expression else cc-zero @ then
-    r@ swap cc-lvalue-write drop r> drop
+    cc-token-start @ 3 (local!) cc-next
+    type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
+    name cc-pos ! cc-next type cc-symbol dup type cc-type! 5 (local!)
+    after cc-pos ! cc-next
+    type cc-kind 3 = if
+      target type cc-size cc-clear-object
+      cc-token @ 61 = if cc-next target cc-initialize-array then
+    else
+      cc-token @ 61 = if cc-next cc-scalar-initializer else cc-zero @ then
+      target swap cc-lvalue-write drop
+    then
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
   until 59 cc-expect ;
 : cc-for
@@ -1209,6 +1383,12 @@ defer cc-conditional
           cc-parameter-count @ 0= cc-token @ 41 = and 0=
           if s" void parameter unsupported" cc-fail then -1
         else
+        cc-token @ 2 = if
+          cc-token-start @ >r cc-next
+          cc-declared-type @ cc-array-suffix cc-declared-type !
+          cc-token-start @ cc-parameter-after ! r> cc-pos ! cc-next
+        then
+        cc-declared-type @ dup cc-kind 3 = if cc-pointee cc-pointer-to then cc-declared-type !
         cc-parameter-count @ dup 8 >= cc-limit >r
         cc-new-function @ if
           cc-declared-type @ cc-object dup cc-declared-type @ cc-type!
@@ -1220,7 +1400,7 @@ defer cc-conditional
           dup cc-type cc-declared-type @ <>
           if s" conflicting parameter type" cc-fail then
         then
-        cc-token @ 2 = if cc-symbol-at drop cc-next else drop then
+        cc-token @ 2 = if cc-symbol-at drop cc-parameter-after @ cc-pos ! cc-next else drop then
         r> 1+ cc-parameter-count !
         cc-token @ 44 = if cc-next 0 else -1 then
         then
@@ -1279,8 +1459,9 @@ defer cc-conditional
   0 cc-scope-level ! 0 cc-first-block !
   0 cc-unevaluated !
   0 cc-in-function !
+  0 cc-address-only !
   -1 cc-main-index ! cc-data-base cc-data !
-  cc-init-types cc-types 2048 0 fill
+  cc-init-types cc-fold-flags 2048 0 fill cc-types 2048 0 fill
   cc-lvalues 2048 0 fill
   cc-constant-types 512 0 fill
   cc-code-base cc-origin ! cc-data-base cc-emission-base ! cc-image cc-emission-buffer !

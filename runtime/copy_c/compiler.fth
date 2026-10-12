@@ -1025,7 +1025,7 @@ variable cc-prefix-quals
   s" unsigned" cc-is or s" sizeof" cc-is or s" for" cc-is or
   s" _Alignof" cc-is or s" __alignof" cc-is or s" __alignof__" cc-is or
   s" do" cc-is or s" break" cc-is or s" continue" cc-is or
-  s" switch" cc-is or s" case" cc-is or
+  s" switch" cc-is or s" case" cc-is or s" goto" cc-is or
   s" _Static_assert" cc-is or s" _Generic" cc-is or s" default" cc-is or s" __builtin_offsetof" cc-is or
   s" __builtin_types_compatible_p" cc-is or
   s" typedef" cc-is or cc-keyword-type? or
@@ -1092,8 +1092,30 @@ variable cc-loop-level
 variable cc-break-level
 variable cc-switch-depth
 variable cc-statement-expression-depth
+variable cc-statement-expression-current
+variable cc-statement-expression-count
+create cc-statement-expression-parents 513 cells allot
+variable cc-label-count
+create cc-label-names 128 32 * allot
+create cc-label-targets 128 cells allot
+create cc-label-regions 128 cells allot
+create cc-label-defined 128 allot
+variable cc-goto-count
+create cc-goto-labels 256 cells allot
+create cc-goto-fields 256 cells allot
+create cc-goto-regions 256 cells allot
 create cc-switch-contexts 32 8 * cells allot
 create cc-switch-cases 32 128 * 3 * cells allot
+: cc-statement-expression-enter
+  cc-statement-expression-count @ 512 >= cc-limit
+  1 cc-statement-expression-count +!
+  cc-statement-expression-current @
+  cc-statement-expression-parents cc-statement-expression-count @ cells + !
+  cc-statement-expression-count @ cc-statement-expression-current !
+  1 cc-statement-expression-depth +! ;
+: cc-statement-expression-leave
+  cc-statement-expression-parents cc-statement-expression-current @ cells + @
+  cc-statement-expression-current ! -1 cc-statement-expression-depth +! ;
 
 : cc-call ( fn -- value ) 0 L{ fn nargs }
   fn 0< fn cc-function-count @ >= or if s" unknown function" cc-fail then
@@ -1219,7 +1241,7 @@ create cc-switch-cases 32 128 * 3 * cells allot
   cc-token @ 40 = if cc-next cc-nest
     cc-token @ 123 = if
       cc-in-function @ 0= if s" statement expression outside function" cc-fail then
-      1 cc-statement-expression-depth +! cc-block -1 cc-statement-expression-depth +!
+      cc-statement-expression-enter cc-block cc-statement-expression-leave
       dup 0= if drop cc-cell dup 3 cc-type! else
         dup cc-type cc-kind 3 = over cc-lvalue 0= or if cc-value dup cc-forget then
       then
@@ -2238,7 +2260,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     5 context cc-fget dup 128 >= cc-limit context swap cc-switch-row 4 (local!)
     low 0 row cc-fset high 1 row cc-fset cc-boundary 2 row cc-fset
     5 context cc-fget 1+ 5 context cc-fset
-  then cc-nest cc-statement cc-unnest ;
+  then cc-token @ 125 <> if cc-nest cc-statement cc-unnest then ;
 : cc-switch ( -- ) 0 0 0 0 0 0
   L{ value context entry ending row table data }
   cc-next 40 cc-expect cc-full-expression dup cc-integer-check
@@ -2273,8 +2295,43 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   cc-break-count @ 4 context cc-fget ?do cc-break-fields i cells + @ cc-current cc-link! loop
   4 context cc-fget cc-break-count !
   -1 cc-switch-depth +! -1 cc-break-level +! 0 cc-statement-result ! ;
+: cc-label? ( -- flag )
+  cc-token @ 2 <> if 0 exit then
+  cc-token-start @ >r cc-next cc-token @ 58 = r> cc-pos ! cc-next ;
+: cc-label-index ( -- index )
+  cc-label-names cc-label-count @ cc-find dup 0< if drop
+    cc-label-count @ dup 128 >= cc-limit
+    dup 32 * cc-label-names + cc-name! 1 cc-label-count +! then ;
+: cc-define-label ( -- ) cc-label-index L{ index }
+  cc-label-defined index + c@ if s" duplicate label" cc-fail then
+  cc-next 58 cc-expect cc-boundary index cc-label-targets cc-fset
+  cc-statement-expression-current @ index cc-label-regions cc-fset
+  1 cc-label-defined index + c!
+  cc-token @ 125 <> if cc-nest cc-statement cc-unnest then ;
+: cc-goto ( -- ) cc-next
+  cc-token @ 2 <> if s" expected label name" cc-fail then cc-label-index L{ index }
+  cc-next 59 cc-expect cc-goto-count @ 256 >= cc-limit
+  index cc-goto-count @ cc-goto-labels cc-fset
+  cc-statement-expression-current @ cc-goto-count @ cc-goto-regions cc-fset
+  cc-unevaluated @ if 0 else cc-forward then cc-goto-count @ cc-goto-fields cc-fset
+  1 cc-goto-count +! ;
+: cc-goto-finish ( -- ) 0 0 0 L{ index source target }
+  cc-goto-count @ 0 ?do
+    i cc-goto-labels cc-fget 1 (local!)
+    cc-label-defined index + c@ 0= if s" undefined label" cc-fail then
+    i cc-goto-regions cc-fget 2 (local!) index cc-label-regions cc-fget 3 (local!)
+    begin source target <> source 0<> and while
+      source cc-statement-expression-parents cc-fget 2 (local!)
+    repeat source target <> if s" goto enters statement expression" cc-fail then
+    i cc-goto-fields cc-fget dup if index cc-label-targets cc-fget cc-link! else drop then
+  loop ;
+: cc-label-reset
+  0 cc-label-count ! cc-label-defined 128 0 fill 0 cc-goto-count !
+  0 cc-statement-expression-current ! 0 cc-statement-expression-count ! ;
 : cc-statement-body
   0 cc-statement-result !
+  s" case" cc-is s" default" cc-is or if cc-case exit then
+  cc-label? if cc-define-label exit then
   s" typedef" cc-is if cc-typedef exit then
   s" _Static_assert" cc-is if cc-static-assert exit then
   cc-token @ 123 = if
@@ -2282,7 +2339,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   cc-type-start if cc-declaration 0 cc-statement-result ! exit then
   s" if" cc-is if cc-if 0 cc-statement-result ! exit then
   s" switch" cc-is if cc-switch exit then
-  s" case" cc-is s" default" cc-is or if cc-case exit then
+  s" goto" cc-is if cc-goto exit then
   s" while" cc-is if cc-while 0 cc-statement-result ! exit then
   s" do" cc-is if cc-do 0 cc-statement-result ! exit then
   s" for" cc-is if cc-for 0 cc-statement-result ! exit then
@@ -2373,8 +2430,10 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     cc-function-index @ cc-function-argc cc-fget 0<> if s" main takes no parameters" cc-fail then
   then
   cc-token @ 123 <> if s" expected function body" cc-fail then
+  cc-label-reset
   -1 cc-first-block !
   -1 cc-in-function ! cc-statement 0 cc-in-function !
+  cc-goto-finish
   cc-function-type @ cc-kind 2 = if cc-cell dup 3 cc-type! else cc-zero @ then cc-return-value
   cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
   cc-function-aliases @ cc-alias-count ! 0 cc-symbol-count ! 0 cc-scope-level ! ;
@@ -2502,6 +2561,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   0 cc-pos ! 0 cc-token-start ! 0 cc-depth ! 0 cc-function-count ! 0 cc-call-count !
   0 cc-loop-level ! 0 cc-break-level ! 0 cc-switch-depth !
   0 cc-statement-expression-depth !
+  cc-label-reset
   0 cc-break-count ! 0 cc-continue-count !
   0 cc-scope-level ! 0 cc-first-block !
   0 cc-unevaluated !

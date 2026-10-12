@@ -1,0 +1,31 @@
+"""Static file-scope integer objects in the direct copy image."""
+valid = [
+    ("global-guest", b'int x=7;int main(){return x;}', 7),
+    ("global-zero", b'int x;int main(){return x;}', 0),
+    ("global-write", b'int x=3;int f(){x++;return x;}int main(){return f()+f();}', 9),
+    ("global-pointer", b'int x=7;int main(){int*p=&x;*p=9;return x;}', 9),
+    ("global-const", b'const int x=7;int main(){const int*p=&x;return *p;}', 7),
+    ("global-volatile", b'volatile int x=7;int main(){x++;return x;}', 8),
+    ("global-narrow", b'char a=255;unsigned char b=255;short c=65535;int main(){return a+b+c;}', 253),
+    ("global-bool", b'_Bool x=7;int main(){return x;}', 1),
+    ("global-shadow", b'int x=7;int f(int x){return x;}int main(){int x=3;return f(x);}', 3),
+    ("global-block-shadow", b'int x=7;int main(){{int x=3;x++;}return x;}', 7),
+    ("global-enum", b'enum E{A=7};enum E x=A;int main(){return x;}', 7),
+    ("global-multiple", b'int a=3,b=4;int main(){return a+b;}', 7),
+    ("global-ice", b'int x=sizeof(short)+3*4;int main(){return x;}', 14),
+    ("global-braces", b'int x={{7},};int main(){return x;}', 7),
+    ("global-type", b'unsigned short x=7;int main(){return sizeof(x)+__builtin_types_compatible_p(typeof(x),unsigned short);}', 3),
+    ("global-string-neighbor", b'int x=7;int main(){return x+"A"[0];}', 72),
+]
+invalid = [
+    ("global-duplicate-pending", b'int x;int x;int main(){return 0;}'),
+    ("global-typedef-conflict", b'typedef int x;int x;int main(){return 0;}'),
+    ("global-function-conflict", b'int x(){return 1;}int x;int main(){return 0;}'),
+    ("global-enumerator-conflict", b'enum E{x};int x;int main(){return 0;}'),
+    ("global-const-write", b'const int x=7;int main(){x=9;return x;}'),
+    ("global-nonconstant", b'int x=7;int y=x;int main(){return y;}'),
+    ("global-call-init", b'int f(){return 7;}int x=f();int main(){return x;}'),
+    ("global-array-pending", b'int x[2];int main(){return 0;}'),
+    ("global-pointer-init-pending", b'int*x=0;int main(){return 0;}'),
+    ("global-extern-pending", b'extern int x;int main(){return 0;}'),
+]

@@ -662,6 +662,7 @@ create cc-types 2048 allot
 create cc-lvalues 2048 allot
 create cc-lvalue-pointers 2048 cells allot
 create cc-constant-types 512 allot
+create cc-static-types 4096 allot
 cc-constant-types 512 0 fill
 variable cc-declared-type
 variable cc-base-type
@@ -777,10 +778,15 @@ defer cc-qualify-array
   swap cc-alignment 8 * dup 1- cc-data @ + swap negate and cc-data !
   cc-data @ swap cc-data +! cc-data @ 147456 > cc-limit ;
 : cc-type ( target -- type )
+  dup cc-static-base >= over cc-data-base < and if
+    cc-static-base - 8 / cc-static-types + c@ exit then
   dup cc-frame? if cc-data-base - 8 / cc-types + c@ exit then
   dup cc-constant-base >= over 180224 < and if
     cc-constant-base - 32 / cc-constant-types + c@ else drop 0 then ;
-: cc-type! ( target type -- ) swap dup cc-frame? if
+: cc-type! ( target type -- ) swap
+  dup cc-static-base >= over cc-data-base < and if
+    cc-static-base - 8 / cc-static-types + c! exit then
+  dup cc-frame? if
     cc-data-base - 8 / cc-types + c! else
     cc-constant-base - 32 / cc-constant-types + c! then ;
 : cc-effective-type ( target -- type ) cc-type dup cc-kind 3 = if cc-pointee cc-pointer-to then ;
@@ -790,6 +796,7 @@ defer cc-qualify-array
   cc-size dup 0= if s" arithmetic on incomplete pointer" cc-fail then ;
 : cc-pointer? ( target -- flag ) cc-effective-type cc-kind 1 = ;
 : cc-lvalue ( target -- kind )
+  dup cc-static-base >= over cc-data-base < and if drop 1 exit then
   dup cc-frame? if cc-data-base - 8 / cc-lvalues + c@ else drop 0 then ;
 : cc-lvalue! ( target kind -- ) swap cc-data-base - 8 / cc-lvalues + c! ;
 : cc-lvalue-pointer ( target -- address ) cc-data-base - 8 / cells cc-lvalue-pointers + ;
@@ -1094,6 +1101,9 @@ variable cc-loop-level
   target cc-lvalue 2 = if
     32 result target cc-lvalue-pointer @ cc-value cc-op
     result target cc-type cc-pointer-to cc-type! result exit then
+  target cc-static-base >= target cc-data-base < and if
+    32 result target 8 / cc-const cc-op
+    result target cc-type cc-pointer-to cc-type! result exit then
   32 result target cc-data-base - cc-stack-base + 8 / cc-const cc-op
   10 result 11 + cc-sp 14 + cc-op
   result target cc-type cc-pointer-to cc-type! result ;
@@ -1166,6 +1176,8 @@ variable cc-loop-level
   cc-token @ 2 = if
     cc-find-alias dup 0< 0= if dup cc-binding-kinds + c@ 0= if
       s" typedef used as expression" cc-fail then
+      dup cc-binding-kinds + c@ 2 = if
+        cells cc-binding-values + @ cc-next exit then
       dup cells cc-binding-values + @ cc-const swap cc-alias-types + c@ over swap cc-type!
       cc-next exit then drop
     cc-find-symbol >r cc-find-function >r cc-next
@@ -1890,10 +1902,9 @@ defer cc-initialize-object
 ' cc-statement-body is cc-statement
 
 : cc-function
-  cc-read-type cc-declared-type @ cc-function-type !
   cc-token @ 59 = if cc-next exit then
   cc-function-type @ cc-record? if s" aggregate return unsupported" cc-fail then
-  cc-find-alias-raw 0< 0= if s" function conflicts with typedef" cc-fail then
+  cc-find-alias-raw 0< 0= if s" function conflicts with ordinary name" cc-fail then
   cc-alias-count @ cc-function-aliases !
   cc-tag-count @ cc-function-tags ! cc-tag-count @ cc-tag-scope !
   cc-find-function dup -1 = if drop
@@ -1967,6 +1978,35 @@ defer cc-initialize-object
   cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
   cc-function-aliases @ cc-alias-count ! 0 cc-symbol-count ! 0 cc-scope-level ! ;
 
+: cc-static-scalar ( -- value )
+  cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
+    cc-token @ 44 = if cc-next then 125 cc-expect else cc-read-constant then ;
+: cc-global ( -- ) cc-base-type @ cc-declared-type @ 0 0 0 0
+  L{ base type name after target value }
+  begin
+    type cc-kind dup 0 <> swap 6 <> and if s" global aggregate or pointer initializer pending" cc-fail then
+    type cc-kind 6 = if type cc-complete 1 <> if s" incomplete global enum" cc-fail then then
+    cc-token-start @ 3 (local!) cc-next cc-token-start @ 4 (local!)
+    type cc-alignment 8 * dup 1- cc-static-data @ + swap negate and cc-static-data !
+    cc-static-data @ 5 (local!) type cc-width cc-static-data +!
+    cc-static-data @ cc-data-base > cc-limit target type cc-type!
+    name cc-pos ! cc-next
+    cc-find-alias-raw 0< 0= if s" duplicate global object" cc-fail then
+    cc-find-function 0< 0= if s" global object conflicts with function" cc-fail then
+    type cc-bind-alias 2 cc-binding-kinds cc-alias-count @ 1- + c!
+    target cc-binding-values cc-alias-count @ 1- cells + !
+    after cc-pos ! cc-next
+    cc-token @ 61 = if cc-next cc-static-scalar type cc-fold-convert else 0 then
+    6 (local!) value type cc-width target cc-value!
+    cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
+  until 59 cc-expect ;
+: cc-external ( -- ) 0 L{ name }
+  cc-read-type cc-declared-type @ cc-function-type !
+  cc-token @ 59 = if cc-next exit then
+  cc-token-start @ 1 (local!) cc-next
+  cc-token @ 40 = if name cc-pos ! cc-next cc-function else
+    name cc-pos ! cc-next cc-global then ;
+
 : cc-finish
   cc-main-index @ 0< if s" main missing" cc-fail then
   cc-main-index @ cc-function-entry cc-fget 0=
@@ -2007,6 +2047,7 @@ defer cc-initialize-object
   0 cc-alias-count ! 0 cc-symbol-count !
   -1 cc-main-index ! cc-data-base cc-data !
   cc-static-base cc-static-data !
+  cc-static-types 4096 0 fill cc-image 4096 0 fill
   cc-init-types cc-fold-flags 2048 0 fill cc-types 2048 0 fill
   0 cc-tag-count ! 0 cc-tag-scope ! 0 cc-member-count !
   cc-lvalues 2048 0 fill
@@ -2016,5 +2057,5 @@ defer cc-initialize-object
   cc-library-constants @ cc-constants !
   cc-read-source cc-next begin cc-token @ while
     s" typedef" cc-is if cc-typedef else
-    s" _Static_assert" cc-is if cc-static-assert else cc-function then then repeat
+    s" _Static_assert" cc-is if cc-static-assert else cc-external then then repeat
   cc-finish cc-export 0 cs-exit ;

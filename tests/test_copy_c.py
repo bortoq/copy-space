@@ -24,6 +24,7 @@ from copy_c_typedef_cases import valid as typedef_valid, invalid as typedef_inva
 from copy_c_enum_cases import valid as enum_valid, invalid as enum_invalid
 from copy_c_character_cases import valid as character_valid, invalid as character_invalid
 from copy_c_string_cases import valid as string_valid, invalid as string_invalid
+from copy_c_global_cases import valid as global_valid, invalid as global_invalid
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -31,7 +32,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -198,6 +199,7 @@ valid += typedef_valid
 valid += enum_valid
 valid += character_valid
 valid += string_valid
+valid += global_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -283,6 +285,7 @@ invalid += typedef_invalid
 invalid += enum_invalid
 invalid += character_invalid
 invalid += string_invalid
+invalid += global_invalid
 for name, source in invalid:
     compile_native(name, source, True)
     print(f"OK copy-c rejects {name}", flush=True)
@@ -336,7 +339,7 @@ target("pointer-misaligned", bytes(forged), 0, pointer_fault=True)
 
 for cut in (0, 1, 2271):
     target(f"truncated-{cut}", packets["sum"][:payload_start(packets["sum"])+cut], 0, fault=True)
-print(f"OK copy-c native: {len(valid)} valid, {len(invalid)} rejected, stack overflow, 5 pointer faults, 3 truncated packets", flush=True)
+print(f"OK copy-c native: {len(valid)} valid, {len(invalid)} rejected, stack overflow, pointer boundary/alignment guards, 3 truncated packets", flush=True)
 for name, source, expected in arithmetic_faults:
     target(name, compile_native(name, source), expected)
 (ROOT / "native-summary.json").write_text(json.dumps({

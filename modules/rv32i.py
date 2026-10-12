@@ -30,6 +30,53 @@ REPORT_DETAIL = SCRATCH + 23*32
 REPORT_BUFFER = SCRATCH + 24*32
 
 
+@dataclass(frozen=True)
+class Layout:
+    space_bytes: int = SPACE_BYTES
+
+    def __post_init__(self):
+        if (not isinstance(self.space_bytes, int) or self.space_bytes < SPACE_BYTES
+                or self.space_bytes > 256*1024*1024
+                or self.space_bytes & (self.space_bytes-1)):
+            raise ValueError("space must be a power of two within 2..256 MiB")
+
+    @property
+    def address_bits(self):
+        return (self.space_bytes*8-1).bit_length()
+
+    @property
+    def n_bits(self):
+        return self.address_bits-1
+
+    @property
+    def instruction_bits(self):
+        return self.n_bits+2*self.address_bits
+
+    @property
+    def layer_bits(self):
+        return SLOTS*self.instruction_bits
+
+    @property
+    def memory_bit(self):
+        return self.space_bytes*4
+
+    @property
+    def core_record_bytes(self):
+        return (4*self.instruction_bits+7)//8+1
+
+    @property
+    def core_buffer(self):
+        return (self.layer_bits+7)//8*8
+
+    @property
+    def core_restart(self):
+        return self.core_buffer+(1 << (4*self.instruction_bits-1).bit_length())
+
+    @property
+    def literal_bytes(self):
+        return 2*self.address_bits//8
+
+
 @dataclass(eq=False)
 class Copy:
     n: int
@@ -48,15 +95,18 @@ class Field:
 
 class Image:
     def __init__(self, state_output=False, io=False, *, code_base=CODE,
-                 constant_base=0x24000, table_base=0x30000, code_limit=MEMORY,
-                 memory_bytes=MEMORY_BYTES, report_status=False):
+                 constant_base=0x24000, table_base=0x30000, code_limit=None,
+                 memory_bytes=MEMORY_BYTES, report_status=False, layout=Layout()):
         if state_output and (io or report_status):
             raise ValueError("--state-output cannot share OUT with I/O or status reports")
         self.state_output = state_output
         self.io = io
         self.report_status = report_status
-        if memory_bytes not in (65536, 131072, 262144, 524288):
-            raise ValueError("guest memory must be 65536, 131072, 262144 or 524288 bytes")
+        self.layout = layout
+        if (not isinstance(memory_bytes, int) or memory_bytes < 65536
+                or memory_bytes > layout.space_bytes//4
+                or memory_bytes & (memory_bytes-1)):
+            raise ValueError("guest memory must be a power of two within 64 KiB..space/4")
         self.memory_bytes = memory_bytes
         self.memory_bits = (memory_bytes-1).bit_length()
         self.channels = {}
@@ -69,7 +119,7 @@ class Image:
         self.constant_limit = table_base
         self.table_end = table_base
         self.code_base = code_base
-        self.code_limit = code_limit
+        self.code_limit = layout.memory_bit if code_limit is None else code_limit
         self.serial = 0
 
     def constant(self, value):
@@ -103,7 +153,7 @@ class Image:
         self.jump("report_out")
         self.start("report_out")
         self.channels["report_out"] = (2, Copy(len(template)*8, REPORT_BUFFER, 0))
-        self.blocks[self.current] = ([], Copy(LAYER_BITS, 0, ZERO))
+        self.blocks[self.current] = ([], Copy(self.layout.layer_bits, 0, ZERO))
 
     def table(self, values, stride=5):
         size = len(values) << stride
@@ -131,9 +181,9 @@ class Image:
         return instruction
 
     def jump(self, label=None):
-        end = Copy(LAYER_BITS, 0, label or 0)
+        end = Copy(self.layout.layer_bits, 0, label or 0)
         if label is None:
-            self.emit(24, Field(end, "src"), JUMP)
+            self.emit(self.layout.address_bits, Field(end, "src"), JUMP)
         ops, old = self.blocks[self.current]
         if old is not None:
             raise ValueError("duplicate terminator")
@@ -153,12 +203,12 @@ class Image:
 
     def dispatch(self, indices, mapping, default="illegal"):
         table = self.table([mapping.get(i, default) for i in range(1 << len(indices))])
-        self.lookup(JUMP, table, indices, 24, 5)
+        self.lookup(JUMP, table, indices, self.layout.address_bits, 5)
         self.jump()
 
     def branch(self, condition, no, yes):
         table = self.table([no, yes])
-        self.lookup(JUMP, table, [condition], 24, 5)
+        self.lookup(JUMP, table, [condition], self.layout.address_bits, 5)
         self.jump()
 
     def guard(self, condition, error):
@@ -269,7 +319,7 @@ class Image:
         self.start("fetch")
         self.require_zero([PC, PC+1], "instruction_align")
         self.require_zero(list(range(PC+self.memory_bits, PC+32)), "instruction_access")
-        fetch = Copy(32, RAW, MEMORY)
+        fetch = Copy(32, RAW, self.layout.memory_bit)
         self.fetch_instruction = fetch
         self.emit(self.memory_bits, Field(fetch, "src", 3), PC)
         self.blocks[self.current][0].append(fetch)
@@ -282,7 +332,7 @@ class Image:
             self.blocks[self.current][0].append(read)
         self.emit(32, B, RHS)
         rd_table = self.table([DISCARD] + [REGS+32*i for i in range(1, 32)])
-        self.lookup(RD_ADDRESS, rd_table, list(range(IR+7, IR+12)), 24, 5)
+        self.lookup(RD_ADDRESS, rd_table, list(range(IR+7, IR+12)), self.layout.address_bits, 5)
         self.dispatch(list(range(IR, IR+7)), {
             0x13: "immediate", 0x33: "register", 0x37: "lui", 0x17: "auipc",
             0x6f: "jal", 0x67: "jalr", 0x63: "branch", 0x03: "load",
@@ -388,7 +438,7 @@ class Image:
                                     ("lbu", 8, False), ("lhu", 16, False)]:
             self.start(name)
             self.memory_guard(width)
-            read = Copy(width, RAW, MEMORY)
+            read = Copy(width, RAW, self.layout.memory_bit)
             self.memory_address(read, "src")
             self.blocks[self.current][0].append(read)
             self.emit(32, RESULT, self.constant(0))
@@ -403,7 +453,7 @@ class Image:
             self.memory_guard(width, store=True)
             for i in range(width):
                 self.emit(1, RAW + (i//8)*8 + 7-i%8, RHS+i)
-            write = Copy(width, MEMORY, RAW)
+            write = Copy(width, self.layout.memory_bit, RAW)
             self.memory_address(write, "dst")
             self.blocks[self.current][0].append(write)
             self.jump("commit")
@@ -416,7 +466,7 @@ class Image:
         self.branch(IR+20, "io_dispatch" if self.io else "ecall", "ebreak")
         self.start("writeback")
         write = Copy(32, 0, RESULT)
-        self.emit(24, Field(write, "dst"), RD_ADDRESS)
+        self.emit(self.layout.address_bits, Field(write, "dst"), RD_ADDRESS)
         self.blocks[self.current][0].append(write)
         self.jump("commit")
         self.start("commit")
@@ -434,7 +484,7 @@ class Image:
             self.jump("report_prepare" if self.report_status else "halt")
         self.start("halt")
         # No link: this copy clears all PROCESSOR slots after the final OUT.
-        self.blocks[self.current] = ([], Copy(LAYER_BITS, 0, ZERO))
+        self.blocks[self.current] = ([], Copy(self.layout.layer_bits, 0, ZERO))
         if self.io:
             self.build_io()
         if self.report_status:
@@ -460,7 +510,7 @@ class Image:
             self.add(IMM, EA, self.constant(self.memory_bytes+1), subtract=True)
             self.gate("not", COND, [CARRY])
             self.guard(COND, "io_efault")
-            channel = Copy(0, MEMORY, 0)
+            channel = Copy(0, self.layout.memory_bit, 0)
             # Prepare the future channel layer; the next tick services it once.
             self.emit(self.memory_bits+1, Field(channel, "n", 3), a2)
             self.emit(self.memory_bits, Field(channel, "dst", 3), a1)
@@ -468,7 +518,7 @@ class Image:
             self.jump(transfer)
             self.start(transfer)
             self.channels[transfer] = (slot, channel)
-            self.emit(24, IO_STATUS, Field(channel, "src"))
+            self.emit(self.layout.address_bits, IO_STATUS, Field(channel, "src"))
             self.emit(32, RESULT, self.constant(0))
             # Packed status = bytes_copied << 4 | error. No byte conversion.
             self.emit(self.memory_bits+1, RESULT, IO_STATUS+4)
@@ -509,7 +559,8 @@ class Image:
             labels[name] = end
             chunks = [ops[i:i+252] for i in range(0, len(ops), 252)] or [[]]
             for j, chunk in enumerate(chunks):
-                link = terminator if j == len(chunks)-1 else Copy(LAYER_BITS, 0, end+LAYER_BITS)
+                link = terminator if j == len(chunks)-1 else Copy(
+                    self.layout.layer_bits, 0, end+self.layout.layer_bits)
                 for slot, op in enumerate(chunk, 3):
                     op.layer, op.slot = end, slot
                 link.layer, link.slot = end, 255
@@ -517,10 +568,11 @@ class Image:
                     slot, channel = self.channels[name]
                     channel.layer, channel.slot = end, slot
                 layers.append((end, name if j == 0 else name+f"/{j}", chunk, link))
-                end += LAYER_BITS
+                end += self.layout.layer_bits
         if end > self.code_limit:
             raise ValueError("copy layers overlap guest memory")
-        image = bytearray(image_bytes if image_bytes is not None else MEMORY//8+self.memory_bytes)
+        image = bytearray(image_bytes if image_bytes is not None else
+                          self.layout.memory_bit//8+self.memory_bytes)
 
         def bits(address, width, value):
             if isinstance(value, str):
@@ -539,36 +591,41 @@ class Image:
             if isinstance(value, Field):
                 target = value.instruction
                 base = 0 if target.layer == context.layer else target.layer
-                offset = {"n": 0, "dst": N_BITS, "src": N_BITS+ADDRESS_BITS}[value.name]
-                return base + target.slot*INSN_BITS + offset + value.offset
+                offset = {"n": 0, "dst": self.layout.n_bits,
+                          "src": self.layout.n_bits+self.layout.address_bits}[value.name]
+                return base + target.slot*self.layout.instruction_bits + offset + value.offset
             return labels[value] if isinstance(value, str) else value
 
         for address, width, value in self.data:
             bits(address, width, value)
         for address, name, ops, link in layers:
             if name in ("checkpoint", "halt") and self.state_output:
-                bits(address+2*INSN_BITS, N_BITS, FRAME_BITS)
-                bits(address+2*INSN_BITS+N_BITS, ADDRESS_BITS, REGS)
+                bits(address+2*self.layout.instruction_bits, self.layout.n_bits, FRAME_BITS)
+                bits(address+2*self.layout.instruction_bits+self.layout.n_bits,
+                     self.layout.address_bits, REGS)
             channels = [self.channels[name][1]] if name in self.channels else []
             for instruction in ops + [link] + channels:
-                at = address + instruction.slot*INSN_BITS
-                for width, value in [(N_BITS, instruction.n), (ADDRESS_BITS, instruction.dst),
-                                     (ADDRESS_BITS, instruction.src)]:
+                at = address + instruction.slot*self.layout.instruction_bits
+                for width, value in [(self.layout.n_bits, instruction.n),
+                                     (self.layout.address_bits, instruction.dst),
+                                     (self.layout.address_bits, instruction.src)]:
                     bits(at, width, resolve(value, instruction))
                     at += width
         for i, value in registers.items():
             if i:
                 bits(REGS+i*32, 32, value)
         bits(PC, 32, entry)
-        image[MEMORY//8:MEMORY//8+len(program)] = program
+        image[self.layout.memory_bit//8:self.layout.memory_bit//8+len(program)] = program
         first = labels[initial_label] // 8
-        image[:LAYER_BITS//8] = image[first:first+LAYER_BITS//8]
+        image[:self.layout.layer_bits//8] = image[first:first+self.layout.layer_bits//8]
         manifest = {
-            "space_bytes": SPACE_BYTES, "processor_n": SLOTS, "layer_bits": LAYER_BITS,
+            "space_bytes": self.layout.space_bytes, "processor_n": SLOTS,
+            "n_bits": self.layout.n_bits, "address_bits": self.layout.address_bits,
+            "instruction_bits": self.layout.instruction_bits, "layer_bits": self.layout.layer_bits,
             "registers_bit": REGS, "pc_bit": PC, "status_bit": STATUS,
             "io": self.io, "exit_code_bit": EXIT_CODE,
             "report_status": self.report_status,
-            "guest_memory_bit": MEMORY, "guest_memory_bytes": self.memory_bytes,
+            "guest_memory_bit": self.layout.memory_bit, "guest_memory_bytes": self.memory_bytes,
             "initial_stack": registers.get(2, 0),
             "state_output": self.state_output, "frame_bits": FRAME_BITS,
             "layer_count": len(layers), "code_end_bit": end, "entry": entry,
@@ -587,13 +644,15 @@ def main():
     parser.add_argument("--entry", type=lambda value: int(value, 0), default=0)
     parser.add_argument("--stack", type=lambda value: int(value, 0))
     parser.add_argument("--memory-bytes", type=lambda value: int(value, 0), default=MEMORY_BYTES)
+    parser.add_argument("--space-bytes", type=lambda value: int(value, 0), default=SPACE_BYTES)
     parser.add_argument("--state-output", action="store_true")
     parser.add_argument("--io", action="store_true", help="enable read/write/exit ECALL profile")
     parser.add_argument("--report-status", action="store_true")
     args = parser.parse_args()
     try:
         image, manifest = Image(args.state_output, args.io, memory_bytes=args.memory_bytes,
-                                report_status=args.report_status).build().encode(
+                                report_status=args.report_status,
+                                layout=Layout(args.space_bytes)).build().encode(
             args.program.read_bytes(), args.entry,
             None if args.stack is None else {2: args.stack})
     except (OSError, ValueError) as error:

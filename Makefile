@@ -38,11 +38,17 @@ RUNTIME_OBJ := $(OBJDIR)/tests/test_space_runtime.o
 IO_PARTIAL_BIN := $(BINDIR)/test_rv32i_io_partial
 IO_PARTIAL_OBJ := $(OBJDIR)/tests/test_rv32i_io_partial.o
 
-.PHONY: all bins clean test test-clean tdd test-sanitize test-rv32i-c pforth pforth-job test-pforth test-file-job copy-c copy-c-job test-copy-c
+.PHONY: all bins bins-large clean test test-clean tdd test-sanitize test-rv32i-c pforth pforth-job test-pforth test-file-job copy-c copy-c-job test-copy-c
 
 all: bins
 
 bins: $(BIN)
+
+bins-large: $(BINDIR)/space-64m
+
+$(BINDIR)/space-64m: $(SPACE_SRCS) src/space.h src/core.h src/support.h src/space_run.h src/space_trace.h
+	@mkdir -p "$(dir $@)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -UVM_SPACE_BYTES -DVM_SPACE_BYTES=67108864 $(SPACE_SRCS) $(LDFLAGS) -o "$@" $(LDLIBS)
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p "$(dir $@)"
@@ -72,16 +78,17 @@ $(IO_PARTIAL_BIN): $(IO_PARTIAL_OBJ) $(addprefix $(OBJDIR)/,$(RUN_SRCS:.c=.o)) $
 	@mkdir -p "$(dir $@)"
 	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
 
-test: bins $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(IO_PARTIAL_BIN) test-clean
+test: bins bins-large $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(IO_PARTIAL_BIN) test-clean
 	./scripts/tdd/run_all.sh
 
 tdd: test
 
-test-rv32i-c: bins $(PROOF_BIN) $(IO_PARTIAL_BIN)
+test-rv32i-c: bins bins-large $(PROOF_BIN) $(IO_PARTIAL_BIN)
 	python3 tests/test_rv32i_c.py
 	python3 tests/test_rv32i_io_c.py
 	python3 tests/test_rv32i_stream.py
 	python3 tests/test_rv32i_memory.py --c
+	python3 tests/test_rv32i_layout.py --c
 
 pforth: bins
 	python3 scripts/pforth/build.py -o build/pforth/pforth.stream
@@ -97,7 +104,7 @@ test-file-job: bins
 test-pforth: bins
 	python3 tests/test_pforth.py
 
-copy-c: bins
+copy-c: bins bins-large
 	python3 scripts/copy_c/build.py -o build/copy-c/compiler.stream
 
 COPY_C_SOURCE ?= examples/copy_c/sum.c

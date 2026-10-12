@@ -12,7 +12,7 @@ class Fault(Exception):
 
 
 def execute(program, registers=None, entry=0, initial_memory=None, max_steps=2000, coverage=None, io=None,
-            memory_bytes=65536):
+            memory_bytes=65536, memory_bit=8388608):
     memory = bytearray(memory_bytes)
     if initial_memory:
         for address, data in initial_memory.items():
@@ -175,7 +175,7 @@ def execute(program, registers=None, entry=0, initial_memory=None, max_steps=200
                             copied = returned = count
                             io["output"] += memory[pointer:pointer+count]
                         io["channels"].append([1 if operation == 63 else 2, count*8,
-                                               8388608+pointer*8, copied*8, int(error)])
+                                               memory_bit+pointer*8, copied*8, int(error)])
                     io["calls"].append([operation, descriptor, pointer, count, returned])
                     regs[10] = returned & MASK
                 elif word == 0x100073:

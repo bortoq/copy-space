@@ -1,5 +1,6 @@
 """Audit complete compressed observer traces without retaining them in RAM."""
 import gzip
+import re
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
@@ -24,7 +25,7 @@ def open_trace(path):
                 raise ValueError("invalid zstd trace: "+error.decode(errors="replace"))
 
 
-def audit_trace(path):
+def audit_trace(path, channel_bytes=None):
     copies, channels, pending, last = 0, 0, b"", b""
     with open_trace(path) as trace:
         while block := trace.read(8*1024*1024):
@@ -36,6 +37,12 @@ def audit_trace(path):
             complete, pending = data[:end+1], data[end+1:]
             copies += complete.count(b"\ncopy ")+complete.startswith(b"copy ")
             channels += complete.count(b"\nchannel ")+complete.startswith(b"channel ")
+            if channel_bytes is not None:
+                for match in re.finditer(rb"(?m)^channel [^\n]+\n", complete):
+                    fields = match.group().split()
+                    assert len(fields) == 7, "invalid channel record"
+                    channel = int(fields[2])
+                    channel_bytes[channel] = channel_bytes.get(channel, 0)+(int(fields[5])+7)//8
             last = complete[complete.rfind(b"\n", 0, len(complete)-1)+1:]
     assert not pending, "incomplete final trace record"
     return copies, channels, last

@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from space_trace_audit import audit_trace
+from space_segments import execute_segments
 from copy_c_gnu_cases import valid as gnu_valid, invalid as gnu_invalid, faults as arithmetic_faults
 
 ROOT = Path("tmp/space-tests/copy-c")
@@ -18,17 +19,24 @@ IMAGE = Path("build/copy-c/compiler.stream")
 NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "syntax-error"])
+parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
+parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
+parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
+parser.add_argument("--guest-timeout", type=int, default=3600, help="seconds allowed per emulator process")
 parser.add_argument("--gcc-reference", action="store_true", help="GNU C reference tests only; never production compilation")
 parser.add_argument("--trace-compression", choices=["gzip", "zstd"], default="gzip")
 parser.add_argument("--artifacts", type=Path, default=ROOT)
 options = parser.parse_args()
+if options.ticks_per_segment < 0 or options.guest_timeout <= 0:
+    parser.error("ticks must not be negative; guest timeout must be positive")
 if options.trace_compression == "zstd" and not shutil.which("zstd"):
     parser.error("zstd is required for --trace-compression zstd")
 ROOT = options.artifacts
 ROOT.mkdir(parents=True, exist_ok=True)
 (ROOT / "compiler.fth").write_bytes(Path("runtime/copy_c/compiler.fth").read_bytes())
 source_signature = hashlib.sha256((ROOT / "compiler.fth").read_bytes()).hexdigest()
+SOURCE_CAPACITY = 1048576
 dictionary = IMAGE.with_name(IMAGE.name+".build") / "dictionary/pfdicdat.h.json"
 assert json.loads(dictionary.read_text())["compiler_forth_sha256"] == source_signature, "rebuild stale native compiler"
 
@@ -91,6 +99,8 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
 
 
 valid = [
+    ("source-max", b"int main(){return 7;}".ljust(SOURCE_CAPACITY), 7),
+    ("large-source-guest", b"//"+b"x"*8192+b"\n"+Path("examples/copy_c/gnu_expressions.c").read_bytes(), 7),
     ("sum", b"int f(int a,int b){return a+b;}int main(){return f(1,2);}", 3),
     ("literal-sum", b"int main(){return 1+2;}", 3),
     ("carry", b"int main(){return 0xffffffff+1;}", 0),
@@ -110,6 +120,11 @@ valid = [
     ("loop", Path("examples/copy_c/loop.c").read_bytes(), 15),
     ("nested-loop", b"int main(){int i=0;int s=0;while(i<3){int j=0;while(j<2){s=s+1;j=j+1;}i=i+1;}return s;}", 6),
     ("comments", b"/* head */ int main() { // line\nreturn 0XFF + /* inner */ 1; } // tail", 256),
+    ("comment-stars", b"/***/int main(){/* * x ** y ***/return 7;}/**/", 7),
+    ("comment-empty", b"/**/int main(){return/**/7;}/* tail */", 7),
+    ("comment-line-eof", b"int main(){return 7;}//", 7),
+    ("comment-line-crlf", b"// ignored\r\nint main(){return 7;}\r\n// tail", 7),
+    ("comment-boundaries", b"/* // and / * */int main(){// /* ignored\nreturn 7;}/*/ ***/", 7),
     ("case-sensitive", b"int main(){int A=7;int a=2;return A-a;}", 5),
     ("block-names", b"int main(){int s=0;{int a=1;s=s+a;}{int a=2;s=s+a;}return s;}", 3),
     ("control", b"int f(int a){return a+1;}int main(){int i=0;while(i<2){if(i==0)i=f(i);else i=i+1;}return i;}", 2),
@@ -202,12 +217,14 @@ invalid = [
     ("hex-overflow", b"int main(){return 0x100000000;}"),
     ("bad-hex", b"int main(){return 0x;}"),
     ("comment-eof", b"int main(){/* unfinished"),
+    ("comment-final-star", b"int main(){return 7;}/* *"),
+    ("comment-final-stars", b"int main(){return 7;}/***"),
     ("main-args", b"int main(int a){return a;}"),
     ("reserved-name", b"int main(){int return;return 0;}"),
     ("main-call", b"int main(){return 0;}int f(){return main();}"),
     ("nul-source", b"int main(){return 0;}\0"),
     ("block-scope", b"int main(){{int a=1;}return a;}"),
-    ("source-capacity", b" "*8193),
+    ("source-capacity", b" "*(SOURCE_CAPACITY+1)),
     ("nesting-capacity", b"int main(){return "+b"("*40+b"1"+b")"*40+b";}"),
     ("name-capacity", b"int main(){int "+b"x"*32+b";return 0;}"),
     ("code-capacity", b"int main(){int a=0;"+b"a=a+1;"*100+b"return a;}"),
@@ -263,20 +280,7 @@ if options.native_only:
     raise SystemExit(0)
 
 
-def guest(name, source, expected=None):
-    folder = ROOT / "guest" / name
-    image = IMAGE.read_bytes()
-    data = image+b"CC-RUN\n"+source
-    # The user program is supplied only after the compiler image was built.
-    assert source not in (IMAGE.with_name(IMAGE.name+".build") / "program.bin").read_bytes()
-    command = ["build/bin/space", "--trace", str(folder / "trace.fifo"),
-               "--dump-space", str(folder / "space.bin")]
-    record(folder, command, data)
-    compiler_source = Path("runtime/copy_c/compiler.fth").read_bytes()
-    assert json.loads(IMAGE.with_name(IMAGE.name+".json").read_text())["compiler_forth_sha256"] == hashlib.sha256(compiler_source).hexdigest(), "rebuild stale guest compiler"
-    (folder / "source.c").write_bytes(source)
-    (folder / "compiler.fth").write_bytes(compiler_source)
-    (folder / "compiler.json").write_bytes(IMAGE.with_name(IMAGE.name+".json").read_bytes())
+def execute_single(folder, command):
     fifo = folder / "trace.fifo"
     fifo.unlink(missing_ok=True)
     os.mkfifo(fifo)
@@ -308,36 +312,72 @@ def guest(name, source, expected=None):
     started = time.monotonic()
     try:
         with (folder / "in.bin").open("rb") as incoming, (folder / "program.in").open("wb") as output, (folder / "stderr.txt").open("wb") as error_output:
-            result = subprocess.run(command, stdin=incoming, stdout=output, stderr=error_output, timeout=3600)
+            result = subprocess.run(command, stdin=incoming, stdout=output, stderr=error_output,
+                                    timeout=options.guest_timeout)
     finally:
         os.close(keepalive)
         compressor.join(timeout=30)
         fifo.unlink()
     assert not compressor.is_alive() and not errors, errors
     assert result.returncode == 0 and (folder / "stderr.txt").read_bytes() == b""
+    copies, channels, last = audit_trace(trace_path)
+    assert copies > 0 and channels > 0 and last.endswith(b" idle\n")
+    return {"copy_events": copies, "channel_events": channels,
+            "seconds": time.monotonic()-started, "trace_file": trace_path.name}
+
+
+def guest(name, source, expected=None):
+    folder = ROOT / "guest" / name
+    image = IMAGE.read_bytes()
+    data = image+b"CC-RUN\n"+source
+    assert source not in (IMAGE.with_name(IMAGE.name+".build") / "program.bin").read_bytes()
+    image_manifest = json.loads(IMAGE.with_name(IMAGE.name+".json").read_text())
+    compiler_space = options.compiler_space or {
+        2097152: Path("build/bin/space"), 67108864: Path("build/bin/space-64m"),
+    }.get(image_manifest["space_bytes"])
+    assert compiler_space is not None, "select --compiler-space for this image layout"
+    command = [str(compiler_space), "--trace", str(folder / "trace.fifo"),
+               "--dump-space", str(folder / "space.bin")]
+    if options.resume_segments:
+        assert options.ticks_per_segment > 0, "resume requires --ticks-per-segment"
+        assert (folder / "in.bin").read_bytes() == data, "changed guest input"
+    else:
+        record(folder, command, data)
+    compiler_source = Path("runtime/copy_c/compiler.fth").read_bytes()
+    assert image_manifest["compiler_forth_sha256"] == hashlib.sha256(compiler_source).hexdigest(), "rebuild stale guest compiler"
+    (folder / "source.c").write_bytes(source)
+    (folder / "compiler.fth").write_bytes(compiler_source)
+    (folder / "compiler.json").write_bytes(IMAGE.with_name(IMAGE.name+".json").read_bytes())
+    if options.ticks_per_segment:
+        execution = execute_segments(compiler_space, folder, folder / "in.bin",
+            space_bytes=image_manifest["space_bytes"], layer_bytes=image_manifest["layer_bits"]//8,
+            ticks=options.ticks_per_segment, timeout=options.guest_timeout,
+            compression=options.trace_compression, resume=options.resume_segments)
+    else:
+        execution = execute_single(folder, command)
     output = (folder / "program.in").read_bytes()
     raw = (folder / "space.bin").read_bytes()
 
     def word(at):
         return sum(((raw[(at+i)//8] >> (7-(at+i)%8)) & 1) << i for i in range(32))
 
-    assert raw[:2272] == bytes(2272) and word(132128) == 10
+    assert len(raw) == image_manifest["space_bytes"]
+    layer_bytes = image_manifest["layer_bits"]//8
+    assert raw[:layer_bytes] == bytes(layer_bytes) and word(132128) == 10
     if expected is None:
         assert word(132160) == 2 and output.startswith(b"copy-c error at byte ")
     else:
         assert word(132160) == 0 and output == packets[name]
         target("guest-"+name, output, expected)
-    copies, channels, last = audit_trace(trace_path)
-    assert copies > 0 and channels > 0 and last.endswith(b" idle\n")
     (folder / "evidence.json").write_text(json.dumps({
         "source_sha256": hashlib.sha256(source).hexdigest(), "output_sha256": hashlib.sha256(output).hexdigest(),
-        "copy_events": copies, "channel_events": channels, "seconds": time.monotonic()-started,
+        **execution,
         "guest_exit": word(132160),
         "compiler_forth_sha256": hashlib.sha256(compiler_source).hexdigest(),
         "compiler_image_sha256": hashlib.sha256(image).hexdigest(),
-        "trace_file": trace_path.name, "trace_compression": options.trace_compression,
+        "trace_compression": options.trace_compression,
     }, indent=2)+"\n")
-    print(f"OK copy-c guest {name}: {time.monotonic()-started:.1f}s, {copies} copies", flush=True)
+    print(f"OK copy-c guest {name}: {execution['seconds']:.1f}s, {execution['copy_events']} copies", flush=True)
 
 
 for name in options.guest_case or ("sum", "pointer-guest", "syntax-error"):

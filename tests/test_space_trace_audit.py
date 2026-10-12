@@ -12,7 +12,7 @@ def check():
     with tempfile.TemporaryDirectory(prefix="copy-space-trace-") as directory:
         root = Path(directory)
         data = b"".join(
-            f"copy {i} 3 32 151552 8388608\nchannel {i} 1 0 0 0 0 0\n".encode()
+            f"copy {i} 3 32 151552 8388608\nchannel {i} 1 8 0 8 0\n".encode()
             for i in range(150000)) + b"stop 150000 idle\n"
         compressed = [("gz", gzip.compress(data, compresslevel=1))]
         if shutil.which("zstd"):
@@ -24,7 +24,9 @@ def check():
             path.write_bytes(encoded)
             with open_trace(path) as stream:
                 assert stream.read() == data, "compression changed raw trace bytes"
-            assert audit_trace(path) == (150000, 150000, b"stop 150000 idle\n")
+            cursor = {}
+            assert audit_trace(path, cursor) == (150000, 150000, b"stop 150000 idle\n")
+            assert cursor == {1: 150000}
             path.write_bytes(encoded[:-5])
             try:
                 audit_trace(path)

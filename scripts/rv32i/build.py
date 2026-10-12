@@ -7,14 +7,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "modules"))
-from rv32i import Image, MEMORY_BYTES
+from rv32i import Image, Layout, MEMORY_BYTES, SPACE_BYTES
 from rv32i_stream import encode_stream
 from rv32i_toolchain import Toolchain
 
 
 def build(sources, output, optimization="-O2", compiler=None, stack=None, stream=False,
-          memory_bytes=MEMORY_BYTES, *, extra_cflags=(), report_status=False):
-    generator = Image(io=True, memory_bytes=memory_bytes, report_status=report_status).build()
+          memory_bytes=MEMORY_BYTES, *, extra_cflags=(), report_status=False,
+          space_bytes=SPACE_BYTES):
+    generator = Image(io=True, memory_bytes=memory_bytes, report_status=report_status,
+                      layout=Layout(space_bytes)).build()
     if stack is None:
         stack = memory_bytes-16
     if not 1024 < stack <= memory_bytes or stack % 16:
@@ -62,10 +64,12 @@ def main():
     parser.add_argument("--report-status", action="store_true", help="emit a terminal OUT record inside space")
     parser.add_argument("--stack", type=lambda text: int(text, 0))
     parser.add_argument("--memory-bytes", type=lambda text: int(text, 0), default=MEMORY_BYTES)
+    parser.add_argument("--space-bytes", type=lambda text: int(text, 0), default=SPACE_BYTES)
     args = parser.parse_args()
     try:
         build(args.sources, args.output, "-"+args.optimization, args.compiler, args.stack,
-              args.stream, args.memory_bytes, report_status=args.report_status)
+              args.stream, args.memory_bytes, report_status=args.report_status,
+              space_bytes=args.space_bytes)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, str(error)+"\n")
 

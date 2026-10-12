@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "modules"))
-from rv32i import EXIT_CODE, LAYER_BITS, SPACE_BYTES, STATUS
+from rv32i import EXIT_CODE, Layout, SPACE_BYTES, STATUS
 
 
 def word(raw, address):
@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path)
     parser.add_argument("--space", type=Path, default=ROOT / "build/bin/space")
+    parser.add_argument("--space-bytes", type=lambda text: int(text, 0), default=SPACE_BYTES)
     parser.add_argument("--stream", action="store_true", help="send the packet and guest input to the standard core through IN")
     parser.add_argument("--ticks", type=int)
     parser.add_argument("--trace", type=Path)
@@ -31,6 +32,7 @@ def main():
     if args.ticks is not None and args.ticks < 0:
         parser.error("ticks must not be negative")
     try:
+        layout = Layout(args.space_bytes)
         with tempfile.TemporaryDirectory(prefix="rv32i-run-") as directory, ExitStack() as files:
             dump = args.dump_space or Path(directory) / "space.bin"
             command = [str(args.space), "--dump-space", str(dump)]
@@ -85,7 +87,8 @@ def main():
             if result.returncode:
                 return 125
             raw = dump.read_bytes()
-            if len(raw) != SPACE_BYTES or raw[:LAYER_BITS//8] != bytes(LAYER_BITS//8):
+            if (len(raw) != layout.space_bytes
+                    or raw[:layout.layer_bits//8] != bytes(layout.layer_bits//8)):
                 print("RV32I did not complete (possibly tick limit)", file=sys.stderr)
                 return 125
             status = word(raw, STATUS)
@@ -93,7 +96,7 @@ def main():
                 print(f"RV32I stopped with status {status}", file=sys.stderr)
                 return 125
             return word(raw, EXIT_CODE) & 255
-    except OSError as error:
+    except (OSError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 125
 

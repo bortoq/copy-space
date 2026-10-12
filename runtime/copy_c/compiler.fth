@@ -1,7 +1,7 @@
 \ C subset compiler. All source parsing and target emission run in Forth.
 \ Target bit addresses; int values use LSB-first fields in MSB-first bytes.
 decimal
-8192 constant cc-source-max
+1048576 constant cc-source-max
 128 constant cc-layer-max
 18176 constant cc-layer-bits
 2272 constant cc-layer-bytes
@@ -496,20 +496,22 @@ defer cc-check-truth
 : cc-digit ( c -- flag ) 48 58 cc-within ;
 : cc-namechar dup cc-alpha swap cc-digit or ;
 : cc-space dup 32 = swap 9 14 cc-within or ;
+: cc-scan ( char -- )
+  >r cc-source cc-pos @ + cc-length @ cc-pos @ - r> scan
+  drop cc-source - cc-pos ! ;
 : cc-comment
   cc-step cc-step
   begin
+    42 cc-scan
     cc-peek -1 = if s" unfinished comment" cc-fail then
-    cc-peek 42 = cc-pos @ 1+ cc-length @ < and if
-      cc-source cc-pos @ 1+ + c@ 47 = else 0 then
-    if cc-step cc-step exit then cc-step
+    cc-step cc-peek 47 = if cc-step exit then
   again ;
 : cc-skip
   begin
     cc-peek cc-space if cc-step else
       cc-peek 47 = cc-pos @ 1+ cc-length @ < and if
         cc-source cc-pos @ 1+ + c@ dup 47 = if
-          drop begin cc-peek dup -1 <> swap 10 <> and while cc-step repeat
+          drop 10 cc-scan
         else 42 = if cc-comment
         else exit then then
       else exit then

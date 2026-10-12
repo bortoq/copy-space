@@ -966,6 +966,9 @@ defer cc-array-suffix
 defer cc-string
 defer cc-read-record
 defer cc-read-enumerators
+defer cc-read-abstract-type
+defer cc-declarator
+defer cc-parameter-declarator
 : cc-basic-type-start ( -- flag )
   s" int" cc-is s" signed" cc-is or s" unsigned" cc-is or
   s" char" cc-is or s" short" cc-is or s" long" cc-is or
@@ -1015,7 +1018,7 @@ variable cc-prefix-quals
     cc-declared-type ! exit then
   cc-typeof-token? if
     cc-next 40 cc-expect cc-nest
-    cc-type-start if recurse else 0 cc-inspect cc-declared-type ! then
+    cc-type-start if cc-read-abstract-type else 0 cc-inspect cc-declared-type ! then
     cc-unnest 41 cc-expect cc-declared-type @ quals cc-read-qualifiers cc-qualify dup cc-base-type !
     cc-read-stars cc-array-suffix cc-declared-type !
   else quals cc-prefix-quals ! cc-read-basic-type cc-declared-type @ cc-array-suffix cc-declared-type ! then ;
@@ -1068,8 +1071,7 @@ variable cc-prefix-quals
   value cc-binding-values cc-alias-count @ 1- cells + ! ;
 : cc-typedef ( -- ) 0 0 0 0 L{ base type name after }
   cc-next cc-read-type cc-base-type @ 1 (local!) cc-declared-type @ 2 (local!)
-  begin cc-token-start @ 3 (local!) cc-next
-    type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
+  begin type cc-declarator 3 (local!) 2 (local!) cc-token-start @ 4 (local!)
     name cc-pos ! cc-next type cc-bind-alias after cc-pos ! cc-next
     cc-token @ 44 = if cc-next base cc-read-stars 2 (local!) 0 else -1 then
   until 59 cc-expect ;
@@ -1274,7 +1276,7 @@ create cc-switch-cases 32 128 * 3 * cells allot
   s" _Alignof" cc-is s" __alignof" cc-is or s" __alignof__" cc-is or
   if cc-next cc-alignof exit then
   cc-token @ 40 = if cc-token-start @ >r cc-next cc-type-start if
-      cc-read-type cc-declared-type @ r> drop >r 41 cc-expect
+      cc-read-abstract-type cc-declared-type @ r> drop >r 41 cc-expect
       cc-nest recurse cc-unnest r> cc-convert exit
     then r> cc-pos ! cc-next then
   cc-token @ dup 264 = swap 265 = or if cc-token @ >r cc-next
@@ -1531,6 +1533,58 @@ variable cc-constant-type
     cc-nest base recurse cc-unnest length cc-array-to
   else base then ;
 ' cc-array-suffix-body is cc-array-suffix
+create cc-declarator-contexts 32 101 * cells allot
+variable cc-declarator-depth
+variable cc-parameter-name
+: cc-declarator-node ( context index -- node ) 2 * 5 + cells + ;
+: cc-declarator-add ( context kind argument -- ) L{ context kind argument }
+  0 context cc-fget dup 32 >= cc-limit
+  context swap cc-declarator-node kind 0 2 pick cc-fset argument 1 rot cc-fset
+  0 context cc-fget 1+ 0 context cc-fset ;
+: cc-declarator-path ( context -- ) 0 0 L{ context start mask }
+  3 context cc-fget 2 (local!)
+  begin cc-token @ 42 = while
+    cc-next 0 cc-read-qualifiers 3 (local!)
+    3 context cc-fget dup 32 >= cc-limit
+    69 + cells context + mask swap ! 3 context cc-fget 1+ 3 context cc-fset
+  repeat
+  cc-token @ 40 = if
+    cc-next cc-type-start 2 context cc-fget 0= and cc-token @ 41 = or if
+      s" function declarator pending" cc-fail then
+    cc-nest context recurse cc-unnest 41 cc-expect
+  else cc-token @ 2 = if
+    2 context cc-fget 0= if s" name in abstract declarator" cc-fail then
+    1 context cc-fget -1 <> if s" duplicate declarator name" cc-fail then
+    cc-token-start @ 1 context cc-fset cc-next
+  then then
+  begin cc-token @ 91 = while
+    cc-next cc-token @ 93 = if 0 else cc-read-constant dup 1 < if
+      s" nonpositive array size" cc-fail then then 3 (local!) 93 cc-expect
+    context 3 mask cc-declarator-add
+  repeat
+  cc-token @ 40 = if s" function declarator pending" cc-fail then
+  begin 3 context cc-fget start > while
+    3 context cc-fget 1- dup 3 context cc-fset 69 + cells context + @
+    context 1 rot cc-declarator-add
+  repeat ;
+: cc-declarator-parse ( base mode -- type name ) 0 0 L{ base mode context node }
+  cc-declarator-depth @ dup 32 >= cc-limit 101 * cells cc-declarator-contexts + 3 (local!)
+  context 101 cells 0 fill -1 1 context cc-fset mode 2 context cc-fset
+  1 cc-declarator-depth +! context cc-declarator-path
+  mode 2 = 1 context cc-fget -1 = and if s" expected declarator name" cc-fail then
+  0 context cc-fget begin dup 0> while
+    1- context over cc-declarator-node 4 (local!)
+    0 node cc-fget 1 = if base cc-pointer-to 1 node cc-fget cc-qualify else
+      base 1 node cc-fget cc-array-to then 1 (local!)
+  repeat drop base 1 context cc-fget -1 cc-declarator-depth +! ;
+: cc-declarator-body ( base -- type name ) 2 cc-declarator-parse ;
+' cc-declarator-body is cc-declarator
+: cc-parameter-declarator-body ( base -- type name ) 1 cc-declarator-parse ;
+' cc-parameter-declarator-body is cc-parameter-declarator
+: cc-read-abstract-type-body
+  cc-read-type cc-token @ 40 = if cc-declared-type @ 0 cc-declarator-parse
+    drop cc-declared-type ! then ;
+' cc-read-abstract-type-body is cc-read-abstract-type
 : cc-qualify-array-body ( type mask -- type ) L{ type mask }
   type cc-pointee mask cc-qualify
   type cc-size type cc-pointee cc-size / cc-array-to ;
@@ -1579,14 +1633,13 @@ variable cc-constant-type
     cc-nest cc-read-type cc-unnest cc-base-type @ 2 (local!)
     cc-declared-type @ 3 (local!)
     begin
-      owner cc-find-member 0< 0= if s" duplicate member" cc-fail then
-      cc-token-start @ 4 (local!) cc-next
-      type cc-array-suffix 3 (local!) cc-token-start @ 5 (local!)
+      type cc-declarator 4 (local!) 3 (local!) cc-token-start @ 5 (local!)
       type cc-kind 2 = type cc-size 0= or if s" incomplete member type" cc-fail then
       type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
         s" incomplete member type" cc-fail then then
       cc-member-count @ dup 256 >= cc-limit 7 (local!)
-      name cc-pos ! cc-next cc-member-names slot 32 * + cc-name!
+      name cc-pos ! cc-next owner cc-find-member 0< 0= if s" duplicate member" cc-fail then
+      cc-member-names slot 32 * + cc-name!
       after cc-pos ! cc-next
       owner cc-kind 5 = if 0 else owner cc-size
         type cc-alignment dup 1- rot + swap negate and then 6 (local!)
@@ -1647,7 +1700,7 @@ variable cc-constant-type
   type cc-find-member dup 0< if s" unknown offsetof member" cc-fail then 3 (local!)
   cc-next cc-member-types member + c@ offset cc-member-offsets member cells + @ + ;
 : cc-offsetof-body ( -- value ) 0 0 L{ type offset }
-  40 cc-expect cc-read-type cc-declared-type @ 1 (local!) 44 cc-expect
+  40 cc-expect cc-read-abstract-type cc-declared-type @ 1 (local!) 44 cc-expect
   type offset cc-offset-member 2 (local!) 1 (local!)
   begin
     cc-token @ 46 = if cc-next type offset cc-offset-member 2 (local!) 1 (local!) else
@@ -1680,8 +1733,8 @@ variable cc-constant-type
   left right cc-types-compatible? ;
 ' cc-query-compatible-body is cc-query-compatible
 : cc-compatible-body ( -- value )
-  40 cc-expect cc-read-type cc-declared-type @ >r 44 cc-expect
-  cc-read-type cc-declared-type @ r> swap cc-query-compatible
+  40 cc-expect cc-read-abstract-type cc-declared-type @ >r 44 cc-expect
+  cc-read-abstract-type cc-declared-type @ r> swap cc-query-compatible
   if 1 else 0 then 41 cc-expect cc-const ;
 ' cc-compatible-body is cc-compatible
 create cc-generic-state 32 14 * cells allot
@@ -1731,7 +1784,7 @@ variable cc-generic-depth
       1 0 context cc-fset cc-next 58 cc-expect
       9 context cc-fget if 2 cc-inspect drop else context -1 cc-generic-emit then
     else
-      cc-read-type cc-declared-type @ 4 (local!)
+      cc-read-abstract-type cc-declared-type @ 4 (local!)
       type context types cc-generic-type 58 cc-expect
       control type cc-types-compatible? if 9 context cc-fget if
           s" multiple matching generic associations" cc-fail then
@@ -1774,7 +1827,7 @@ variable cc-generic-depth
 : cc-query-type
   cc-token @ 40 = if
     cc-token-start @ >r cc-next cc-type-start if
-      cc-read-type cc-declared-type @ r> drop 41 cc-expect
+      cc-read-abstract-type cc-declared-type @ r> drop 41 cc-expect
     else r> cc-pos ! cc-next 1 cc-inspect then
   else 1 cc-inspect then ;
 : cc-sizeof-body cc-query-type dup cc-kind 3 = over cc-size 0= and
@@ -2174,9 +2227,8 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   begin
     0 7 (local!)
     is-for cc-in-for-declaration !
+    type cc-declarator 3 (local!) 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 2 = if s" void object unsupported" cc-fail then
-    cc-token-start @ 3 (local!) cc-next
-    type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 3 = type cc-size 0= and if
       cc-token @ 61 <> if s" incomplete array object" cc-fail then
       type 7 (local!) type name after cc-infer-array 2 (local!) then
@@ -2384,15 +2436,12 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   cc-token @ 41 <> if
       begin
         cc-read-type
+        cc-declared-type @ cc-parameter-declarator cc-parameter-name ! cc-declared-type !
+        cc-token-start @ cc-parameter-after !
         cc-declared-type @ cc-kind 2 = if
-          cc-parameter-count @ 0= cc-token @ 41 = and 0=
+          cc-parameter-count @ 0= cc-token @ 41 = and cc-parameter-name @ 0< and 0=
           if s" void parameter unsupported" cc-fail then -1
         else
-        cc-token @ 2 = if
-          cc-token-start @ >r cc-next
-          cc-declared-type @ cc-array-suffix cc-declared-type !
-          cc-token-start @ cc-parameter-after ! r> cc-pos ! cc-next
-        then
         cc-declared-type @ dup cc-kind 3 = if cc-pointee cc-pointer-to then cc-declared-type !
         cc-declared-type @ cc-record? if s" aggregate parameter unsupported" cc-fail then
         cc-parameter-count @ dup 8 >= cc-limit >r
@@ -2407,7 +2456,8 @@ here cc-function-names - constant cc-infer-snapshot-bytes
           if s" conflicting parameter type" cc-fail then
           dup cc-declared-type @ cc-type!
         then
-        cc-token @ 2 = if cc-symbol-at drop cc-parameter-after @ cc-pos ! cc-next else drop then
+        cc-parameter-name @ 0< if drop else cc-parameter-name @ cc-pos ! cc-next
+          cc-symbol-at drop cc-parameter-after @ cc-pos ! cc-next then
         r> 1+ cc-parameter-count !
         cc-token @ 44 = if cc-next 0 else -1 then
         then
@@ -2477,10 +2527,10 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   L{ base type name after target value alias original }
   begin
     0 8 (local!)
+    type cc-declarator 3 (local!) 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 2 = if s" void global object" cc-fail then
     type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
       s" incomplete global object" cc-fail then then
-    cc-token-start @ 3 (local!) cc-next type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 3 = type cc-size 0= and if
       type name after cc-global-array-type 2 (local!)
       type cc-size 0= if
@@ -2516,14 +2566,14 @@ here cc-function-names - constant cc-infer-snapshot-bytes
       1 cc-global-state alias + c! then then
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
   until 59 cc-expect ;
-: cc-external ( -- ) 0 L{ name }
+: cc-external ( -- ) 0 0 L{ name simple-name }
   0 cc-storage ! s" extern" cc-is if 1 cc-storage ! cc-next then
   s" static" cc-is if cc-storage @ if s" conflicting storage classes" cc-fail then
     2 cc-storage ! cc-next then
   cc-read-type cc-declared-type @ cc-function-type !
   cc-token @ 59 = if cc-next exit then
-  cc-token-start @ 1 (local!) cc-next
-  cc-token @ 40 = if name cc-pos ! cc-next cc-function else
+  cc-token @ 2 = 2 (local!) cc-token-start @ 1 (local!) cc-next
+  cc-token @ 40 = simple-name and if name cc-pos ! cc-next cc-function else
     name cc-pos ! cc-next cc-global then ;
 
 : cc-finish
@@ -2571,7 +2621,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   0 cc-generic-depth !
   0 cc-initializing !
   0 cc-pending-initializer !
-  0 cc-initializer-start ! 0 cc-range-path-depth !
+  0 cc-initializer-start ! 0 cc-range-path-depth ! 0 cc-declarator-depth !
   0 cc-infer-depth ! 0 cc-infer-target ! 0 cc-infer-length !
   0 cc-static-initializing !
   0 cc-union-count ! cc-pointer-origins 2048 cells 0 fill

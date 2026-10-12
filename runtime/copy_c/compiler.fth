@@ -723,6 +723,7 @@ create cc-type-complete 128 allot
 create cc-type-unqualified 128 allot
 create cc-type-qualifiers 128 allot
 variable cc-initializing
+variable cc-static-initializing
 create cc-tag-names 128 32 * allot
 create cc-tag-types 128 cells allot
 variable cc-tag-count
@@ -1162,6 +1163,15 @@ variable cc-loop-level
   2 pointer cc-frame-extra + value cc-frame-extra + cc-room
   cc-slot @ 1+ pointer cc-frame-extra + value cc-frame-extra + 3 (local!)
   21 slot 71 * 26 + pointer cc-op pointer cc-type cc-pointee cc-width 0 value cc-op ;
+: cc-static-location ( target -- address )
+  dup cc-lvalue 2 = if cc-lvalue-pointer @ dup cc-known? 0= if
+    s" unknown static destination" cc-fail then cc-fold@ 8 * then
+  dup cc-static-base < over cc-data-base >= or if
+    s" invalid static destination" cc-fail then ;
+: cc-static-store ( destination source -- value ) L{ destination source }
+  cc-initializing @ 0= if s" side effect in static initializer" cc-fail then
+  source cc-known? 0= if s" expected static constant initializer" cc-fail then
+  source cc-fold@ destination cc-type cc-width destination cc-static-location cc-value! source ;
 : cc-lvalue-write ( destination source -- value ) 0 L{ destination source result }
   destination cc-lvalue 0= if s" assignment requires lvalue" cc-fail then
   destination cc-type cc-quals 1 and cc-initializing @ 0= and if
@@ -1169,6 +1179,7 @@ variable cc-loop-level
   destination cc-type cc-kind 3 = if s" array assignment unsupported" cc-fail then
   destination source cc-assignment-check
   source destination cc-type cc-convert 3 (local!)
+  cc-static-initializing @ if destination result cc-static-store exit then
   destination cc-lvalue 1 = if destination cc-type cc-width destination result cc-op else
     destination cc-lvalue-pointer @ result cc-pointer-write then
   result cc-forget result ;
@@ -1556,9 +1567,10 @@ variable cc-constant-type
     2 cc-type-complete type + c!
     cc-next kind 6 = if type cc-read-enumerators else type cc-read-members then then type ;
 ' cc-read-record-body is cc-read-record
-: cc-field-view ( pointer index -- value ) 0 L{ pointer index quals }
+: cc-field-view ( pointer index -- value ) 0 0 L{ pointer index quals result }
   pointer cc-type cc-pointee cc-quals 3 (local!)
-  cc-cell dup 6 cc-pointer-to cc-type! dup >r 32 swap pointer cc-op r> 1 (local!)
+  cc-cell 4 (local!) result 6 cc-pointer-to cc-type! 32 result pointer cc-op
+  pointer 6 cc-pointer-to result cc-fold-load result 1 (local!)
   pointer cc-member-offsets index cells + @ cc-const 43 cc-additive-op 1 (local!)
   pointer cc-member-types index + c@ quals cc-qualify cc-pointer-to cc-type!
   pointer cc-pointer-read ;
@@ -1771,6 +1783,8 @@ variable cc-generic-depth
   condition cc-current breaks continues cc-loop-finish ;
 : cc-declarator-type ( base -- type ) cc-read-stars ;
 : cc-clear-object ( target bytes -- ) L{ target bytes }
+  cc-static-initializing @ if target cc-static-location cc-image-base - 8 / cc-image +
+    bytes 0 fill exit then
   bytes 0 ?do 8 target i 8 * + cc-zero @ cc-op loop ;
 : cc-scalar-initializer ( -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
@@ -1778,6 +1792,19 @@ variable cc-generic-depth
 : cc-initialize-write ( target value -- value )
   1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
 defer cc-initialize-object
+: cc-designator-equal
+  cc-token @ dup 46 = swap 91 = or if s" nested designator pending" cc-fail then
+  61 cc-expect ;
+: cc-initializer-comma ( braces -- continue )
+  if cc-next -1 exit then
+  cc-token-start @ >r cc-next
+  cc-token @ dup 46 = swap 91 = or if r> cc-pos ! cc-next 0 else r> drop -1 then ;
+: cc-member-ordinal ( owner member -- number ) 0 L{ owner member number }
+  owner cc-unqualified 1 (local!)
+  cc-member-count @ 0 ?do
+    cc-member-owners i + c@ owner = if
+      i member = if number unloop exit then number 1+ 3 (local!) then
+  loop s" unknown initializer member" cc-fail ;
 : cc-initialize-string ( target -- ) 0 0 0 0 L{ target source count pointer start }
   target cc-type cc-pointee cc-unqualified dup 4 < swap 6 > or if
     s" string initializer requires character array" cc-fail then
@@ -1785,6 +1812,9 @@ defer cc-initialize-object
   target cc-type cc-size count 1- < if s" string initializer too long" cc-fail then
   count target cc-type cc-size min 3 (local!)
   source cc-lvalue-pointer @ cc-fold@ 8 * 5 (local!)
+  cc-static-initializing @ if
+    start cc-image-base - 8 / cc-image +
+    target cc-static-location cc-image-base - 8 / cc-image + count cmove exit then
   target cc-lvalue 1 = if count 8 * target start cc-op exit then
   count 0 ?do
     target cc-decay i cc-const 43 cc-additive-op cc-pointer-read 4 (local!)
@@ -1794,19 +1824,21 @@ defer cc-initialize-object
 : cc-initialize-array ( target -- ) 0 0 0 0 L{ target type index pointer braces }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   braces if cc-next then
-  cc-token @ 34 = type cc-pointee cc-kind 3 <> and if target cc-initialize-string
+  cc-token @ 34 = type cc-pointee cc-kind dup 0= swap 6 = or and if target cc-initialize-string
     braces if cc-token @ 44 = if cc-next then 125 cc-expect then exit then
   begin cc-token @ 125 <> while
+    cc-token @ 91 = if cc-next cc-read-constant 3 (local!) 93 cc-expect cc-designator-equal then
+    index 0< if s" negative initializer index" cc-fail then
     index type cc-pointee cc-size * type cc-size >= if
       braces if s" too many array initializers" cc-fail else exit then then
     target cc-decay index cc-const 43 cc-additive-op 4 (local!)
     type cc-pointee dup cc-kind 3 = swap cc-record? or if
-      pointer cc-pointer-read cc-initialize-object else
+      pointer cc-pointer-read dup dup cc-type cc-size cc-clear-object cc-initialize-object else
       pointer cc-pointer-read cc-scalar-initializer cc-initialize-write drop then
     index 1+ 3 (local!)
     cc-token @ 44 = if
       braces 0= index type cc-pointee cc-size * type cc-size >= and if exit then
-      cc-next
+      braces cc-initializer-comma 0= if exit then
     else cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
   repeat braces if cc-next then ;
 : cc-member-number ( owner number -- index ) L{ owner number }
@@ -1820,16 +1852,21 @@ defer cc-initialize-object
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   braces if cc-next then
   begin cc-token @ 125 <> while
-    type number cc-member-number 4 (local!)
-    member 0< type cc-kind 5 = number 0<> and or if
-      braces if s" too many aggregate initializers" cc-fail else exit then then
+    cc-token @ 46 = if cc-next type cc-find-member 4 (local!)
+      member 0< if s" unknown initializer member" cc-fail then
+      type member cc-member-ordinal 3 (local!) cc-next cc-designator-equal
+      type cc-kind 5 = if target type cc-size cc-clear-object then
+    else type number cc-member-number 4 (local!)
+      member 0< type cc-kind 5 = number 0<> and or if
+        braces if s" too many aggregate initializers" cc-fail else exit then then then
     target cc-address member cc-field-view 6 (local!)
-    view cc-type dup cc-kind 3 = swap cc-record? or if view cc-initialize-object else
+    view cc-type dup cc-kind 3 = swap cc-record? or if
+      view view cc-type cc-size cc-clear-object view cc-initialize-object else
       view cc-scalar-initializer cc-initialize-write drop then
     number 1+ 3 (local!)
     cc-token @ 44 = if
       braces 0= if type number cc-member-number 0< type cc-kind 5 = or if exit then then
-      cc-next
+      braces cc-initializer-comma 0= if exit then
     else cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
   repeat braces if cc-next then ;
 : cc-initialize-object-body ( target -- )
@@ -2017,12 +2054,31 @@ defer cc-initialize-object
 : cc-static-scalar ( target -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-static-expression then ;
+: cc-static-aggregate ( target -- )
+  cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ cc-global-evaluation-level @
+  L{ target data constants calls symbols level }
+  1 cc-unevaluated +! cc-unevaluated @ cc-global-evaluation-level !
+  1 cc-static-initializing ! target target cc-type cc-size cc-clear-object
+  cc-token @ 123 <> cc-token @ 34 = target cc-type cc-kind 3 = and 0= and if
+    s" expected aggregate initializer braces" cc-fail then
+  cc-nest target cc-initialize-object cc-unnest 0 cc-static-initializing !
+  -1 cc-unevaluated +! level cc-global-evaluation-level !
+  data cc-data-base - 8 / cc-data @ data - 8 / >r
+  dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
+  constants cc-constant-base - 32 / cc-constant-types + cc-constants @ constants - 32 / 0 fill
+  data cc-data ! constants cc-constants ! calls cc-call-count ! symbols cc-symbol-count ! ;
 : cc-global ( -- ) cc-base-type @ cc-declared-type @ 0 0 0 0 0
   L{ base type name after target value alias }
   begin
-    type cc-kind dup 2 >= swap 6 <> and if s" global aggregate initializer pending" cc-fail then
-    type cc-kind 6 = if type cc-complete 1 <> if s" incomplete global enum" cc-fail then then
-    cc-token-start @ 3 (local!) cc-next cc-token-start @ 4 (local!)
+    type cc-kind 2 = if s" void global object" cc-fail then
+    type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
+      s" incomplete global object" cc-fail then then
+    cc-token-start @ 3 (local!) cc-next type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
+    type cc-kind 3 = type cc-size 0= and if
+      cc-token @ 61 <> if s" incomplete global array pending" cc-fail then
+      cc-next cc-token @ 123 = if cc-next then
+      cc-token @ 34 <> if s" inferred global array initializer pending" cc-fail then
+      type cc-pointee cc-string-size cc-array-to 2 (local!) after cc-pos ! cc-next then
     name cc-pos ! cc-next
     cc-find-alias-raw 7 (local!)
     cc-find-function 0< 0= if s" global object conflicts with function" cc-fail then
@@ -2046,8 +2102,9 @@ defer cc-initialize-object
     after cc-pos ! cc-next
     cc-token @ 61 = if
       cc-global-state alias + c@ 2 = if s" duplicate global definition" cc-fail then
-      cc-next target cc-static-scalar 6 (local!)
-      value type cc-width target cc-value! 2 cc-global-state alias + c!
+      cc-next type cc-kind 3 = type cc-record? or if target cc-static-aggregate else
+        target cc-static-scalar 6 (local!) value type cc-width target cc-value! then
+      2 cc-global-state alias + c!
     else cc-storage @ 1 <> cc-global-state alias + c@ 0= and if
       1 cc-global-state alias + c! then then
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
@@ -2103,6 +2160,7 @@ defer cc-initialize-object
   0 cc-in-for-declaration !
   0 cc-generic-depth !
   0 cc-initializing !
+  0 cc-static-initializing !
   0 cc-alias-count ! 0 cc-symbol-count !
   0 cc-global-ref-count ! cc-global-state 128 0 fill
   0 cc-global-evaluation-level !

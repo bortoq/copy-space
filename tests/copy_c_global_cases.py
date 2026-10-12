@@ -27,5 +27,4 @@ invalid = [
     ("global-const-write", b'const int x=7;int main(){x=9;return x;}'),
     ("global-nonconstant", b'int x=7;int y=x;int main(){return y;}'),
     ("global-call-init", b'int f(){return 7;}int x=f();int main(){return x;}'),
-    ("global-array-pending", b'int x[2];int main(){return 0;}'),
 ]

@@ -1,0 +1,33 @@
+"""One-level designators and continuation across brace elision."""
+valid = [
+    ("global-designator-guest", b'struct S{int x;}s={.x=7};int main(){return s.x;}', 7),
+    ("designator-guest", b'int a[3]={[1]=7};int main(){return a[0]+a[1]+a[2];}', 7),
+    ("designator-local-array", b'int main(){int a[4]={[2]=3,4};return a[0]+a[2]+a[3];}', 7),
+    ("designator-array-backward", b'int a[4]={[3]=7,[0]=3,4};int main(){return a[0]+a[1]+a[2]+a[3];}', 14),
+    ("designator-array-overwrite", b'int a[3]={[1]=3,[1]=7};int main(){return a[1];}', 7),
+    ("designator-array-constant", b'enum E{A=1};int a[3]={[A+1]=7};int main(){return a[2];}', 7),
+    ("designator-struct", b'struct S{int x,y,z;}s={.y=3,4};int main(){return s.x+s.y+s.z;}', 7),
+    ("designator-local-struct", b'int main(){struct S{int x,y,z;}s={.z=7,.x=3};return s.x+s.y+s.z;}', 10),
+    ("designator-struct-overwrite", b'struct S{int x,y;}s={.x=3,.x=7};int main(){return s.x+s.y;}', 7),
+    ("designator-struct-array", b'struct S{int a[2];int x;}s={.a={3,4},.x=7};int main(){return s.a[1]+s.x;}', 11),
+    ("designator-aggregate-overwrite", b'struct S{int a[2];}s={.a={3,4},.a={7}};int main(){return s.a[0]+s.a[1];}', 7),
+    ("designator-array-aggregate-overwrite", b'int a[2][2]={[1]={3,4},[1]={7}};int main(){return a[1][0]+a[1][1];}', 7),
+    ("designator-string", b'struct S{char s[4];int x;}s={.x=7,.s="abc"};int main(){return s.s[1]+s.x;}', 105),
+    ("designator-union", b'union U{int x;short y;}u={.y=7};int main(){return u.y;}', 7),
+    ("designator-union-overwrite", b'union U{int x;char y;}u={.x=0x12345678,.y=7};int main(){unsigned char*p=(unsigned char*)&u;return u.y+p[1]+p[2]+p[3];}', 7),
+    ("designator-union-array", b'union U{int x;char s[3];}u={.s="ab"};int main(){return u.s[1];}', 98),
+    ("designator-struct-elision", b'struct S{int a[3];int x;}s={.a=1,2,.x=7};int main(){return s.a[0]+s.a[1]+s.a[2]+s.x;}', 10),
+    ("designator-array-elision", b'int a[2][3]={[0]=1,2,[1]={7}};int main(){return a[0][0]+a[0][1]+a[0][2]+a[1][0];}', 10),
+    ("designator-static-pointer", b'int x=7;struct S{int*p;int n;}s={.n=3,.p=&x};int main(){return *s.p+s.n;}', 10),
+    ("designator-static-last", b'int a[1024]={[1023]=7};int main(){return a[1023];}', 7),
+]
+invalid = [
+    ("designator-index-overflow", b'int a[2]={[2]=7};int main(){return 0;}'),
+    ("designator-index-negative", b'int a[2]={[-1]=7};int main(){return 0;}'),
+    ("designator-unknown-member", b'struct S{int x;}s={.y=7};int main(){return 0;}'),
+    ("designator-nonconstant", b'int x=1;int a[2]={[x]=7};int main(){return 0;}'),
+    ("designator-nested-array-pending", b'int a[2][2]={[1][0]=7};int main(){return 0;}'),
+    ("designator-nested-member-pending", b'struct S{int a[2];}s={.a[1]=7};int main(){return 0;}'),
+    ("designator-range-pending", b'int a[3]={[0 ... 2]=7};int main(){return 0;}'),
+    ("designator-static-capacity", b'int a[1025];int main(){return 0;}'),
+]

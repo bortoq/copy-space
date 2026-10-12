@@ -24,6 +24,7 @@ valid = [
     ("string-init-signed", b'int main(){signed char s[2]="\\xff";return s[0];}', -1),
     ("string-init-field", b'int main(){struct S{char s[4];int x;}s={"abc",7};return s.s[2]+s.x;}', 106),
     ("string-init-nested", b'int main(){char s[2][4]={"abc","xy"};return s[0][1]+s[1][1]+s[1][3];}', 219),
+    ("string-local-pointer-array", b'int main(){char*p[2]={"abc","xy"};return p[0][1]+p[1][1];}', 219),
     ("string-init-empty", b'int main(){char s[]="";return sizeof(s)+s[0];}', 1),
     ("string-splice", b'int main(){return "a\\\nb"[1];}', 98),
     ("string-pool-last", b'int main(){char*p="'+b'a'*4095+b'";return p[4094]+p[4095];}', 97),

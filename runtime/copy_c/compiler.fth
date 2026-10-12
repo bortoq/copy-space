@@ -5,6 +5,9 @@ decimal
 128 constant cc-layer-max
 18176 constant cc-layer-bits
 2272 constant cc-layer-bytes
+98304 constant cc-image-base
+98304 constant cc-static-base
+variable cc-static-data
 131072 constant cc-data-base
 262144 constant cc-code-base
 163840 constant cc-constant-base
@@ -90,8 +93,8 @@ variable cc-unevaluated
   ." copy-c error at byte " cc-token-start @ . type cr 2 cs-exit ;
 : cc-limit ( flag -- ) if s" capacity exceeded" cc-fail then ;
 
-create cc-image 16384 cc-layer-max cc-layer-bytes * + allot
-cc-image 16384 cc-layer-max cc-layer-bytes * + 0 fill
+create cc-image 20480 cc-layer-max cc-layer-bytes * + allot
+cc-image 20480 cc-layer-max cc-layer-bytes * + 0 fill
 create cc-record 37 allot
 create cc-reversed 256 allot
 : cc-prepare-reverse
@@ -100,7 +103,7 @@ create cc-reversed 256 allot
 cc-prepare-reverse
 
 : cc-bits! ( value width position buffer -- ) cc-reversed cs-put-bits ;
-: cc-value! ( value bits target -- ) cc-data-base - cc-image cc-bits! ;
+: cc-value! ( value bits target -- ) cc-image-base - cc-image cc-bits! ;
 
 variable cc-row-n
 variable cc-row-d
@@ -331,7 +334,7 @@ variable cc-library-end
   cc-current cc-mod-entry !
   1 cc-div-signed cc-one @ cc-op 1 cc-div-mod cc-one @ cc-op cc-div-core @ cc-jump ;
 : cc-library
-  cc-code-base cc-origin ! cc-data-base cc-emission-base ! cc-image cc-emission-buffer !
+  cc-code-base cc-origin ! cc-image-base cc-emission-base ! cc-image cc-emission-buffer !
   0 cc-layer ! 3 cc-slot ! cc-constant-base cc-constants !
   cc-stack-base 32 cc-sp cc-value!
   s" copy-c: stack overflow" 0 do
@@ -389,6 +392,12 @@ variable cc-library-end
   32 21 do cc-carry cc-table-base 24 + cc-carry cc-a i + cc-lut2 loop
   cc-tmp cc-table-base 40 + cc-a 20 + cc-lut1
   cc-carry cc-table-base 24 + cc-carry cc-tmp cc-lut2
+  1 cc-b cc-zero @ cc-op
+  32 14 do cc-b cc-table-base 24 + cc-b cc-a i + cc-lut2 loop
+  cc-tmp cc-table-base 48 + cc-a 12 + cc-a 13 + cc-lut2
+  cc-tmp cc-table-base 40 + cc-tmp cc-lut1
+  cc-b cc-table-base 24 + cc-b cc-tmp cc-lut2
+  cc-carry cc-table-base 48 + cc-carry cc-b cc-lut2
   cc-carry cc-branch dup cc-pointer-error-table ! cc-current cc-patch
   cc-lret cc-dynamic
   cc-current cc-and-entry ! cc-table-base 48 + cc-bit-library
@@ -472,7 +481,7 @@ variable cc-preparing
   -1 cc-preparing ! 0 cc-prelude-bytes !
   cc-guard-code cc-guard-image cc-layer-bytes 2 * cc-install
   0 cc-preparing !
-  cc-code-base cc-origin ! cc-data-base cc-emission-base ! cc-image cc-emission-buffer !
+  cc-code-base cc-origin ! cc-image-base cc-emission-base ! cc-image cc-emission-buffer !
   cc-library-layer @ cc-layer ! 3 cc-slot ! ;
 cc-prepare-guard
 
@@ -917,6 +926,7 @@ defer cc-unary
 defer cc-inspect
 defer cc-read-constant
 defer cc-array-suffix
+defer cc-string
 defer cc-read-record
 defer cc-read-enumerators
 : cc-basic-type-start ( -- flag )
@@ -1080,8 +1090,10 @@ variable cc-loop-level
 
 : cc-address ( target -- pointer )
   dup cc-lvalue 0= if s" address requires lvalue" cc-fail then
-  dup cc-lvalue 2 = if cc-lvalue-pointer @ cc-value exit then
   cc-cell L{ target result }
+  target cc-lvalue 2 = if
+    32 result target cc-lvalue-pointer @ cc-value cc-op
+    result target cc-type cc-pointer-to cc-type! result exit then
   32 result target cc-data-base - cc-stack-base + 8 / cc-const cc-op
   10 result 11 + cc-sp 14 + cc-op
   result target cc-type cc-pointer-to cc-type! result ;
@@ -1139,6 +1151,7 @@ variable cc-loop-level
   result cc-forget result ;
 
 : cc-primary ( -- target )
+  cc-token @ 34 = if cc-string exit then
   s" _Generic" cc-is if cc-next cc-generic exit then
   s" __builtin_offsetof" cc-is if cc-next cc-offsetof exit then
   s" __builtin_types_compatible_p" cc-is if cc-next cc-compatible exit then
@@ -1399,6 +1412,26 @@ variable cc-constant-type
   3 cc-type-kinds result + c! base cc-type-bases result + c!
   size cc-type-sizes result cells + ! base cc-alignment cc-type-aligns result cells + !
   1 cc-type-count +! result ;
+: cc-string-body ( -- view ) cc-static-data @ 0 0 L{ start bytes byte }
+  begin
+    begin cc-peek 34 <> while
+      cc-literal-byte 3 (local!) byte 0< 0= if
+        cc-static-data @ 8 + cc-data-base > cc-limit
+        byte 8 cc-static-data @ cc-value! 8 cc-static-data +!
+        bytes 1+ 2 (local!) then
+    repeat cc-step cc-next cc-token @ 34 <>
+  until
+  cc-static-data @ 8 + cc-data-base > cc-limit
+  0 8 cc-static-data @ cc-value! 8 cc-static-data +!
+  start 8 / cc-const dup 4 cc-pointer-to cc-type!
+  cc-pointer-read dup 4 bytes 1+ cc-array-to cc-type! ;
+' cc-string-body is cc-string
+: cc-string-size ( -- bytes ) 0 L{ bytes }
+  begin
+    begin cc-peek 34 <> while
+      cc-literal-byte 0< 0= if bytes 1+ 1 (local!) then
+    repeat cc-step cc-next cc-token @ 34 <>
+  until bytes 1+ ;
 : cc-array-suffix-body ( base -- type ) 0 L{ base length }
   cc-token @ 91 = if
     cc-next cc-token @ 93 = if 0 else cc-read-constant dup 1 <
@@ -1712,9 +1745,24 @@ variable cc-generic-depth
 : cc-initialize-write ( target value -- value )
   1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
 defer cc-initialize-object
+: cc-initialize-string ( target -- ) 0 0 0 0 L{ target source count pointer start }
+  target cc-type cc-pointee cc-unqualified dup 4 < swap 6 > or if
+    s" string initializer requires character array" cc-fail then
+  cc-string 2 (local!) source cc-type cc-size 3 (local!)
+  target cc-type cc-size count 1- < if s" string initializer too long" cc-fail then
+  count target cc-type cc-size min 3 (local!)
+  source cc-lvalue-pointer @ cc-fold@ 8 * 5 (local!)
+  target cc-lvalue 1 = if count 8 * target start cc-op exit then
+  count 0 ?do
+    target cc-decay i cc-const 43 cc-additive-op cc-pointer-read 4 (local!)
+    cc-cell dup 4 cc-type! dup 32 swap cc-zero @ cc-op
+    dup 8 swap start i 8 * + cc-op pointer swap cc-initialize-write drop
+  loop ;
 : cc-initialize-array ( target -- ) 0 0 0 0 L{ target type index pointer braces }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   braces if cc-next then
+  cc-token @ 34 = type cc-pointee cc-kind 3 <> and if target cc-initialize-string
+    braces if cc-token @ 44 = if cc-next then 125 cc-expect then exit then
   begin cc-token @ 125 <> while
     index type cc-pointee cc-size * type cc-size >= if
       braces if s" too many array initializers" cc-fail else exit then then
@@ -1764,12 +1812,19 @@ defer cc-initialize-object
     type cc-kind 2 = if s" void object unsupported" cc-fail then
     cc-token-start @ 3 (local!) cc-next
     type cc-array-suffix 2 (local!) cc-token-start @ 4 (local!)
+    type cc-kind 3 = type cc-size 0= and if
+      cc-token @ 61 <> if s" incomplete array object" cc-fail then
+      cc-next cc-token @ 123 = if cc-next then
+      cc-token @ 34 <> if s" inferred array initializer pending" cc-fail then
+      type cc-pointee cc-string-size cc-array-to 2 (local!)
+      after cc-pos ! cc-next then
     name cc-pos ! cc-next type cc-symbol dup type cc-type! 5 (local!)
     after cc-pos ! cc-next
     0 cc-in-for-declaration !
     type cc-kind 3 = type cc-record? or if
       target type cc-size cc-clear-object
-      cc-token @ 61 = if cc-next cc-token @ 123 <> if
+      cc-token @ 61 = if cc-next cc-token @ 123 <>
+        cc-token @ 34 = type cc-kind 3 = and 0= and if
           s" expected aggregate initializer braces" cc-fail then
         target cc-initialize-object then
     else
@@ -1922,16 +1977,16 @@ defer cc-initialize-object
     cc-call-fields i cells + @ swap cc-link!
   loop
   cc-main-index @ cc-function-entry cc-fget 32 64 cc-guard-constants cc-bits!
-  cc-current cc-data-base - 2 * 32 0 cc-guard-constants cc-bits! ;
+  cc-current cc-image-base - 2 * 32 0 cc-guard-constants cc-bits! ;
 : cc-export
   cc-prelude cc-prelude-bytes @ dup >r cs-write r> <> if 1 cs-exit then
   cc-guard-data cc-guard-constants 36 cc-install
   cc-record 37 0 fill
   24 cc-load-status 118 0 cc-record cc-row-at
-  cc-current cc-data-base - cc-data-base 0 71 cc-record cc-row-at
+  cc-current cc-image-base - cc-image-base 0 71 cc-record cc-row-at
   cc-layer-bits 0 cc-guard-code 213 cc-record cc-row-at
   cc-record 37 cs-write 37 <> if 1 cs-exit then
-  cc-image cc-current cc-data-base - 8 / dup >r cs-write r> <> if 1 cs-exit then ;
+  cc-image cc-current cc-image-base - 8 / dup >r cs-write r> <> if 1 cs-exit then ;
 : cc-read-source
   0 cc-length !
   begin cc-source cc-length @ + cc-source-max 1+ cc-length @ - cs-read
@@ -1951,11 +2006,12 @@ defer cc-initialize-object
   0 cc-initializing !
   0 cc-alias-count ! 0 cc-symbol-count !
   -1 cc-main-index ! cc-data-base cc-data !
+  cc-static-base cc-static-data !
   cc-init-types cc-fold-flags 2048 0 fill cc-types 2048 0 fill
   0 cc-tag-count ! 0 cc-tag-scope ! 0 cc-member-count !
   cc-lvalues 2048 0 fill
   cc-constant-types 512 0 fill
-  cc-code-base cc-origin ! cc-data-base cc-emission-base ! cc-image cc-emission-buffer !
+  cc-code-base cc-origin ! cc-image-base cc-emission-base ! cc-image cc-emission-buffer !
   cc-library-layer @ cc-layer ! 3 cc-slot !
   cc-library-constants @ cc-constants !
   cc-read-source cc-next begin cc-token @ while

@@ -23,6 +23,7 @@ from copy_c_qualifier_cases import volatile_reads
 from copy_c_typedef_cases import valid as typedef_valid, invalid as typedef_invalid
 from copy_c_enum_cases import valid as enum_valid, invalid as enum_invalid
 from copy_c_character_cases import valid as character_valid, invalid as character_invalid
+from copy_c_string_cases import valid as string_valid, invalid as string_invalid
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -30,7 +31,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -196,6 +197,7 @@ valid += qualifier_valid
 valid += typedef_valid
 valid += enum_valid
 valid += character_valid
+valid += string_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -280,6 +282,7 @@ invalid += qualifier_invalid
 invalid += typedef_invalid
 invalid += enum_invalid
 invalid += character_invalid
+invalid += string_invalid
 for name, source in invalid:
     compile_native(name, source, True)
     print(f"OK copy-c rejects {name}", flush=True)
@@ -304,6 +307,9 @@ for name, source in [
     ("types-byte-upper", b"int main(){return *(char*)2097152;}"),
     ("types-half-align", b"int main(){return *(short*)2097151;}"),
     ("types-pointer-align", b"int main(){int**p=(int**)1048577;return **p;}"),
+    ("string-pointer-below", b"int main(){return *(char*)12287;}"),
+    ("string-pointer-above", b"int main(){return *(char*)16384;}"),
+    ("string-pointer-align", b"int main(){return *(short*)12289;}"),
 ]:
     target(name, compile_native(name, source), 0, pointer_fault=True)
 def payload_start(packet):
@@ -321,7 +327,7 @@ def payload_start(packet):
 # A forged low address bit in an otherwise valid packet must be rejected
 # by the generated copy program, rather than corrupting a neighbouring int.
 forged = bytearray(packets["pointer-read"])
-constants = payload_start(forged)+(163840-131072)//8
+constants = payload_start(forged)+(163840-98304)//8
 encoded_address = bytes(int(f"{byte:08b}"[::-1], 2) for byte in (1048584).to_bytes(4, "little"))
 location = forged.find(encoded_address, constants, constants+2048)
 assert location >= constants

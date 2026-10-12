@@ -26,6 +26,7 @@ valid = [
  ('typedef-guest',b'typedef int T;int main(){T x=7;return x;}',7),
 ]
 invalid = [
+ ('typedef-array-completion',b'typedef int A[];typedef int A[3];int main(){return 0;}'),
  ('typedef-conflict',b'typedef int T;typedef short T;int main(){return 0;}'),
  ('typedef-object-conflict',b'int main(){int T=1;typedef int T;return 0;}'),
  ('typedef-variable-conflict',b'int main(){typedef int T;int T=1;return 0;}'),

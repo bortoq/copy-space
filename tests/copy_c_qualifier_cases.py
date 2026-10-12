@@ -61,6 +61,7 @@ valid = [
 ]
 volatile_reads = {
  'range-volatile-once':1,
+ 'switch-volatile-once':1,
  'qual-discard-volatile':1,'qual-sizeof-volatile':0,
  'qual-volatile-block':1,'qual-volatile-gnu-discard':1,
  'qual-volatile-gnu-return':1,'qual-volatile-comma':1,

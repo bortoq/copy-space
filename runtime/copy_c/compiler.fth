@@ -1025,6 +1025,7 @@ variable cc-prefix-quals
   s" unsigned" cc-is or s" sizeof" cc-is or s" for" cc-is or
   s" _Alignof" cc-is or s" __alignof" cc-is or s" __alignof__" cc-is or
   s" do" cc-is or s" break" cc-is or s" continue" cc-is or
+  s" switch" cc-is or s" case" cc-is or
   s" _Static_assert" cc-is or s" _Generic" cc-is or s" default" cc-is or s" __builtin_offsetof" cc-is or
   s" __builtin_types_compatible_p" cc-is or
   s" typedef" cc-is or cc-keyword-type? or
@@ -1088,6 +1089,11 @@ create cc-continue-fields 128 cells allot
 variable cc-break-count
 variable cc-continue-count
 variable cc-loop-level
+variable cc-break-level
+variable cc-switch-depth
+variable cc-statement-expression-depth
+create cc-switch-contexts 32 8 * cells allot
+create cc-switch-cases 32 128 * 3 * cells allot
 
 : cc-call ( fn -- value ) 0 L{ fn nargs }
   fn 0< fn cc-function-count @ >= or if s" unknown function" cc-fail then
@@ -1213,7 +1219,8 @@ variable cc-loop-level
   cc-token @ 40 = if cc-next cc-nest
     cc-token @ 123 = if
       cc-in-function @ 0= if s" statement expression outside function" cc-fail then
-      cc-block dup 0= if drop cc-cell dup 3 cc-type! else
+      1 cc-statement-expression-depth +! cc-block -1 cc-statement-expression-depth +!
+      dup 0= if drop cc-cell dup 3 cc-type! else
         dup cc-type cc-kind 3 = over cc-lvalue 0= or if cc-value dup cc-forget then
       then
     else cc-full-expression then cc-unnest 41 cc-expect exit then
@@ -1779,9 +1786,11 @@ variable cc-generic-depth
 : cc-loop-finish ( continue-target end breaks continues -- ) L{ continue-target end breaks continues }
   cc-break-count @ breaks ?do cc-break-fields i cells + @ end cc-link! loop
   cc-continue-count @ continues ?do cc-continue-fields i cells + @ continue-target cc-link! loop
-  breaks cc-break-count ! continues cc-continue-count ! -1 cc-loop-level +! ;
+  breaks cc-break-count ! continues cc-continue-count !
+  -1 cc-loop-level +! -1 cc-break-level +! ;
 : cc-loop-transfer ( is-continue -- ) L{ is-continue }
-  cc-loop-level @ 0= if s" loop transfer outside loop" cc-fail then
+  is-continue if cc-loop-level @ else cc-break-level @ then 0= if
+    s" loop transfer outside loop or switch" cc-fail then
   cc-next 59 cc-expect
   cc-unevaluated @ if exit then
   is-continue if
@@ -1794,14 +1803,15 @@ variable cc-generic-depth
 : cc-while
   cc-next cc-boundary 0 0 0 L{ head table breaks continues }
   40 cc-expect cc-full-expression 41 cc-expect cc-truth cc-branch 2 (local!)
-  cc-break-count @ 3 (local!) cc-continue-count @ 4 (local!) 1 cc-loop-level +!
+  cc-break-count @ 3 (local!) cc-continue-count @ 4 (local!)
+  1 cc-loop-level +! 1 cc-break-level +!
   table 32 + cc-current cc-patch cc-nest cc-statement cc-unnest
   cc-statement-result @ cc-discard-value
   head cc-jump table cc-current cc-patch
   head cc-current breaks continues cc-loop-finish ;
 : cc-do
   cc-next cc-boundary 0 cc-break-count @ cc-continue-count @ L{ head condition breaks continues }
-  1 cc-loop-level +! cc-nest cc-statement cc-unnest
+  1 cc-loop-level +! 1 cc-break-level +! cc-nest cc-statement cc-unnest
   cc-statement-result @ cc-discard-value
   cc-boundary 2 (local!)
   s" while" cc-is 0= if s" do requires while" cc-fail then
@@ -2180,7 +2190,8 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   cc-boundary 4 (local!)
   cc-token @ 41 <> if cc-full-expression cc-discard-value then 41 cc-expect
   head cc-jump table 32 + cc-current cc-patch
-  cc-break-count @ 5 (local!) cc-continue-count @ 6 (local!) 1 cc-loop-level +!
+  cc-break-count @ 5 (local!) cc-continue-count @ 6 (local!)
+  1 cc-loop-level +! 1 cc-break-level +!
   cc-nest cc-statement cc-unnest cc-statement-result @ cc-discard-value step cc-jump
   table cc-current cc-patch step cc-current breaks continues cc-loop-finish
   symbols cc-symbol-count ! tags 8 rshift cc-tag-count ! tags 255 and cc-alias-count !
@@ -2198,6 +2209,70 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   aliases cc-alias-count !
   first 0= if -1 cc-scope-level +! then cc-statement-result @ ;
 ' cc-block-body is cc-block
+: cc-switch-context ( -- context )
+  cc-switch-depth @ dup 0= if s" case outside switch" cc-fail then
+  1- 8 * cells cc-switch-contexts + ;
+: cc-switch-row ( context index -- row ) 3 * cells swap 6 swap cc-fget + ;
+: cc-switch-less ( left right type -- flag ) cc-signed? if < else u< then ;
+: cc-switch-empty? ( low high type -- flag ) >r swap r> cc-switch-less ;
+: cc-case ( -- ) 0 0 0 0 0 L{ context low high row type }
+  cc-switch-context 1 (local!) 1 context cc-fget 5 (local!)
+  7 context cc-fget cc-statement-expression-depth @ <> if
+    s" case enters statement expression" cc-fail then
+  s" default" cc-is if
+    3 context cc-fget -1 <> if s" duplicate default" cc-fail then
+    cc-next 58 cc-expect cc-boundary 3 context cc-fset
+  else
+    cc-next cc-read-constant dup 2 (local!) 3 (local!)
+    cc-token @ 267 = if cc-next cc-read-constant 3 (local!) then 58 cc-expect
+    low high type cc-switch-empty? 0= if
+      5 context cc-fget 0 ?do
+        context i cc-switch-row 4 (local!)
+        0 row cc-fget 1 row cc-fget type cc-switch-empty? 0= if
+          1 row cc-fget low type cc-switch-less 0=
+          high 0 row cc-fget type cc-switch-less 0= and if
+            s" duplicate or overlapping case" cc-fail then
+        then
+      loop
+    then
+    5 context cc-fget dup 128 >= cc-limit context swap cc-switch-row 4 (local!)
+    low 0 row cc-fset high 1 row cc-fset cc-boundary 2 row cc-fset
+    5 context cc-fget 1+ 5 context cc-fset
+  then cc-nest cc-statement cc-unnest ;
+: cc-switch ( -- ) 0 0 0 0 0 0
+  L{ value context entry ending row table data }
+  cc-next 40 cc-expect cc-full-expression dup cc-integer-check
+  dup cc-type cc-promoted cc-convert 1 (local!) 41 cc-expect
+  cc-switch-depth @ dup 32 >= cc-limit
+  8 * cells cc-switch-contexts + 2 (local!) context 8 cells 0 fill
+  value 0 context cc-fset value cc-type 1 context cc-fset
+  cc-forward dup 3 (local!) 2 context cc-fset -1 3 context cc-fset
+  cc-break-count @ 4 context cc-fset
+  cc-switch-depth @ 128 * 3 * cells cc-switch-cases + 6 context cc-fset
+  cc-statement-expression-depth @ 7 context cc-fset
+  1 cc-switch-depth +! 1 cc-break-level +!
+  cc-nest cc-statement cc-unnest cc-statement-result @ cc-discard-value
+  cc-forward 4 (local!) entry cc-boundary cc-link!
+  cc-data @ 7 (local!)
+  5 context cc-fget 0 ?do
+    context i cc-switch-row 5 (local!)
+    0 row cc-fget 1 row cc-fget 1 context cc-fget cc-switch-empty? 0= if
+      0 row cc-fget 1 row cc-fget = if
+        value 0 row cc-fget cc-const cc-eq-entry @ cc-invoke
+      else
+        value 0 row cc-fget cc-const dup value cc-type cc-type! 259 cc-relational-op
+        value 1 row cc-fget cc-const dup value cc-type cc-type! 258 cc-relational-op
+        cc-and-entry @ cc-invoke
+      then cc-branch 6 (local!)
+      table 32 + 2 row cc-fget cc-patch table cc-current cc-patch
+      data cc-rewind-temps
+    then
+  loop
+  3 context cc-fget dup -1 <> if cc-jump else drop then
+  cc-boundary drop ending cc-current cc-link!
+  cc-break-count @ 4 context cc-fget ?do cc-break-fields i cells + @ cc-current cc-link! loop
+  4 context cc-fget cc-break-count !
+  -1 cc-switch-depth +! -1 cc-break-level +! 0 cc-statement-result ! ;
 : cc-statement-body
   0 cc-statement-result !
   s" typedef" cc-is if cc-typedef exit then
@@ -2206,6 +2281,8 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     cc-block cc-discard-value 0 cc-statement-result ! exit then
   cc-type-start if cc-declaration 0 cc-statement-result ! exit then
   s" if" cc-is if cc-if 0 cc-statement-result ! exit then
+  s" switch" cc-is if cc-switch exit then
+  s" case" cc-is s" default" cc-is or if cc-case exit then
   s" while" cc-is if cc-while 0 cc-statement-result ! exit then
   s" do" cc-is if cc-do 0 cc-statement-result ! exit then
   s" for" cc-is if cc-for 0 cc-statement-result ! exit then
@@ -2423,7 +2500,9 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   again ;
 : CC-RUN
   0 cc-pos ! 0 cc-token-start ! 0 cc-depth ! 0 cc-function-count ! 0 cc-call-count !
-  0 cc-loop-level ! 0 cc-break-count ! 0 cc-continue-count !
+  0 cc-loop-level ! 0 cc-break-level ! 0 cc-switch-depth !
+  0 cc-statement-expression-depth !
+  0 cc-break-count ! 0 cc-continue-count !
   0 cc-scope-level ! 0 cc-first-block !
   0 cc-unevaluated !
   0 cc-in-function !

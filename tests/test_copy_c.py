@@ -19,6 +19,7 @@ from copy_c_record_cases import valid as record_valid, invalid as record_invalid
 from copy_c_builtin_cases import valid as builtin_valid, invalid as builtin_invalid
 from copy_c_generic_cases import valid as generic_valid, invalid as generic_invalid
 from copy_c_qualifier_cases import valid as qualifier_valid, invalid as qualifier_invalid
+from copy_c_qualifier_cases import volatile_reads
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -26,7 +27,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -103,6 +104,17 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
         # n has a distinct address in each active recursive invocation.
         assert len({raw[1048576+i*2048:1048576+(i+1)*2048] for i in range(5)}) == 5
     trace = (folder / "trace.txt").read_bytes()
+    if name in volatile_reads:
+        # Main's ABI reserves two 32-bit cells, then the first int object.
+        # Count actual reads of that object's bits, excluding its initialization.
+        reads = sum(line[0] == b"copy" and int(line[3]) == 32
+                    and int(line[5]) == 8388608+64
+                    for row in trace.splitlines() if (line := row.split()))
+        assert reads == volatile_reads[name], (name, reads, volatile_reads[name])
+        (folder / "volatile.json").write_text(json.dumps({
+            "object_bit_address": 8388608+64, "reads": reads,
+            "expected_reads": volatile_reads[name],
+        }, indent=2)+"\n")
     assert trace.splitlines()[-1].endswith(b" idle") and b"copy " in trace
     assert b"channel " in trace
     if name == "carry":
@@ -429,6 +441,8 @@ def guest(name, source, expected=None):
 for name in options.guest_case or ("sum", "pointer-guest", "syntax-error"):
     if name == "syntax-error":
         guest(name, b"int main(){return 1+;}\n")
+    elif name == "qualifier-error":
+        guest(name, b"int main(){const int x=1;const int*p=&x;*p=7;return x;}")
     else:
         _, source, expected = next(case for case in valid if case[0] == name)
         guest(name, source, expected)

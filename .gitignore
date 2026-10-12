@@ -33,6 +33,7 @@ bak/
 *.out
 trace*.txt
 trace*.txt.gz
+trace*.txt.zst
 *.meta
 *.csv
 

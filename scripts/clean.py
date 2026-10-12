@@ -10,7 +10,7 @@ DIRECTORIES = ("build", "tmp", "out", "bak", "dist", "*.build", "cmake-build-*",
 FILES = ("*.o", "*.a", "*.so", "*.dylib", "*.bin", "*.elf", "*.core", "*.stream",
          "*.d", "*.gcda", "*.gcno", "*.gcov", "*.bin.json", "*.core.json",
          "*.stream.json", "*.deb", "*.log", "*.log.gz", "*.out", "*.meta",
-         "trace*.txt", "trace*.txt.gz", "*.pyc", "*.pyo", "*.pyd", ".coverage",
+         "trace*.txt", "trace*.txt.gz", "trace*.txt.zst", "*.pyc", "*.pyo", "*.pyd", ".coverage",
          ".coverage.*", "CMakeCache.txt", "cmake_install.cmake", "CTestTestfile.cmake",
          "compile_commands.json", "install_manifest.txt", "build.ninja",
          ".ninja_deps", ".ninja_log", ".DS_Store", "Thumbs.db")

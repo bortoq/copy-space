@@ -18,10 +18,13 @@ IMAGE = Path("build/copy-c/compiler.stream")
 NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "syntax-error"])
 parser.add_argument("--gcc-reference", action="store_true", help="GNU C reference tests only; never production compilation")
+parser.add_argument("--trace-compression", choices=["gzip", "zstd"], default="gzip")
 parser.add_argument("--artifacts", type=Path, default=ROOT)
 options = parser.parse_args()
+if options.trace_compression == "zstd" and not shutil.which("zstd"):
+    parser.error("zstd is required for --trace-compression zstd")
 ROOT = options.artifacts
 ROOT.mkdir(parents=True, exist_ok=True)
 (ROOT / "compiler.fth").write_bytes(Path("runtime/copy_c/compiler.fth").read_bytes())
@@ -204,7 +207,6 @@ invalid = [
     ("main-call", b"int main(){return 0;}int f(){return main();}"),
     ("nul-source", b"int main(){return 0;}\0"),
     ("block-scope", b"int main(){{int a=1;}return a;}"),
-    ("shadowing", b"int main(){int a=1;{int a=2;}return a;}"),
     ("source-capacity", b" "*8193),
     ("nesting-capacity", b"int main(){return "+b"("*40+b"1"+b")"*40+b";}"),
     ("name-capacity", b"int main(){int "+b"x"*32+b";return 0;}"),
@@ -280,11 +282,24 @@ def guest(name, source, expected=None):
     os.mkfifo(fifo)
     keepalive = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
     errors = []
+    trace_path = folder / ("trace.txt.zst" if options.trace_compression == "zstd" else "trace.txt.gz")
 
     def compress():
         try:
-            with fifo.open("rb", buffering=0) as incoming, gzip.open(folder / "trace.txt.gz", "wb", compresslevel=1) as out:
-                shutil.copyfileobj(incoming, out, 1024*1024)
+            with fifo.open("rb", buffering=0) as incoming:
+                if options.trace_compression == "gzip":
+                    with gzip.open(trace_path, "wb", compresslevel=1) as out:
+                        shutil.copyfileobj(incoming, out, 1024*1024)
+                else:
+                    with trace_path.open("wb") as out, subprocess.Popen(
+                            ["zstd", "-q", "-1", "-c"], stdin=subprocess.PIPE,
+                            stdout=out, stderr=subprocess.PIPE) as encoder:
+                        try:
+                            shutil.copyfileobj(incoming, encoder.stdin, 1024*1024)
+                        finally:
+                            encoder.stdin.close()
+                        error = encoder.stderr.read()
+                        assert encoder.wait() == 0, error
         except Exception as error:
             errors.append(error)
 
@@ -312,7 +327,7 @@ def guest(name, source, expected=None):
     else:
         assert word(132160) == 0 and output == packets[name]
         target("guest-"+name, output, expected)
-    copies, channels, last = audit_trace(folder / "trace.txt.gz")
+    copies, channels, last = audit_trace(trace_path)
     assert copies > 0 and channels > 0 and last.endswith(b" idle\n")
     (folder / "evidence.json").write_text(json.dumps({
         "source_sha256": hashlib.sha256(source).hexdigest(), "output_sha256": hashlib.sha256(output).hexdigest(),
@@ -320,6 +335,7 @@ def guest(name, source, expected=None):
         "guest_exit": word(132160),
         "compiler_forth_sha256": hashlib.sha256(compiler_source).hexdigest(),
         "compiler_image_sha256": hashlib.sha256(image).hexdigest(),
+        "trace_file": trace_path.name, "trace_compression": options.trace_compression,
     }, indent=2)+"\n")
     print(f"OK copy-c guest {name}: {time.monotonic()-started:.1f}s, {copies} copies", flush=True)
 

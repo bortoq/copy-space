@@ -20,6 +20,15 @@ int main(void)
     int code = 0, done = 0;
     pfSetQuiet(1);
     if(pfInitialize(NULL, 0, &entry)) return 3;
+#ifdef COPY_SPACE_C_COMPILER
+    /* The C precedence parser has more calls per nesting level than the
+     * interactive Forth interpreter. Keep the ordinary task unchanged. */
+    PForthTask initial_task = pfGetCurrentTask();
+    PForthTask compiler_task = pfCreateTask(512, 2048);
+    if(!compiler_task) { pfTerminate(); return 3; }
+    pfSetCurrentTask(compiler_task);
+    pfDeleteTask(initial_task);
+#endif
     while(!done)
     {
         unsigned char c;

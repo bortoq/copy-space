@@ -3,6 +3,7 @@ set -eu
 
 build/bin/test_bitcopy
 build/bin/test_space_runtime
+python3 tests/test_space_trace_audit.py
 python3 tests/test_assembler.py
 python3 tests/test_space.py
 python3 tests/test_configuration.py

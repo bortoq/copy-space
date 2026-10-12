@@ -1,7 +1,7 @@
 #include "pf_all.h"
 
 #ifdef COPY_SPACE_C_COMPILER
-/* Guest channel adapters only. Parsing and code generation stay in Forth. */
+/* Guest memory/channel primitives. C parsing and copy selection stay in Forth. */
 static cell_t read_bytes(cell_t address, cell_t bytes)
 {
     return cs_read((void *)(uintptr_t)address, (unsigned int)bytes);
@@ -11,8 +11,28 @@ static cell_t write_bytes(cell_t address, cell_t bytes)
     return cs_write((const void *)(uintptr_t)address, (unsigned int)bytes);
 }
 static cell_t exit_guest(cell_t code) { cs_exit((int)code); }
-CFunc0 CustomFunctionTable[3] = {
-    (CFunc0)read_bytes, (CFunc0)write_bytes, (CFunc0)exit_guest
+static cell_t put_bits(cell_t value, cell_t width, cell_t position,
+                       cell_t address, cell_t reversed)
+{
+    uint32_t bits = (uint32_t)value, at = (uint32_t)position;
+    unsigned remaining = (unsigned)width;
+    unsigned char *buffer = (unsigned char *)(uintptr_t)address;
+    const unsigned char *table = (const unsigned char *)(uintptr_t)reversed;
+    if (remaining > 32) cs_exit(2);
+    while (remaining) {
+        unsigned offset = at & 7, part = 8-offset;
+        if (part > remaining) part = remaining;
+        unsigned shift = 8-offset-part, mask = ((1u << part)-1) << shift;
+        buffer[at >> 3] = (buffer[at >> 3] & ~mask)
+                       | ((table[bits & 255] >> offset) & mask);
+        bits >>= part;
+        at += part;
+        remaining -= part;
+    }
+    return 0;
+}
+CFunc0 CustomFunctionTable[4] = {
+    (CFunc0)read_bytes, (CFunc0)write_bytes, (CFunc0)exit_guest, (CFunc0)put_bits
 };
 Err CompileCustomFunctions(void)
 {
@@ -21,7 +41,9 @@ Err CompileCustomFunctions(void)
     if(err < 0) return err;
     err = CreateGlueToC("CS-WRITE", 1, C_RETURNS_VALUE, 2);
     if(err < 0) return err;
-    return CreateGlueToC("CS-EXIT", 2, C_RETURNS_VOID, 1);
+    err = CreateGlueToC("CS-EXIT", 2, C_RETURNS_VOID, 1);
+    if(err < 0) return err;
+    return CreateGlueToC("CS-PUT-BITS", 3, C_RETURNS_VOID, 5);
 #else
     return 0;
 #endif

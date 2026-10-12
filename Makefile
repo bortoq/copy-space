@@ -113,6 +113,7 @@ copy-c-job: copy-c
 	python3 scripts/copy_c/job.py "$(COPY_C_SOURCE)" -o "$(COPY_C_JOB)"
 
 test-copy-c: copy-c
+	python3 tests/test_copy_c_bitpack.py
 	python3 tests/test_copy_c.py
 
 test-sanitize:

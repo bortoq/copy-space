@@ -13,13 +13,15 @@ from pathlib import Path
 from space_trace_audit import audit_trace
 from space_segments import execute_segments
 from copy_c_gnu_cases import valid as gnu_valid, invalid as gnu_invalid, faults as arithmetic_faults
+from copy_c_types_cases import valid as types_valid, invalid as types_invalid
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
 NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "syntax-error"])
+parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -39,6 +41,8 @@ source_signature = hashlib.sha256((ROOT / "compiler.fth").read_bytes()).hexdiges
 SOURCE_CAPACITY = 1048576
 dictionary = IMAGE.with_name(IMAGE.name+".build") / "dictionary/pfdicdat.h.json"
 assert json.loads(dictionary.read_text())["compiler_forth_sha256"] == source_signature, "rebuild stale native compiler"
+custom_signature = hashlib.sha256(Path("runtime/pforth/custom.c").read_bytes()).hexdigest()
+assert json.loads(dictionary.read_text())["compiler_custom_sha256"] == custom_signature, "rebuild stale compiler runtime"
 
 
 def record(folder, command, data):
@@ -54,9 +58,17 @@ def compile_native(name, source, error=False):
     result = subprocess.run(command, input=b"CC-RUN\n"+source, capture_output=True, timeout=10)
     (folder / "program.in").write_bytes(result.stdout)
     (folder / "stderr.txt").write_bytes(result.stderr)
+    if options.native_reference:
+        reference = subprocess.run([str(options.native_reference)], input=b"CC-RUN\n"+source,
+                                   capture_output=True, timeout=10)
+        assert (result.returncode, result.stdout, result.stderr) == (reference.returncode, reference.stdout, reference.stderr), name
+        (folder / "reference.json").write_text(json.dumps({
+            "compiler": str(options.native_reference), "equal": True,
+            "output_sha256": hashlib.sha256(reference.stdout).hexdigest(),
+        }, indent=2)+"\n")
     assert result.stderr == b"", result.stderr
     if error:
-        assert result.returncode == 2 and result.stdout.startswith(b"copy-c error at byte "), (name, result)
+        assert result.returncode == 2 and result.stdout.startswith(b"copy-c error at byte "), (name, result.returncode, len(result.stdout), result.stdout[:120])
     else:
         assert result.returncode == 0 and len(result.stdout) > 37, (name, result)
     return result.stdout
@@ -155,6 +167,7 @@ valid = [
     ("pointer-last-frame", b"int f(int n){if(n==0){int x=19;return *(&x);}return f(n-1);}int main(){return f(510);}", 19),
 ]
 valid += gnu_valid
+valid += types_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -230,6 +243,7 @@ invalid = [
     ("code-capacity", b"int main(){int a=0;"+b"a=a+1;"*100+b"return a;}"),
 ]
 invalid += gnu_invalid
+invalid += types_invalid
 for name, source in invalid:
     compile_native(name, source, True)
     print(f"OK copy-c rejects {name}", flush=True)
@@ -240,6 +254,20 @@ for name, source in [
     ("null-write", b"int main(){int *p=0;*p=7;return 0;}"),
     ("pointer-range", b"int main(){int *p=0;p=p+1;return *p;}"),
     ("pointer-upper-range", b"int main(){int x=1;int *p=&x;p=p+524288;*p=9;return x;}"),
+]:
+    target(name, compile_native(name, source), 0, pointer_fault=True)
+for name, source, expected in [
+    ("types-last-byte", b"int main(){unsigned char*p=(unsigned char*)2097151;*p=171;return *p;}", 171),
+    ("types-last-half", b"int main(){unsigned short*p=(unsigned short*)2097150;*p=43981;return *p;}", 43981),
+    ("types-odd-byte", b"int main(){unsigned char*p=(unsigned char*)1048577;*p=7;return *p;}", 7),
+]:
+    # Raw ABI addresses test the space boundary, not defined C objects on GCC.
+    target(name, compile_native(name, source), expected)
+for name, source in [
+    ("types-byte-lower", b"int main(){return *(char*)1048575;}"),
+    ("types-byte-upper", b"int main(){return *(char*)2097152;}"),
+    ("types-half-align", b"int main(){return *(short*)2097151;}"),
+    ("types-pointer-align", b"int main(){int**p=(int**)1048577;return **p;}"),
 ]:
     target(name, compile_native(name, source), 0, pointer_fault=True)
 def payload_start(packet):
@@ -272,6 +300,7 @@ for name, source, expected in arithmetic_faults:
 (ROOT / "native-summary.json").write_text(json.dumps({
     "valid": len(valid), "rejected": len(invalid), "arithmetic_faults": len(arithmetic_faults),
     "gcc_reference": options.gcc_reference,
+    "native_reference_sha256": hashlib.sha256(options.native_reference.read_bytes()).hexdigest() if options.native_reference else None,
     "compiler_forth_sha256": hashlib.sha256((ROOT / "compiler.fth").read_bytes()).hexdigest(),
     "native_compiler_sha256": hashlib.sha256(NATIVE.read_bytes()).hexdigest(),
 }, indent=2)+"\n")
@@ -345,8 +374,10 @@ def guest(name, source, expected=None):
         record(folder, command, data)
     compiler_source = Path("runtime/copy_c/compiler.fth").read_bytes()
     assert image_manifest["compiler_forth_sha256"] == hashlib.sha256(compiler_source).hexdigest(), "rebuild stale guest compiler"
+    assert image_manifest["compiler_dictionary"]["compiler_custom_sha256"] == custom_signature, "rebuild stale guest compiler runtime"
     (folder / "source.c").write_bytes(source)
     (folder / "compiler.fth").write_bytes(compiler_source)
+    (folder / "custom.c").write_bytes(Path("runtime/pforth/custom.c").read_bytes())
     (folder / "compiler.json").write_bytes(IMAGE.with_name(IMAGE.name+".json").read_bytes())
     if options.ticks_per_segment:
         execution = execute_segments(compiler_space, folder, folder / "in.bin",

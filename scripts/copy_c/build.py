@@ -27,9 +27,11 @@ def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
     artifacts = output.with_name(output.name+".build")
     dictionary = artifacts / "dictionary/pfdicdat.h"
     signature = hashlib.sha256(FORTH.read_bytes()).hexdigest()
+    custom_signature = hashlib.sha256((PORT / "custom.c").read_bytes()).hexdigest()
     metadata = dictionary.with_name(dictionary.name+".json")
     cached = json.loads(metadata.read_text()) if metadata.is_file() else {}
     if (cached.get("compiler_forth_sha256") != signature
+            or cached.get("compiler_custom_sha256") != custom_signature
             or cached.get("headers_reserve_bytes") != 4096
             or cached.get("code_reserve_bytes") != 8192
             or cached.get("prepare_code_capacity_bytes") != 2097152
@@ -41,6 +43,7 @@ def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
         manifest = prepare(dictionary, [FORTH], prepare_flags, artifacts / "prepare",
                            headers_reserve=4096, code_reserve=8192)
         manifest["compiler_forth_sha256"] = signature
+        manifest["compiler_custom_sha256"] = custom_signature
         manifest["prepare_code_capacity_bytes"] = 2097152
         manifest["prepare_pool_bytes"] = 4194304
         metadata.write_text(json.dumps(manifest, indent=2)+"\n")

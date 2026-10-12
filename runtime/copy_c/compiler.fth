@@ -875,6 +875,8 @@ defer cc-read-record
   s" unsigned" cc-is or s" sizeof" cc-is or s" for" cc-is or
   s" _Alignof" cc-is or s" __alignof" cc-is or s" __alignof__" cc-is or
   s" do" cc-is or s" break" cc-is or s" continue" cc-is or
+  s" _Static_assert" cc-is or s" __builtin_offsetof" cc-is or
+  s" __builtin_types_compatible_p" cc-is or
   cc-type-start or
   if s" reserved name" cc-fail then
   cc-token @ 2 <> cc-token-size @ 31 > or cc-limit cc-text rot place ;
@@ -898,6 +900,8 @@ defer cc-member
 defer cc-block
 defer cc-sizeof
 defer cc-alignof
+defer cc-offsetof
+defer cc-compatible
 create cc-break-fields 128 cells allot
 create cc-continue-fields 128 cells allot
 variable cc-break-count
@@ -993,6 +997,8 @@ variable cc-loop-level
   result cc-forget result ;
 
 : cc-primary ( -- target )
+  s" __builtin_offsetof" cc-is if cc-next cc-offsetof exit then
+  s" __builtin_types_compatible_p" cc-is if cc-next cc-compatible exit then
   cc-token @ 40 = if cc-next cc-nest
     cc-token @ 123 = if
       cc-in-function @ 0= if s" statement expression outside function" cc-fail then
@@ -1324,6 +1330,56 @@ defer cc-conditional
   cc-next type cc-find-member dup 0< if s" unknown member" cc-fail then 3 (local!) cc-next
   pointer index cc-field-view ;
 ' cc-member-body is cc-member
+: cc-offset-member ( type offset -- type offset ) 0 L{ type offset member }
+  type cc-record? 0= if s" offsetof requires aggregate member" cc-fail then
+  cc-type-complete type + c@ 1 <> if s" offsetof incomplete aggregate" cc-fail then
+  type cc-find-member dup 0< if s" unknown offsetof member" cc-fail then 3 (local!)
+  cc-next cc-member-types member + c@ offset cc-member-offsets member cells + @ + ;
+: cc-offsetof-body ( -- value ) 0 0 L{ type offset }
+  40 cc-expect cc-read-type cc-declared-type @ 1 (local!) 44 cc-expect
+  type offset cc-offset-member 2 (local!) 1 (local!)
+  begin
+    cc-token @ 46 = if cc-next type offset cc-offset-member 2 (local!) 1 (local!) else
+    cc-token @ 91 = if
+      type cc-kind 3 <> if s" offsetof index requires array" cc-fail then
+      cc-next cc-read-constant type cc-pointee cc-size * offset + 2 (local!)
+      type cc-pointee 1 (local!) 93 cc-expect
+    else 41 cc-expect offset cc-const dup 1 cc-type! exit then then
+  again ;
+' cc-offsetof-body is cc-offsetof
+: cc-types-compatible? ( left right -- flag ) L{ left right }
+  left right = if -1 exit then
+  left cc-kind right cc-kind <> if 0 exit then
+  left cc-kind 1 = if left cc-pointee right cc-pointee recurse exit then
+  left cc-kind 3 = if
+    left cc-size right cc-size = left cc-size 0= or right cc-size 0= or
+    left cc-pointee right cc-pointee recurse and exit then 0 ;
+: cc-compatible-body ( -- value )
+  40 cc-expect cc-read-type cc-declared-type @ >r 44 cc-expect
+  cc-read-type cc-declared-type @ r> swap cc-types-compatible?
+  if 1 else 0 then 41 cc-expect cc-const ;
+' cc-compatible-body is cc-compatible
+: cc-hex? ( c -- flag ) dup cc-digit over 65 71 cc-within or
+  swap 97 103 cc-within or ;
+: cc-assert-message ( -- )
+  cc-token @ 34 <> if s" expected assertion string" cc-fail then
+  begin cc-token @ 34 = while
+    begin cc-peek dup -1 = if s" unfinished assertion string" cc-fail then
+      dup 34 <> while
+      dup 0= over 10 = or over 13 = or if s" invalid assertion string" cc-fail then
+      92 = if cc-step cc-peek -1 = if s" unfinished assertion escape" cc-fail then
+        cc-peek 0= if s" invalid assertion escape" cc-fail then
+        cc-peek 120 = if cc-step cc-peek cc-hex? 0= if
+            s" empty assertion hex escape" cc-fail then
+          begin cc-peek cc-hex? while cc-step repeat
+        else cc-peek 13 = if cc-step cc-peek 10 = if cc-step then else cc-step then then
+      else cc-step then
+    repeat drop cc-step cc-next
+  repeat ;
+: cc-static-assert ( -- )
+  cc-next 40 cc-expect cc-read-constant >r
+  cc-token @ 44 = if cc-next cc-assert-message then
+  41 cc-expect 59 cc-expect r> 0= if s" static assertion failed" cc-fail then ;
 : cc-query-type
   cc-token @ 40 = if
     cc-token-start @ >r cc-next cc-type-start if
@@ -1489,6 +1545,7 @@ defer cc-initialize-object
 ' cc-block-body is cc-block
 : cc-statement-body
   0 cc-statement-result !
+  s" _Static_assert" cc-is if cc-static-assert exit then
   cc-token @ 123 = if
     cc-block drop 0 cc-statement-result ! exit then
   cc-type-start if cc-declaration 0 cc-statement-result ! exit then
@@ -1625,5 +1682,6 @@ defer cc-initialize-object
   cc-code-base cc-origin ! cc-data-base cc-emission-base ! cc-image cc-emission-buffer !
   cc-library-layer @ cc-layer ! 3 cc-slot !
   cc-library-constants @ cc-constants !
-  cc-read-source cc-next begin cc-token @ while cc-function repeat
+  cc-read-source cc-next begin cc-token @ while
+    s" _Static_assert" cc-is if cc-static-assert else cc-function then repeat
   cc-finish cc-export 0 cs-exit ;

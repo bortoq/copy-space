@@ -1,5 +1,8 @@
 """Static file-scope integer objects in the direct copy image."""
 valid = [
+    ("global-repeated", b'int x;int x;int main(){return x;}', 0),
+    ("global-extern-unused", b'extern int x;int main(){return 0;}', 0),
+    ("global-pointer-zero", b'int*x=0;int main(){return x==0;}', 1),
     ("global-guest", b'int x=7;int main(){return x;}', 7),
     ("global-zero", b'int x;int main(){return x;}', 0),
     ("global-write", b'int x=3;int f(){x++;return x;}int main(){return f()+f();}', 9),
@@ -18,7 +21,6 @@ valid = [
     ("global-string-neighbor", b'int x=7;int main(){return x+"A"[0];}', 72),
 ]
 invalid = [
-    ("global-duplicate-pending", b'int x;int x;int main(){return 0;}'),
     ("global-typedef-conflict", b'typedef int x;int x;int main(){return 0;}'),
     ("global-function-conflict", b'int x(){return 1;}int x;int main(){return 0;}'),
     ("global-enumerator-conflict", b'enum E{x};int x;int main(){return 0;}'),
@@ -26,6 +28,4 @@ invalid = [
     ("global-nonconstant", b'int x=7;int y=x;int main(){return y;}'),
     ("global-call-init", b'int f(){return 7;}int x=f();int main(){return x;}'),
     ("global-array-pending", b'int x[2];int main(){return 0;}'),
-    ("global-pointer-init-pending", b'int*x=0;int main(){return 0;}'),
-    ("global-extern-pending", b'extern int x;int main(){return 0;}'),
 ]

@@ -644,6 +644,7 @@ variable cc-unsigned-suffix
 : cc-expect ( token -- ) cc-token @ <> if s" unexpected token" cc-fail then cc-next ;
 
 create cc-function-names 16 32 * allot
+create cc-function-linkage 16 allot
 create cc-function-entry 16 cells allot
 create cc-function-return 16 cells allot
 create cc-function-value 16 cells allot
@@ -691,6 +692,16 @@ create cc-binding-values 128 cells allot
 create cc-alias-levels 128 cells allot
 variable cc-alias-count
 variable cc-function-aliases
+variable cc-storage
+create cc-global-state 128 allot
+create cc-global-linkage 128 allot
+create cc-global-refs 4096 cells allot
+variable cc-global-ref-count
+variable cc-global-evaluation-level
+: cc-global-reference ( alias -- )
+  cc-unevaluated @ cc-global-evaluation-level @ > if drop exit then
+  cc-global-ref-count @ 4096 >= cc-limit
+  cc-global-refs cc-global-ref-count @ cells + ! 1 cc-global-ref-count +! ;
 : cc-find-alias-raw cc-alias-names cc-alias-count @ cc-find ;
 : cc-find-alias ( -- index ) cc-find-alias-raw cc-find-symbol L{ alias symbol }
   alias 0< if alias exit then
@@ -1100,9 +1111,11 @@ variable cc-loop-level
   cc-cell L{ target result }
   target cc-lvalue 2 = if
     32 result target cc-lvalue-pointer @ cc-value cc-op
+    target cc-lvalue-pointer @ dup cc-known? if cc-fold@ result cc-fold! else drop then
     result target cc-type cc-pointer-to cc-type! result exit then
   target cc-static-base >= target cc-data-base < and if
     32 result target 8 / cc-const cc-op
+    target 8 / result cc-fold!
     result target cc-type cc-pointer-to cc-type! result exit then
   32 result target cc-data-base - cc-stack-base + 8 / cc-const cc-op
   10 result 11 + cc-sp 14 + cc-op
@@ -1177,6 +1190,7 @@ variable cc-loop-level
     cc-find-alias dup 0< 0= if dup cc-binding-kinds + c@ 0= if
       s" typedef used as expression" cc-fail then
       dup cc-binding-kinds + c@ 2 = if
+        dup cc-global-reference
         cells cc-binding-values + @ cc-next exit then
       dup cells cc-binding-values + @ cc-const swap cc-alias-types + c@ over swap cc-type!
       cc-next exit then drop
@@ -1235,7 +1249,7 @@ variable cc-loop-level
   bytes 1 = if 32 result value cc-op else
     32 result cc-zero @ cc-op
     bytes 2 = if 31 result 1+ value cc-op else 30 result 2 + value cc-op then
-  then result ;
+  then value cc-known? if value cc-fold@ bytes * result cc-fold! then result ;
 : cc-additive-op ( lhs rhs token -- value ) 0 0 0 L{ lhs rhs token difference result shift }
   lhs cc-pointer? rhs cc-pointer? and if
     token 45 <> if s" cannot add pointers" cc-fail then
@@ -1602,7 +1616,7 @@ variable cc-constant-type
   cc-read-type cc-declared-type @ r> swap cc-query-compatible
   if 1 else 0 then 41 cc-expect cc-const ;
 ' cc-compatible-body is cc-compatible
-create cc-generic-state 32 12 * cells allot
+create cc-generic-state 32 14 * cells allot
 create cc-generic-types 32 16 * cells allot
 variable cc-generic-depth
 \ State: default seen/value/start/end/calls-before/calls-after,
@@ -1618,10 +1632,12 @@ variable cc-generic-depth
   11 context cc-fget 1+ 11 context cc-fset ;
 : cc-generic-emit ( context default -- ) 0 0 L{ context default start value }
   cc-boundary 3 (local!)
-  default if cc-call-count @ 4 context cc-fset then
+  default if cc-call-count @ 4 context cc-fset
+    cc-global-ref-count @ 12 context cc-fset then
   cc-nest cc-expression cc-unnest 4 (local!)
   default if value 1 context cc-fset start 2 context cc-fset
     cc-forward 3 context cc-fset cc-call-count @ 5 context cc-fset
+    cc-global-ref-count @ 13 context cc-fset
   else value 6 context cc-fset start 7 context cc-fset
     cc-forward 8 context cc-fset 1 9 context cc-fset then ;
 : cc-generic-prune ( before after -- ) L{ before after }
@@ -1629,11 +1645,15 @@ variable cc-generic-depth
     cc-call-functions i cells + @ cc-call-functions i after - before + cells + !
     cc-call-fields i cells + @ cc-call-fields i after - before + cells + !
   loop before after - cc-call-count +! ;
+: cc-global-prune ( before after -- ) L{ before after }
+  cc-global-ref-count @ after ?do
+    cc-global-refs i cells + @ cc-global-refs i after - before + cells + !
+  loop before after - cc-global-ref-count +! ;
 : cc-generic-body ( -- value ) 0 0 0 0 L{ context types control type }
   cc-generic-depth @ dup 32 >= cc-limit
-  dup 12 * cells cc-generic-state + 1 (local!)
+  dup 14 * cells cc-generic-state + 1 (local!)
   16 * cells cc-generic-types + 2 (local!)
-  context 12 cells 0 fill 1 cc-generic-depth +!
+  context 14 cells 0 fill 1 cc-generic-depth +!
   40 cc-expect 2 cc-inspect dup cc-kind 3 = if cc-pointee cc-pointer-to then
   cc-unqualified 3 (local!)
   44 cc-expect cc-boundary drop cc-forward 10 context cc-fset
@@ -1655,7 +1675,8 @@ variable cc-generic-depth
   3 context cc-fget dup if r@ cc-link! else drop then
   8 context cc-fget dup if r@ cc-link! else drop then r> drop
   9 context cc-fget if
-    3 context cc-fget if 4 context cc-fget 5 context cc-fget cc-generic-prune then
+    3 context cc-fget if 4 context cc-fget 5 context cc-fget cc-generic-prune
+      12 context cc-fget 13 context cc-fget cc-global-prune then
     10 context cc-fget 7 context cc-fget cc-link! 6 context cc-fget
   else 0 context cc-fget 0= if s" no matching generic association" cc-fail then
     10 context cc-fget 2 context cc-fget cc-link! 1 context cc-fget then
@@ -1910,6 +1931,7 @@ defer cc-initialize-object
   cc-find-function dup -1 = if drop
     -1 cc-new-function !
     cc-function-count @ dup cc-function-index ! 16 >= cc-limit
+    cc-storage @ 2 = if 1 else 0 then cc-function-linkage cc-function-index @ + c!
     cc-function-names cc-function-index @ 32 * + cc-name!
     0 cc-function-index @ cc-function-entry cc-fset
     cc-cell cc-function-index @ cc-function-return cc-fset
@@ -1918,6 +1940,8 @@ defer cc-initialize-object
     0 cc-function-index @ cc-function-argc cc-fset
     1 cc-function-count +!
   else cc-function-index ! 0 cc-new-function !
+    cc-storage @ 2 = cc-function-linkage cc-function-index @ + c@ 0= and if
+      s" conflicting function linkage" cc-fail then
     cc-function-index @ cc-function-value cc-fget cc-type cc-unqualified cc-function-type @ cc-unqualified <>
     if s" conflicting function return type" cc-fail then
   then
@@ -1978,29 +2002,60 @@ defer cc-initialize-object
   cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
   cc-function-aliases @ cc-alias-count ! 0 cc-symbol-count ! 0 cc-scope-level ! ;
 
-: cc-static-scalar ( -- value )
+: cc-static-expression ( target -- bits )
+  cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ 0 cc-global-evaluation-level @
+  L{ target data constants calls symbols result level }
+  1 cc-unevaluated +! cc-unevaluated @ cc-global-evaluation-level ! cc-nest
+  cc-conditional cc-value dup target swap cc-assignment-check
+  target cc-type cc-convert
+  dup cc-known? 0= if s" expected static constant initializer" cc-fail then
+  cc-fold@ 6 (local!) cc-unnest -1 cc-unevaluated +! level cc-global-evaluation-level !
+  data cc-data-base - 8 / cc-data @ data - 8 / >r
+  dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
+  constants cc-constant-base - 32 / cc-constant-types + cc-constants @ constants - 32 / 0 fill
+  data cc-data ! constants cc-constants ! calls cc-call-count ! symbols cc-symbol-count ! result ;
+: cc-static-scalar ( target -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
-    cc-token @ 44 = if cc-next then 125 cc-expect else cc-read-constant then ;
-: cc-global ( -- ) cc-base-type @ cc-declared-type @ 0 0 0 0
-  L{ base type name after target value }
+    cc-token @ 44 = if cc-next then 125 cc-expect else cc-static-expression then ;
+: cc-global ( -- ) cc-base-type @ cc-declared-type @ 0 0 0 0 0
+  L{ base type name after target value alias }
   begin
-    type cc-kind dup 0 <> swap 6 <> and if s" global aggregate or pointer initializer pending" cc-fail then
+    type cc-kind dup 2 >= swap 6 <> and if s" global aggregate initializer pending" cc-fail then
     type cc-kind 6 = if type cc-complete 1 <> if s" incomplete global enum" cc-fail then then
     cc-token-start @ 3 (local!) cc-next cc-token-start @ 4 (local!)
-    type cc-alignment 8 * dup 1- cc-static-data @ + swap negate and cc-static-data !
-    cc-static-data @ 5 (local!) type cc-width cc-static-data +!
-    cc-static-data @ cc-data-base > cc-limit target type cc-type!
     name cc-pos ! cc-next
-    cc-find-alias-raw 0< 0= if s" duplicate global object" cc-fail then
+    cc-find-alias-raw 7 (local!)
     cc-find-function 0< 0= if s" global object conflicts with function" cc-fail then
-    type cc-bind-alias 2 cc-binding-kinds cc-alias-count @ 1- + c!
-    target cc-binding-values cc-alias-count @ 1- cells + !
+    alias 0< if
+      type cc-alignment 8 * dup 1- cc-static-data @ + swap negate and cc-static-data !
+      cc-static-data @ 5 (local!) type cc-width cc-static-data +!
+      cc-static-data @ cc-data-base > cc-limit target type cc-type!
+      type cc-bind-alias cc-alias-count @ 1- 7 (local!)
+      2 cc-binding-kinds alias + c! 0 cc-global-state alias + c!
+      cc-storage @ 2 = if 1 else 0 then cc-global-linkage alias + c!
+      target cc-binding-values alias cells + !
+    else
+      cc-binding-kinds alias + c@ 2 <> if s" global conflicts with ordinary name" cc-fail then
+      cc-storage @ 1 <> if
+        cc-storage @ 2 = if 1 else 0 then cc-global-linkage alias + c@ <> if
+          s" conflicting global linkage" cc-fail then then
+      type cc-alias-types alias + c@ cc-types-compatible? 0= if s" conflicting global type" cc-fail then
+      cc-binding-values alias cells + @ 5 (local!)
+      target type cc-type! type cc-alias-types alias + c!
+    then
     after cc-pos ! cc-next
-    cc-token @ 61 = if cc-next cc-static-scalar type cc-fold-convert else 0 then
-    6 (local!) value type cc-width target cc-value!
+    cc-token @ 61 = if
+      cc-global-state alias + c@ 2 = if s" duplicate global definition" cc-fail then
+      cc-next target cc-static-scalar 6 (local!)
+      value type cc-width target cc-value! 2 cc-global-state alias + c!
+    else cc-storage @ 1 <> cc-global-state alias + c@ 0= and if
+      1 cc-global-state alias + c! then then
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
   until 59 cc-expect ;
 : cc-external ( -- ) 0 L{ name }
+  0 cc-storage ! s" extern" cc-is if 1 cc-storage ! cc-next then
+  s" static" cc-is if cc-storage @ if s" conflicting storage classes" cc-fail then
+    2 cc-storage ! cc-next then
   cc-read-type cc-declared-type @ cc-function-type !
   cc-token @ 59 = if cc-next exit then
   cc-token-start @ 1 (local!) cc-next
@@ -2008,6 +2063,10 @@ defer cc-initialize-object
     name cc-pos ! cc-next cc-global then ;
 
 : cc-finish
+  cc-global-ref-count @ 0 ?do
+    cc-global-refs i cells + @ cc-global-state + c@ 0= if
+      s" referenced extern object has no definition" cc-fail then
+  loop
   cc-main-index @ 0< if s" main missing" cc-fail then
   cc-main-index @ cc-function-entry cc-fget 0=
   if s" main definition missing" cc-fail then
@@ -2045,6 +2104,8 @@ defer cc-initialize-object
   0 cc-generic-depth !
   0 cc-initializing !
   0 cc-alias-count ! 0 cc-symbol-count !
+  0 cc-global-ref-count ! cc-global-state 128 0 fill
+  0 cc-global-evaluation-level !
   -1 cc-main-index ! cc-data-base cc-data !
   cc-static-base cc-static-data !
   cc-static-types 4096 0 fill cc-image 4096 0 fill

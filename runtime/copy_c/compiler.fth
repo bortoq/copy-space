@@ -529,6 +529,39 @@ defer cc-check-truth
   again ;
 : cc-text cc-source cc-token-start @ + cc-token-size @ ;
 : cc-is ( addr len -- flag ) cc-text compare 0= ;
+: cc-hex-digit ( c -- digit )
+  dup cc-digit if 48 - exit then
+  dup 97 103 cc-within if 87 - exit then
+  dup 65 71 cc-within if 55 - exit then drop -1 ;
+: cc-literal-byte ( -- byte or -1 for splice ) 0 0 0 L{ byte value digits }
+  cc-peek 1 (local!) byte -1 = if s" unfinished literal" cc-fail then
+  byte 0= byte 10 = or byte 13 = or if s" invalid literal byte" cc-fail then
+  cc-step byte 92 <> if byte exit then
+  cc-peek 1 (local!) byte -1 = if s" unfinished literal escape" cc-fail then
+  byte 0= if s" NUL in literal escape" cc-fail then
+  byte 10 = if cc-step -1 exit then
+  byte 13 = if cc-step cc-peek 10 = if cc-step then -1 exit then
+  byte 48 56 cc-within if
+    begin cc-peek 48 56 cc-within digits 3 < and while
+      value 8 * cc-peek 48 - + 2 (local!) digits 1+ 3 (local!) cc-step
+    repeat value 255 and exit then
+  byte 120 = if cc-step
+    begin cc-peek cc-hex-digit dup 0< 0= while
+      value 16 * + 255 and 2 (local!) digits 1+ 3 (local!) cc-step
+    repeat drop digits 0= if s" empty hex escape" cc-fail then value exit then
+  byte 117 = byte 85 = or if s" universal character escape pending" cc-fail then
+  cc-step
+  byte 97 = if 7 exit then byte 98 = if 8 exit then
+  byte 102 = if 12 exit then byte 110 = if 10 exit then
+  byte 114 = if 13 exit then byte 116 = if 9 exit then
+  byte 118 = if 11 exit then byte 101 = byte 69 = or if 27 exit then byte ;
+: cc-character-next ( -- ) 0 0 0 L{ value bytes byte }
+  cc-step begin cc-peek 39 <> while
+    cc-literal-byte 3 (local!) byte 0< 0= if
+      value 8 lshift byte or 1 (local!) bytes 1+ 2 (local!) then
+  repeat cc-step bytes 0= if s" empty character literal" cc-fail then
+  bytes 1 = value 127 > and if value 256 - 1 (local!) then
+  value cc-number ! 0 cc-number-type ! 1 cc-token ! ;
 variable cc-radix
 variable cc-number-start
 variable cc-long-suffix
@@ -575,6 +608,8 @@ variable cc-unsigned-suffix
   cc-skip cc-pos @ cc-token-start ! 0 cc-token-size !
   cc-peek dup -1 = if drop 0 cc-token ! exit then
   dup 0= if s" NUL in source" cc-fail then
+  dup 39 = if drop cc-character-next
+    cc-pos @ cc-token-start @ - cc-token-size ! exit then
   dup cc-alpha if drop
     begin cc-peek cc-namechar while cc-step repeat 2 cc-token !
   else dup cc-digit if drop cc-number-next

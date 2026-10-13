@@ -19,6 +19,7 @@ from copy_c_array_cases import valid as array_valid, invalid as array_invalid
 from copy_c_record_cases import valid as record_valid, invalid as record_invalid
 from copy_c_layout_attribute_cases import valid as layout_valid, invalid as layout_invalid
 from copy_c_member_attribute_cases import valid as member_layout_valid, invalid as member_layout_invalid
+from copy_c_flexible_cases import valid as flexible_valid, invalid as flexible_invalid
 from copy_c_builtin_cases import valid as builtin_valid, invalid as builtin_invalid
 from copy_c_generic_cases import valid as generic_valid, invalid as generic_invalid
 from copy_c_qualifier_cases import valid as qualifier_valid, invalid as qualifier_invalid
@@ -282,6 +283,7 @@ valid += array_valid
 valid += record_valid
 valid += layout_valid
 valid += member_layout_valid
+valid += flexible_valid
 valid += builtin_valid
 valid += generic_valid
 valid += qualifier_valid
@@ -397,6 +399,7 @@ invalid += array_invalid
 invalid += record_invalid
 invalid += layout_invalid
 invalid += member_layout_invalid
+invalid += flexible_invalid
 invalid += builtin_invalid
 invalid += generic_invalid
 invalid += qualifier_invalid

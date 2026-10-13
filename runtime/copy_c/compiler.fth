@@ -958,6 +958,7 @@ create cc-type-unqualified 128 allot
 create cc-type-qualifiers 128 allot
 create cc-type-packed 128 allot
 create cc-type-member-attributes 128 allot
+create cc-type-flexible 128 allot
 variable cc-initializing
 variable cc-static-initializing
 create cc-tag-names 128 32 * allot
@@ -983,6 +984,7 @@ variable cc-prototype-count
   cc-type-qualifiers 128 0 fill
   cc-type-packed 128 0 fill
   cc-type-member-attributes 128 0 fill cc-member-attributes 256 cells 0 fill
+  cc-type-flexible 128 0 fill
   cc-pointer-unaligned 2048 0 fill
   128 0 do i cc-type-unqualified i + c! loop
   14 cc-type-count !
@@ -2153,6 +2155,8 @@ defer cc-merge-layout-attributes
 : cc-member-alignment ( type attributes packed -- alignment ) L{ type attributes packed }
   attributes 0< packed or if 1 else type cc-alignment then
   attributes 2147483647 and max ;
+: cc-owner-has-member? ( owner -- flag ) L{ owner }
+  cc-member-count @ 0 ?do cc-member-owners i + c@ owner = if -1 unloop exit then loop 0 ;
 : cc-read-members ( owner -- ) 0 0 0 0 0 0 0 L{ owner base type name after offset slot attributes }
   begin cc-token @ 125 <> while
     cc-token @ 0= if s" unfinished aggregate" cc-fail then
@@ -2161,10 +2165,15 @@ defer cc-merge-layout-attributes
     cc-declared-type @ 3 (local!)
     r> cc-read-member-attributes >r
     begin
+      cc-type-flexible owner + c@ if s" flexible array must be last member" cc-fail then
       type cc-declarator 4 (local!) 3 (local!)
       r@ cc-read-member-attributes 8 (local!) cc-token-start @ 5 (local!)
       type cc-kind 7 = if s" function member unsupported" cc-fail then
-      type cc-kind 2 = type cc-size 0= or if s" incomplete member type" cc-fail then
+      type cc-kind 3 = type cc-size 0= and if
+        owner cc-kind 4 <> owner cc-owner-has-member? 0= or if
+          s" flexible array requires nonempty struct" cc-fail then
+        1 cc-type-flexible owner + c!
+      else type cc-kind 2 = type cc-size 0= or if s" incomplete member type" cc-fail then then
       type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
         s" incomplete member type" cc-fail then then
       cc-member-count @ dup 256 >= cc-limit 7 (local!)

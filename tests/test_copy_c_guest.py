@@ -67,7 +67,7 @@ def main():
             condition = (ROOT / "runtime/copy_c/preprocess_condition.h").read_bytes()
             assert sha(condition) == manifest["compiler_dictionary"]["compiler_preprocess_condition_sha256"]
             (folder / "preprocess_condition.h").write_bytes(condition)
-        for name in ("input_files", "preprocess_include"):
+        for name in ("input_files", "preprocess_include", "preprocess_queries"):
             key="compiler_"+name+"_sha256"
             if key in manifest["compiler_dictionary"]:
                 content=(ROOT / "runtime/copy_c" / (name+".h")).read_bytes()
@@ -94,7 +94,7 @@ def main():
     if "compiler_preprocess_condition_sha256" in manifest["compiler_dictionary"]:
         assert sha((folder / "preprocess_condition.h").read_bytes()) == manifest["compiler_dictionary"]["compiler_preprocess_condition_sha256"]
         runtime_names += ("preprocess_condition.h",)
-    for name in ("input_files", "preprocess_include"):
+    for name in ("input_files", "preprocess_include", "preprocess_queries"):
         key="compiler_"+name+"_sha256"
         if key in manifest["compiler_dictionary"]:
             assert sha((folder / (name+".h")).read_bytes())==manifest["compiler_dictionary"][key]

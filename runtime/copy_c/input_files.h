@@ -45,7 +45,7 @@ static int cc_files_word(const unsigned char *data, unsigned size, unsigned *at,
 }
 static int cc_files_decode(unsigned char *data, unsigned size)
 {
-    unsigned at=9, count, main, roots;
+    unsigned at=9, count, main, roots, unique_roots=0;
     cc_input_file_count=cc_file_root_count=cc_main_file=0;
     if (!cc_files_magic(data,size) || !cc_files_word(data,size,&at,&count)
         || !cc_files_word(data,size,&at,&main) || !cc_files_word(data,size,&at,&roots)) return 0;
@@ -53,8 +53,11 @@ static int cc_files_decode(unsigned char *data, unsigned size)
     for (unsigned i=0;i<roots;++i) {
         unsigned length;
         if (!cc_files_word(data,size,&at,&length) || length>size-at) return 0;
-        cc_file_roots[i]=(cc_file_name){data+at,length}; at+=length;
-        if (!cc_file_name_valid(cc_file_roots[i],1)) return 0;
+        cc_file_name name={data+at,length}; at+=length;
+        if (!cc_file_name_valid(name,1)) return 0;
+        unsigned j=0;
+        while (j<unique_roots && !cc_file_name_equal(name,cc_file_roots[j])) ++j;
+        if (j==unique_roots) cc_file_roots[unique_roots++]=name;
     }
     for (unsigned i=0;i<count;++i) {
         unsigned length, bytes;
@@ -67,7 +70,7 @@ static int cc_files_decode(unsigned char *data, unsigned size)
         cc_input_files[i].data=data+at; cc_input_files[i].size=bytes; at+=bytes;
     }
     if (at!=size) return 0;
-    cc_input_file_count=count; cc_file_root_count=roots; cc_main_file=main;
+    cc_input_file_count=count; cc_file_root_count=unique_roots; cc_main_file=main;
     return 1;
 }
 #endif

@@ -41,7 +41,7 @@ command=["cc","-std=c99","-O2","-I",str(root),str(folder/"test.c"),"-o",str(fold
 compiled=subprocess.run(command,capture_output=True)
 (folder/"compile.stderr").write_bytes(compiled.stderr)
 assert compiled.returncode==0,compiled.stderr
-for relative in ("input_files.h","preprocess_include.h","preprocess_phase2.h","preprocess_macros.h","preprocess_condition.h"):
+for relative in ("input_files.h","preprocess_include.h","preprocess_phase2.h","preprocess_macros.h","preprocess_condition.h","preprocess_queries.h"):
     (folder/relative).write_bytes((root/"runtime/copy_c"/relative).read_bytes())
 for reject,cases in ((False,valid),(True,invalid)):
     for name,files,roots,main in cases:
@@ -54,7 +54,10 @@ for reject,cases in ((False,valid),(True,invalid)):
         for file,content in files:
             path=case/"files"/file; path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(content)
         command=["gcc","-E","-P","-nostdinc","-std=gnu11","-Werror"]
+        if name in ("has-include-undef","has-include-override"):
+            command.append("-Wno-error")
         for directory in roots: command.extend(("-I",str(case/"files"/directory)))
+        for directory in roots: (case/"files"/directory).mkdir(parents=True,exist_ok=True)
         command.append(str(case/"files"/files[main][0]))
         (case/"gcc.json").write_text(json.dumps(command)+"\n")
         reference=subprocess.run(command,capture_output=True,timeout=30)

@@ -22,7 +22,10 @@ static cc_pp_value cc_pp_constant(cc_pp_eval *e)
 {
     cc_pp_token t=e->token;
     cc_pp_value v={0,0};
-    if (t.kind == CC_PP_IDENT) return v;
+    if (t.kind == CC_PP_IDENT) {
+        if (cc_pp_query_kind(t)) e->failed=1;
+        return v;
+    }
     if (t.kind == CC_PP_LITERAL) {
         unsigned at=0, count=0;
         int wide=t.text[0] != '\'';
@@ -189,28 +192,30 @@ static int cc_pp_skip_line(cc_pp_reader *reader)
     cc_pp_skipping=previous;
     return !reader->failed;
 }
-static int cc_pp_condition_line(cc_pp_reader *reader, int run, int *truth)
+static int cc_pp_condition_line_run(cc_pp_reader *reader, int run, int *truth)
 {
     *truth=0;
     if (!run) return cc_pp_skip_line(reader);
     cc_pp_skipping=0;
     unsigned start=cc_pp_output_count;
     unsigned head=0, tail=0;
-    cc_pp_token t=cc_pp_next(reader);
+    unsigned state=0;
+    cc_pp_token t=cc_pp_condition_token(reader,&state);
     while (t.kind && t.kind!='\n' && !reader->failed) {
         if (cc_pp_is(t,"defined")) {
             t=cc_pp_next(reader); int parens=cc_pp_is(t,"(");
             if (parens) t=cc_pp_next(reader);
             if (t.kind!=CC_PP_IDENT) return 0;
-            int i=cc_pp_find(t), exists=i>=0 && cc_pp_macros[i].present;
+            int exists=cc_pp_is_defined(t);
             if (parens && !cc_pp_is(cc_pp_next(reader),")")) return 0;
             t=(cc_pp_token){(const unsigned char *)(exists ? "1" : "0"),1,CC_PP_NUMBER,0,0};
+            state=0;
         }
         unsigned node=cc_pp_node_new(t);
         if (!node) { cc_pp_list_release(head); return 0; }
         if (tail) cc_pp_nodes[tail].next=node; else head=node;
         tail=node;
-        t=cc_pp_next(reader);
+        t=cc_pp_condition_token(reader,&state);
     }
     if (!cc_pp_flush(head)) return 0;
     cc_pp_eval e={{cc_pp_output+start,cc_pp_output_count-start,0,0},{0,0,0,0,0},0,0};
@@ -220,6 +225,14 @@ static int cc_pp_condition_line(cc_pp_reader *reader, int run, int *truth)
     if (reader->failed || e.failed || e.token.kind) return 0;
     *truth=!!value.bits;
     return 1;
+}
+static int cc_pp_condition_line(cc_pp_reader *reader, int run, int *truth)
+{
+    int previous=cc_pp_in_condition;
+    cc_pp_in_condition=1;
+    int result=cc_pp_condition_line_run(reader,run,truth);
+    cc_pp_in_condition=previous;
+    return result;
 }
 static int cc_pp_condition_directive(cc_pp_reader *r, cc_pp_token directive)
 {
@@ -234,8 +247,7 @@ static int cc_pp_condition_directive(cc_pp_reader *r, cc_pp_token directive)
         else if (cc_pp_enabled) {
             cc_pp_token name=cc_pp_next(r);
             if (name.kind!=CC_PP_IDENT) return 0;
-            int index=cc_pp_find(name);
-            truth=index>=0 && cc_pp_macros[index].present;
+            truth=cc_pp_is_defined(name);
             if (ifndef) truth=!truth;
             cc_pp_token tail=cc_pp_next(r);
             if (tail.kind && tail.kind!='\n') return 0;

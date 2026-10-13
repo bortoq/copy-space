@@ -12,6 +12,7 @@ static void cc_pp_free(void *memory) { free(memory); }
 #define CC_PP_IDENT 256
 #define CC_PP_NUMBER 257
 #define CC_PP_LITERAL 258
+#define CC_PP_HEADER 259
 #define CC_PP_MACROS 512
 #define CC_PP_TOKENS 32768
 #define CC_PP_TEXT 262144
@@ -80,6 +81,7 @@ static cc_pp_token cc_pp_tokens[CC_PP_TOKENS];
 static unsigned char cc_pp_text[CC_PP_TEXT], cc_pp_output[CC_PP_OUTPUT];
 static unsigned cc_pp_macro_count, cc_pp_token_count, cc_pp_text_count, cc_pp_output_count;
 static int cc_pp_enabled, cc_pp_skipping;
+static int cc_pp_in_condition, cc_pp_query_enabled[2];
 typedef struct { unsigned first, count; int variadic; } cc_pp_parameters;
 static cc_pp_token cc_pp_parameter_names[CC_PP_PARAMETERS];
 static unsigned cc_pp_parameter_count;
@@ -624,12 +626,23 @@ failed:
     }
     return 0;
 }
+static int cc_pp_query_kind(cc_pp_token token);
+static int cc_pp_query_symbol(cc_pp_token token);
+static int cc_pp_is_defined(cc_pp_token token);
+static int cc_pp_query_expand(unsigned *cursor, int kind, unsigned depth);
+static cc_pp_token cc_pp_condition_token(cc_pp_reader *reader, unsigned *state);
 static int cc_pp_rescan_depth(unsigned *head, unsigned depth)
 {
     unsigned *cursor=head;
     while (*cursor) {
         unsigned current=*cursor;
         cc_pp_token token=cc_pp_nodes[current].token;
+        int query=cc_pp_query_kind(token);
+        if (query) {
+            if (!cc_pp_in_condition) return 0;
+            if (!cc_pp_query_expand(cursor,query,depth)) return 0;
+            continue;
+        }
         unsigned frozen=cc_pp_nodes[current].frozen;
         int index=frozen ? (int)cc_pp_frozen_macros[frozen].index
                          : (token.kind == CC_PP_IDENT ? cc_pp_find(token) : -1);
@@ -732,6 +745,7 @@ static int cc_pp_expand(cc_pp_token token, unsigned depth)
 }
 #include "preprocess_condition.h"
 #include "preprocess_include.h"
+#include "preprocess_queries.h"
 static int cc_pp_directive(cc_pp_reader *reader)
 {
     cc_pp_token directive=cc_pp_next(reader), name, token;
@@ -747,6 +761,10 @@ static int cc_pp_directive(cc_pp_reader *reader)
     name=cc_pp_next(reader);
     if (reader->failed || name.kind != CC_PP_IDENT) return 0;
     token=cc_pp_next(reader);
+    if (undef) {
+        int query=cc_pp_query_symbol(name);
+        if (query) cc_pp_query_enabled[query-1]=0;
+    }
     int index=cc_pp_find(name);
     if (index < 0) {
         if (!define) return (!token.kind || token.kind == '\n') && !reader->failed;
@@ -804,6 +822,7 @@ static int cc_preprocess_macros(unsigned char *source, unsigned size)
     cc_pp_frozen_count=cc_pp_frozen_free=cc_pp_blocked=0; cc_pp_allow_incomplete=0;
     cc_pp_hide_reset();
     cc_pp_group_count=cc_pp_group_floor=0; cc_pp_enabled=1; cc_pp_skipping=0;
+    cc_pp_in_condition=0; cc_pp_query_enabled[0]=cc_pp_query_enabled[1]=1;
     cc_input_file_count=cc_file_root_count=0;
     cc_pp_include_depth=0; cc_pp_current_file=CC_FILES_MAX;
     cc_pp_current_root=cc_pp_include_file=-1;

@@ -1357,7 +1357,7 @@ variable cc-prefix-quals
   s" __builtin_types_compatible_p" cc-is or
   s" __builtin_va_start" cc-is or s" __builtin_va_arg" cc-is or
   s" __builtin_va_copy" cc-is or s" __builtin_va_end" cc-is or
-  s" typedef" cc-is or cc-keyword-type? or
+  s" typedef" cc-is or s" static" cc-is or cc-keyword-type? or
   if s" reserved name" cc-fail then
   cc-token @ 2 <> cc-token-size @ 31 > or cc-limit cc-text rot place ;
 : cc-symbol-at ( target -- target )
@@ -1369,7 +1369,7 @@ variable cc-prefix-quals
   cc-symbol-names cc-symbol-count @ 32 * + cc-name!
   dup cc-symbol-address cc-symbol-count @ cells + !
   cc-scope-level @ cc-symbol-levels cc-symbol-count @ cells + !
-  dup 1 cc-lvalue!
+  dup cc-frame? if dup 1 cc-lvalue! then
   1 cc-symbol-count +! ;
 : cc-symbol ( type -- target ) cc-object cc-symbol-at ;
 : cc-fget ( index array -- value ) swap cells + @ ;
@@ -2798,25 +2798,36 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   target cc-infer-target ! length cc-infer-length !
   type cc-pointee swap cc-array-to start cc-pos ! cc-next ;
 : cc-array-self-view ( target type -- view ) >r cc-address cc-pointer-read dup r> cc-type! ;
+defer cc-local-static-initialize
+: cc-static-object ( type -- target ) L{ type }
+  type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
+    s" incomplete object type" cc-fail then then
+  type cc-alignment 8 * dup 1- cc-static-data @ + swap negate and cc-static-data !
+  cc-static-data @ type cc-width cc-static-data +!
+  cc-static-data @ cc-data-base > cc-limit dup type cc-type! ;
 : cc-declaration
-  cc-read-type cc-base-type @ cc-declared-type @ 0 0 0 cc-in-for-declaration @ 0 0
+  s" static" cc-is dup if cc-next cc-in-for-declaration @ if
+    s" static object in for initializer" cc-fail then then >r
+  cc-read-type cc-base-type @ cc-declared-type @ 0 0 0 cc-in-for-declaration @ r> 2 and or 0 0
   L{ base type name after target is-for original symbol }
-  cc-token @ 59 = if is-for if s" for initializer requires object declaration" cc-fail then
+  cc-token @ 59 = if is-for 1 and if s" for initializer requires object declaration" cc-fail then
     cc-next exit then
   begin
     0 7 (local!)
-    is-for cc-in-for-declaration !
+    is-for 1 and cc-in-for-declaration !
     type cc-declarator 3 (local!) 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 2 = if s" void object unsupported" cc-fail then
     type cc-kind 7 = if s" function declaration via declarator pending" cc-fail then
     type cc-kind 3 = type cc-size 0= and if
       cc-token @ 61 <> if s" incomplete array object" cc-fail then
       type 7 (local!) type name after cc-infer-array 2 (local!) then
-    name cc-pos ! cc-next type cc-symbol dup type cc-type! 5 (local!)
+    name cc-pos ! cc-next is-for 2 and if type cc-static-object cc-symbol-at else type cc-symbol then
+    dup type cc-type! 5 (local!)
     after cc-pos ! cc-next
     cc-symbol-count @ 1- 8 (local!)
     original if target original cc-array-self-view cc-symbol-address symbol cells + ! then
     0 cc-in-for-declaration !
+    is-for 2 and if target original symbol cc-local-static-initialize else
     type cc-kind 3 = type cc-record? or if
       target type cc-size cc-clear-object
       cc-token @ 61 = if cc-next cc-token @ 123 <>
@@ -2826,7 +2837,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     else
       cc-token @ 61 = if cc-next cc-scalar-initializer else cc-zero @ then
       target swap cc-initialize-write drop
-    then
+    then then
     target cc-symbol-address symbol cells + !
     cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
   until 59 cc-expect ;
@@ -2982,7 +2993,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   s" _Static_assert" cc-is if cc-static-assert exit then
   cc-token @ 123 = if
     cc-block cc-discard-value 0 cc-statement-result ! exit then
-  cc-type-start if cc-declaration 0 cc-statement-result ! exit then
+  cc-type-start s" static" cc-is or if cc-declaration 0 cc-statement-result ! exit then
   s" if" cc-is if cc-if 0 cc-statement-result ! exit then
   s" switch" cc-is if cc-switch exit then
   s" goto" cc-is if cc-goto exit then
@@ -3099,21 +3110,31 @@ variable cc-static-high
 : cc-static-scalar ( target -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-static-expression then ;
+: cc-static-binding! ( target binding -- )
+  dup 0< if negate 1- cells cc-symbol-address + ! else cells cc-binding-values + ! then ;
 : cc-static-aggregate ( target alias original -- )
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ cc-global-evaluation-level @
   L{ target alias original data constants calls symbols level }
   1 cc-unevaluated +! cc-unevaluated @ cc-global-evaluation-level !
-  original if target original cc-array-self-view cc-binding-values alias cells + ! then
+  original if target original cc-array-self-view alias cc-static-binding! then
   1 cc-static-initializing ! target target cc-type cc-size cc-clear-object
   cc-token @ 123 <> cc-token @ 34 = target cc-type cc-kind 3 = and 0= and if
     s" expected aggregate initializer braces" cc-fail then
   cc-nest target cc-initialize-object cc-unnest 0 cc-static-initializing !
-  target cc-binding-values alias cells + !
+  target alias cc-static-binding!
   -1 cc-unevaluated +! level cc-global-evaluation-level !
   data cc-data-base - 8 / cc-data @ data - 8 / >r
   dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
   constants cc-constant-base - 32 / cc-constant-types + cc-constants @ constants - 32 / 0 fill
   data cc-data ! constants cc-constants ! symbols cc-symbol-count ! ;
+: cc-local-static-initialize-body ( target original symbol -- ) L{ target original symbol }
+  cc-token @ 61 = if cc-next
+    target cc-type cc-kind 3 = target cc-type cc-record? or if
+      target symbol 1+ negate original cc-static-aggregate
+    else target cc-static-scalar target cc-type cc-width 32 min target cc-value!
+      target cc-type cc-width 64 = if cc-static-high @ 32 target 32 + cc-value! then then
+  then ;
+' cc-local-static-initialize-body is cc-local-static-initialize
 : cc-global-array-type ( type name after -- type ) L{ type name after }
   name cc-pos ! cc-next cc-find-alias-raw dup 0< 0= if
     dup cc-binding-kinds + c@ 2 = if cc-alias-types + c@ dup type cc-types-compatible? if

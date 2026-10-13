@@ -19,5 +19,4 @@ invalid = [
     ("linkage-function-extern-before", b'extern int f(void);static int f(void){return 7;}int main(){return f();}'),
     ("linkage-object-two-definitions", b'static int x=3;static int x=4;int main(){return x;}'),
     ("linkage-conflicting-classes", b'extern static int x;int main(){return 0;}'),
-    ("linkage-local-static-pending", b'int main(){static int x=7;return x;}'),
 ]

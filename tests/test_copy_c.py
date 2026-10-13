@@ -48,6 +48,7 @@ from copy_c_long_long_cases import valid as long_long_valid, invalid as long_lon
 from copy_c_long_long_cases import volatile_reads as long_long_volatile_reads
 from copy_c_wide_control_cases import valid as wide_control_valid, invalid as wide_control_invalid
 from copy_c_wide_control_cases import volatile_reads as wide_control_volatile_reads
+from copy_c_local_static_cases import valid as local_static_valid, invalid as local_static_invalid
 volatile_reads = dict(volatile_reads, **long_long_volatile_reads, **wide_control_volatile_reads)
 arithmetic_faults = arithmetic_faults+long_long_faults
 
@@ -267,6 +268,7 @@ valid += function_declaration_valid
 valid += variadic_valid
 valid += long_long_valid
 valid += wide_control_valid
+valid += local_static_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -372,6 +374,7 @@ invalid += function_declaration_invalid
 invalid += variadic_invalid
 invalid += long_long_invalid
 invalid += wide_control_invalid
+invalid += local_static_invalid
 assert len({name for name, _ in invalid}) == len(invalid), "duplicate rejected case name"
 for name, source in invalid:
     compile_native(name, source, True)

@@ -932,6 +932,12 @@ create cc-global-linkage 128 allot
 create cc-global-refs 4096 cells allot
 variable cc-global-ref-count
 variable cc-global-evaluation-level
+create cc-layout-sizes 1024 cells allot
+create cc-layout-targets 1024 cells allot
+variable cc-layout-cursor
+variable cc-layout-count
+variable cc-layout-mode
+variable cc-layout-replay
 : cc-global-reference ( alias -- )
   cc-unevaluated @ cc-global-evaluation-level @ > if drop exit then
   cc-global-ref-count @ 4096 >= cc-limit
@@ -1033,6 +1039,25 @@ defer cc-qualify-array
   1 cc-type-kinds result + c!
   base cc-type-bases result + c! 1 cc-type-count +! result ;
 : cc-width ( type -- bits ) dup cc-kind 2 = if drop 0 else cc-size 8 * then ;
+: cc-layout-object ( target type -- bits ) cc-layout-cursor @ 0 L{ target type index bits }
+  index 1024 >= cc-limit type cc-width 4 (local!)
+  cc-layout-mode @ if
+    index cc-layout-count @ >= if s" changed static object order" cc-fail then
+    bits cc-layout-sizes index cells + @ > if s" changed static object size" cc-fail then
+    cc-layout-sizes index cells + @ 4 (local!)
+  else bits cc-layout-sizes index cells + ! index 1+ cc-layout-count ! then
+  target cc-layout-targets index cells + ! 1 cc-layout-cursor +! bits ;
+: cc-layout-find ( target -- index ) L{ target }
+  cc-layout-cursor @ begin dup 0> while 1-
+    dup cells cc-layout-targets + @ target = if exit then
+  repeat drop s" missing static object plan" cc-fail ;
+: cc-layout-grow ( target ending -- ) 0 0 L{ target ending index previous }
+  target cc-layout-find 3 (local!) cc-layout-sizes index cells + @ target + 4 (local!)
+  ending previous > if
+    cc-layout-mode @ if s" changed static object size" cc-fail then
+    ending target - cc-layout-sizes index cells + !
+    previous cc-static-data @ = if ending cc-static-data ! else 1 cc-layout-replay ! then
+  then ;
 : cc-object ( type -- target )
   dup cc-kind 7 = if s" function is not an object" cc-fail then
   dup cc-record? over cc-kind 6 = or if dup cc-complete 1 <> if
@@ -2933,6 +2958,7 @@ defer cc-local-static-initialize
     s" incomplete object type" cc-fail then then
   type cc-alignment 8 * dup 1- cc-static-data @ + swap negate and cc-static-data !
   cc-static-data @ type cc-width cc-static-data +!
+  dup type cc-layout-object type cc-width - cc-static-data +!
   cc-static-data @ cc-data-base > cc-limit dup type cc-type! ;
 : cc-declaration
   s" static" cc-is dup if cc-next cc-in-for-declaration @ if
@@ -3281,9 +3307,7 @@ variable cc-static-high
   cc-member-offsets member cells + @ + target cc-type cc-size max 4 (local!)
   target bytes 8 * + 5 (local!)
   ending target target cc-type cc-width + > if
-    target target cc-type cc-width + cc-static-data @ <> if
-      s" flexible initializer relocation pending" cc-fail then
-    ending cc-data-base > cc-limit ending cc-static-data !
+    ending cc-data-base > cc-limit target ending cc-layout-grow
   then target cc-static-flex-target ! length cc-static-flex-length ! ;
 : cc-static-aggregate ( target alias original -- )
   2 pick cc-type cc-unqualified cc-type-flexible + c@ if 2 pick cc-static-flex-reserve then
@@ -3339,6 +3363,7 @@ variable cc-static-high
     alias 0< if
       type cc-alignment 8 * dup 1- cc-static-data @ + swap negate and cc-static-data !
       cc-static-data @ 5 (local!) type cc-width cc-static-data +!
+      target type cc-layout-object type cc-width - cc-static-data +!
       cc-static-data @ cc-data-base > cc-limit target type cc-type!
       type cc-bind-alias cc-alias-count @ 1- 7 (local!)
       2 cc-binding-kinds alias + c! 0 cc-global-state alias + c!
@@ -3425,7 +3450,8 @@ variable cc-static-high
       cc-length ! exit then cc-length +!
     cc-length @ cc-source-max > cc-limit
   again ;
-: CC-RUN
+: cc-reset-translation
+  0 cc-layout-cursor !
   0 cc-pos ! 0 cc-token-start ! 0 cc-depth ! 0 cc-function-count ! 0 cc-call-count !
   0 cc-indirect-depth !
   0 cc-external-declarator ! 0 cc-keep-prototype ! 0 cc-external-prototype-shape !
@@ -3445,6 +3471,7 @@ variable cc-static-high
   0 cc-initializer-start ! 0 cc-range-path-depth ! 0 cc-declarator-depth !
   0 cc-infer-depth ! 0 cc-infer-target ! 0 cc-infer-length !
   0 cc-static-initializing !
+  0 cc-static-flex-target ! 0 cc-static-flex-length !
   0 cc-union-count ! cc-pointer-origins 2048 cells 0 fill
   0 cc-alias-count ! 0 cc-symbol-count !
   0 cc-global-ref-count ! cc-global-state 128 0 fill
@@ -3460,7 +3487,17 @@ variable cc-static-high
   cc-code-base cc-origin ! cc-image-base cc-emission-base ! cc-image cc-emission-buffer !
   cc-library-layer @ cc-layer ! 3 cc-slot !
   cc-library-constants @ cc-constants !
-  cc-read-source cc-next begin cc-token @ while
+  ;
+: cc-translation
+  cc-next begin cc-token @ while
     s" typedef" cc-is if cc-typedef else
     s" _Static_assert" cc-is if cc-static-assert else cc-external then then repeat
-  cc-finish cc-export 0 cs-exit ;
+  ;
+: CC-RUN
+  0 cc-layout-mode ! 0 cc-layout-count ! 0 cc-layout-replay !
+  cc-reset-translation cc-read-source cc-translation
+  cc-layout-replay @ if
+    1 cc-layout-mode ! 0 cc-layout-replay ! cc-reset-translation cc-translation
+    cc-layout-cursor @ cc-layout-count @ <> if s" changed static object order" cc-fail then
+    cc-layout-replay @ if s" unstable static object layout" cc-fail then
+  then cc-finish cc-export 0 cs-exit ;

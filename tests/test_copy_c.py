@@ -38,6 +38,7 @@ from copy_c_switch_cases import valid as switch_valid, invalid as switch_invalid
 from copy_c_goto_cases import valid as goto_valid, invalid as goto_invalid
 from copy_c_declarator_cases import valid as declarator_valid, invalid as declarator_invalid
 from copy_c_function_type_cases import valid as function_type_valid, invalid as function_type_invalid
+from copy_c_function_address_cases import valid as function_address_valid, invalid as function_address_invalid
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -45,7 +46,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "inferred-array-guest", "range-guest", "range-chain-guest", "switch-guest", "goto-guest", "declarator-guest", "function-type-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "inferred-array-guest", "range-guest", "range-chain-guest", "switch-guest", "goto-guest", "declarator-guest", "function-type-guest", "function-address-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -226,6 +227,7 @@ valid += switch_valid
 valid += goto_valid
 valid += declarator_valid
 valid += function_type_valid
+valid += function_address_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -325,6 +327,7 @@ invalid += switch_invalid
 invalid += goto_invalid
 invalid += declarator_invalid
 invalid += function_type_invalid
+invalid += function_address_invalid
 for name, source in invalid:
     compile_native(name, source, True)
     print(f"OK copy-c rejects {name}", flush=True)

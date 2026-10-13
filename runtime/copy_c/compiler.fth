@@ -2650,6 +2650,8 @@ defer cc-initialize-object
 defer cc-initialize-tail
 defer cc-initialize-range-chain
 variable cc-initializer-start
+variable cc-static-flex-target
+variable cc-static-flex-length
 : cc-designator? cc-token @ dup 46 = swap 91 = or ;
 : cc-initialize-chain ( target -- )
   dup cc-type cc-kind 3 = if cc-token @ 91 <> if s" expected array designator" cc-fail then else
@@ -2786,6 +2788,13 @@ variable cc-initializer-start
         braces if s" too many aggregate initializers" cc-fail else exit then then then
     type cc-kind 5 = if target member cc-select-union then
     target cc-address member cc-field-view 6 (local!)
+    target cc-static-flex-target @ = cc-member-types member + c@ cc-kind 3 = and
+    cc-member-types member + c@ cc-size 0= and if
+      cc-infer-depth @ if view cc-infer-target ! 0 cc-infer-length ! else
+        cc-static-flex-length @ if
+          view cc-type cc-pointee cc-static-flex-length @ cc-array-to view swap cc-type! then
+      then
+    then
     view designated cc-initialize-view
     type cc-kind 5 = cc-infer-depth @ 0= and if member cc-union-members target cc-union-slot cells + ! then
     number 1+ 3 (local!)
@@ -3243,7 +3252,41 @@ variable cc-static-high
 ' cc-static-auto-value-body is cc-static-auto-value
 : cc-static-binding! ( target binding -- )
   dup 0< if negate 1- cells cc-symbol-address + ! else cells cc-binding-values + ! then ;
+: cc-flexible-member ( owner -- member ) L{ owner }
+  owner cc-unqualified 1 (local!)
+  cc-member-count @ 0 ?do
+    cc-member-owners i + c@ owner = if cc-member-types i + c@
+      dup cc-kind 3 = swap cc-size 0= and if i unloop exit then then
+  loop s" missing flexible member" cc-fail ;
+: cc-static-flex-measure ( target -- length ) 0 0 0 0 L{ target snapshot length static start }
+  cc-static-data @ 4 (local!) cc-token-start @ 5 (local!)
+  cc-infer-snapshot-bytes 5 cells + allocate dup if s" inference memory exhausted" cc-fail then drop 2 (local!)
+  cc-data @ snapshot ! cc-constants @ snapshot cell+ ! static snapshot 2 cells + !
+  cc-infer-target @ snapshot 3 cells + ! cc-infer-length @ snapshot 4 cells + !
+  cc-function-names snapshot 5 cells + cc-infer-snapshot-bytes cmove
+  target cc-static-flex-target ! 0 cc-infer-length ! 0 cc-infer-target !
+  1 cc-infer-depth +! 1 cc-unevaluated +!
+  cc-nest target cc-initialize-object cc-unnest cc-infer-length @ 3 (local!)
+  -1 cc-infer-depth +! -1 cc-unevaluated +!
+  static cc-image-base - 8 / cc-image + cc-static-data @ static - 8 / 0 fill
+  snapshot @ cc-rewind-temps
+  snapshot 5 cells + cc-function-names cc-infer-snapshot-bytes cmove
+  snapshot @ cc-data ! snapshot cell+ @ cc-constants ! snapshot 2 cells + @ cc-static-data !
+  snapshot 3 cells + @ cc-infer-target ! snapshot 4 cells + @ cc-infer-length !
+  snapshot free if s" inference memory error" cc-fail then
+  start cc-pos ! cc-next length ;
+: cc-static-flex-reserve ( target -- ) 0 0 0 0 L{ target length member bytes ending }
+  target cc-static-flex-measure 2 (local!) target cc-type cc-flexible-member 3 (local!)
+  cc-member-types member + c@ cc-pointee cc-size length *
+  cc-member-offsets member cells + @ + target cc-type cc-size max 4 (local!)
+  target bytes 8 * + 5 (local!)
+  ending target target cc-type cc-width + > if
+    target target cc-type cc-width + cc-static-data @ <> if
+      s" flexible initializer relocation pending" cc-fail then
+    ending cc-data-base > cc-limit ending cc-static-data !
+  then target cc-static-flex-target ! length cc-static-flex-length ! ;
 : cc-static-aggregate ( target alias original -- )
+  2 pick cc-type cc-unqualified cc-type-flexible + c@ if 2 pick cc-static-flex-reserve then
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ cc-global-evaluation-level @
   L{ target alias original data constants calls symbols level }
   1 cc-unevaluated +! cc-unevaluated @ cc-global-evaluation-level !
@@ -3252,6 +3295,7 @@ variable cc-static-high
   cc-token @ 123 <> cc-token @ 34 = target cc-type cc-kind 3 = and 0= and if
     s" expected aggregate initializer braces" cc-fail then
   cc-nest target cc-initialize-object cc-unnest 0 cc-static-initializing !
+  0 cc-static-flex-target ! 0 cc-static-flex-length !
   target alias cc-static-binding!
   -1 cc-unevaluated +! level cc-global-evaluation-level !
   data cc-data-base - 8 / cc-data @ data - 8 / >r

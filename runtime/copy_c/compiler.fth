@@ -3231,7 +3231,7 @@ variable cc-static-high
   0 cc-length !
   begin cc-source cc-length @ + cc-source-max 1+ cc-length @ - cs-read
     dup 0< if drop s" input error" cc-fail then
-    dup 0= if drop exit then cc-length +!
+    dup 0= if drop cc-source cc-length @ cs-preprocess-phase2 cc-length ! exit then cc-length +!
     cc-length @ cc-source-max > cc-limit
   again ;
 : CC-RUN

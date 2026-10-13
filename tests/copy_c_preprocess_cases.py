@@ -1,0 +1,32 @@
+"""Physical-line joining precedes token recognition in GNU C."""
+valid = [
+    ("pp-splice-name", b"int ma\\\nin(){return 7;}", 7),
+    ("pp-splice-keyword", b"int main(){ret\\\nurn 7;}", 7),
+    ("pp-splice-number", b"int main(){return 1\\\n7;}", 17),
+    ("pp-splice-wide-number", b"int main(){return (0x10000\\\n0000ULL)>>32;}", 1),
+    ("pp-splice-suffix", b"int main(){return sizeof(3L\\\nL);}", 8),
+    ("pp-splice-operator", b"int main(){int n=6;n+\\\n+;return n;}", 7),
+    ("pp-splice-comment-open", b"int main(){/\\\n* hidden return 3; */return 7;}", 7),
+    ("pp-splice-comment-close", b"int main(){/* hidden *\\\n/return 7;}", 7),
+    ("pp-splice-line-comment", b"int main(){// hidden \\\nreturn 3;\nreturn 7;}", 7),
+    ("pp-splice-line-comment-open", b"int main(){/\\\n/ hidden return 3;\nreturn 7;}", 7),
+    ("pp-splice-string", b'int main(){return "a\\\nb"[1];}', 98),
+    ("pp-splice-character", b"int main(){return 'a\\\n';}", 97),
+    ("pp-splice-string-escape", b'int main(){return "\\\\\nn"[0];}', 10),
+    ("pp-splice-repeated", b"int main(){ret\\\n\\\nurn 7;}", 7),
+    ("pp-splice-whitespace", b"int main(){ret\\ \t\nurn 7;}", 7),
+    ("pp-splice-crlf", b"int ma\\\r\nin(){return 7;}\r\n", 7),
+    ("pp-splice-cr", b"int ma\\\rin(){return 7;}\r", 7),
+    ("pp-cr-line-comment", b"int main(){// hidden\rreturn 7;}\r", 7),
+    ("pp-mixed-lines", b"int main(){\r\nint n=7;\rreturn n;\n}\r\n", 7),
+    ("pp-backslash-in-string", b'int main(){return "\\\\n"[1];}', 110),
+    ("pp-splice-eof", b"int main(){return 7;}\\\n", 7),
+    ("pp-splice-guest", b"int ma\\\nin(){ret\\\nurn 7;}", 7),
+]
+invalid = [
+    ("pp-splice-open-comment", b"int main(){return 7;}/\\\n*"),
+    ("pp-splice-hides-close", b"int main(){return 7;// close\\\n}"),
+    ("pp-dangling-backslash", b"int main(){return 7;}\\"),
+    ("pp-newline-string", b'int main(){return "a\nb"[0];}'),
+    ("pp-unknown-directive", b"#define N 7\nint main(){return N;}"),
+]

@@ -1360,7 +1360,7 @@ variable cc-prefix-quals
   s" __builtin_types_compatible_p" cc-is or
   s" __builtin_va_start" cc-is or s" __builtin_va_arg" cc-is or
   s" __builtin_va_copy" cc-is or s" __builtin_va_end" cc-is or
-  s" typedef" cc-is or s" static" cc-is or cc-keyword-type? or
+  s" typedef" cc-is or s" static" cc-is or s" __auto_type" cc-is or cc-keyword-type? or
   if s" reserved name" cc-fail then
   cc-token @ 2 <> cc-token-size @ 31 > or cc-limit cc-text rot place ;
 : cc-symbol-at ( target -- target )
@@ -2530,6 +2530,13 @@ variable cc-pending-initializer
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-expression then ;
 : cc-initialize-write ( target value -- value )
   1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
+: cc-auto-declaration ( -- ) 0 0 0 0 L{ name value type after }
+  cc-next cc-token @ 2 <> if s" auto type requires identifier" cc-fail then
+  cc-token-start @ 1 (local!) cc-next 61 cc-expect
+  cc-expression cc-value 2 (local!) value cc-type cc-unqualified 3 (local!)
+  cc-token-start @ 4 (local!) name cc-pos ! cc-next
+  type cc-symbol dup type cc-type! value cc-initialize-write drop
+  after cc-pos ! cc-next 59 cc-expect ;
 defer cc-initialize-object
 defer cc-initialize-tail
 defer cc-initialize-range-chain
@@ -2995,6 +3002,7 @@ defer cc-local-static-initialize
   cc-label? if cc-define-label exit then
   s" typedef" cc-is if cc-typedef exit then
   s" _Static_assert" cc-is if cc-static-assert exit then
+  s" __auto_type" cc-is if cc-auto-declaration exit then
   cc-token @ 123 = if
     cc-block cc-discard-value 0 cc-statement-result ! exit then
   cc-type-start s" static" cc-is or if cc-declaration 0 cc-statement-result ! exit then

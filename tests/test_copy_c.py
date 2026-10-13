@@ -53,6 +53,7 @@ from copy_c_preprocess_cases import valid as preprocess_valid, invalid as prepro
 from copy_c_object_macro_cases import valid as object_macro_valid, invalid as object_macro_invalid
 from copy_c_conditional_cases import valid as conditional_valid, invalid as conditional_invalid
 from copy_c_zero_object_cases import valid as zero_object_valid
+from copy_c_auto_cases import valid as auto_valid, invalid as auto_invalid
 volatile_reads = dict(volatile_reads, **long_long_volatile_reads, **wide_control_volatile_reads)
 arithmetic_faults = arithmetic_faults+long_long_faults
 
@@ -297,6 +298,7 @@ valid += preprocess_valid
 valid += object_macro_valid
 valid += conditional_valid
 valid += zero_object_valid
+valid += auto_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -406,6 +408,7 @@ invalid += local_static_invalid
 invalid += preprocess_invalid
 invalid += object_macro_invalid
 invalid += conditional_invalid
+invalid += auto_invalid
 assert len({name for name, _ in invalid}) == len(invalid), "duplicate rejected case name"
 for name, source in invalid:
     compile_native(name, source, True)

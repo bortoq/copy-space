@@ -12,7 +12,7 @@ valid = [
     ("types-signed-int", b"int main(){return __builtin_types_compatible_p(int,signed int);}", 1),
     ("types-char-distinct", b"int main(){return __builtin_types_compatible_p(char,signed char);}", 0),
     ("types-long-distinct", b"int main(){return __builtin_types_compatible_p(int,long);}", 0),
-    ("types-void-pointer", b"int main(){return __builtin_types_compatible_p(int*,void*);}", 0),
+    ("builtin-types-void-pointer", b"int main(){return __builtin_types_compatible_p(int*,void*);}", 0),
     ("types-pointer", b"int main(){return __builtin_types_compatible_p(unsigned short**,unsigned short**);}", 1),
     ("types-pointer-distinct", b"int main(){return __builtin_types_compatible_p(int*,unsigned int*);}", 0),
     ("types-array", b"int main(){return __builtin_types_compatible_p(int[3],int[1+2]);}", 1),

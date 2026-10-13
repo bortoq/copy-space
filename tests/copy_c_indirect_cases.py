@@ -34,9 +34,9 @@ invalid = [
     ("indirect-wrong-count", b'int f(int n){return n;}int main(){int (*p)(int)=f;return p();}'),
     ("indirect-nonfunction", b'int main(){int n=3;int *p=&n;return p(1);}'),
     ("indirect-incompatible-argument", b'int f(int *p){return *p;}int main(){int (*p)(int*)=f;return p(3);}'),
-    ("indirect-variadic-pending", b'int main(){int (*p)(int,...)=0;return p(1,2);}'),
 ]
 faults = [
+    ("indirect-variadic-null", b'int main(){int (*p)(int,...)=0;return p(1,2);}'),
     ("indirect-null", b'int main(){int (*p)(int)=0;return p(3);}'),
     ("indirect-data-address", b'int main(){int n=3;return ((int(*)(int))&n)(3);}'),
     ("indirect-misaligned-description", b'int f(int n){return n;}int main(){return (f+1)(3);}'),

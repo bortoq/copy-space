@@ -665,6 +665,7 @@ create cc-function-params 16 8 * cells allot
 create cc-function-signatures 16 cells allot
 create cc-function-result-types 16 cells allot
 create cc-function-parameter-types 16 8 * cells allot
+create cc-function-varargs 16 cells allot
 variable cc-function-prototyped
 create cc-symbol-names 128 32 * allot
 create cc-symbol-address 128 cells allot
@@ -1001,7 +1002,8 @@ defer cc-function-type-to
 : cc-read-qualifiers ( mask -- mask )
   begin cc-qualifier? while cc-const-token? if 1 else 2 then or cc-next repeat ;
 : cc-keyword-type? ( -- flag ) cc-basic-type-start cc-typeof-token? or
-  s" struct" cc-is or s" union" cc-is or s" enum" cc-is or cc-qualifier? or ;
+  s" struct" cc-is or s" union" cc-is or s" enum" cc-is or cc-qualifier? or
+  s" __builtin_va_list" cc-is or ;
 : cc-type-start ( -- flag ) cc-keyword-type? cc-find-typename 0< 0= or ;
 : cc-read-stars ( base -- type )
   begin cc-token @ 42 = while cc-next cc-pointer-to 0 cc-read-qualifiers cc-qualify repeat ;
@@ -1031,6 +1033,9 @@ variable cc-prefix-quals
   then
   base quals cc-qualify dup cc-base-type ! cc-read-stars cc-declared-type ! ;
 : cc-read-type 0 cc-read-qualifiers L{ quals }
+  s" __builtin_va_list" cc-is if cc-next 4 cc-pointer-to
+    quals cc-read-qualifiers cc-qualify dup cc-base-type !
+    cc-read-stars cc-array-suffix cc-declared-type ! exit then
   cc-find-typename dup 0< 0= if cc-alias-types + c@ cc-next
     quals cc-read-qualifiers cc-qualify dup cc-base-type !
     cc-read-stars cc-array-suffix cc-declared-type ! exit then drop
@@ -1052,6 +1057,8 @@ variable cc-prefix-quals
   s" switch" cc-is or s" case" cc-is or s" goto" cc-is or
   s" _Static_assert" cc-is or s" _Generic" cc-is or s" default" cc-is or s" __builtin_offsetof" cc-is or
   s" __builtin_types_compatible_p" cc-is or
+  s" __builtin_va_start" cc-is or s" __builtin_va_arg" cc-is or
+  s" __builtin_va_copy" cc-is or s" __builtin_va_end" cc-is or
   s" typedef" cc-is or cc-keyword-type? or
   if s" reserved name" cc-fail then
   cc-token @ 2 <> cc-token-size @ 31 > or cc-limit cc-text rot place ;
@@ -1274,11 +1281,45 @@ create cc-switch-cases 32 128 * 3 * cells allot
   fn cc-function-signatures cc-fget cc-type-function-shapes cc-fget 1 swap cc-fget 2 (local!)
   flags 2 and flags 1 and 0= fn cc-function-entry cc-fget 0= and or if
     fn cc-function-designator cc-indirect-call else fn cc-call then ;
+: cc-va-operand ( value -- )
+  cc-effective-type cc-unqualified 4 cc-pointer-to <> if
+    s" expected va_list operand" cc-fail then ;
+: cc-va-void ( -- value ) cc-cell dup 3 cc-type! ;
+: cc-va-start ( -- value ) 0 cc-function-index @ 0 L{ ap fn last }
+  cc-in-function @ 0= if s" va_start outside function" cc-fail then
+  fn cc-function-signatures cc-fget cc-type-function-shapes cc-fget 1 swap cc-fget 2 and 0=
+  if s" va_start requires variadic function" cc-fail then
+  cc-next 40 cc-expect cc-expression 1 (local!) ap cc-va-operand 44 cc-expect
+  1 cc-unevaluated +! cc-expression 3 (local!) -1 cc-unevaluated +! 41 cc-expect
+  last cc-lvalue 1 <> last fn fn cc-function-argc cc-fget 1- cc-param <> or
+  if s" va_start requires last named parameter" cc-fail then
+  fn cc-function-varargs cc-fget dup 4 cc-type! dup 1 cc-lvalue! cc-address
+  ap swap cc-lvalue-write drop cc-va-void ;
+: cc-va-arg ( -- value ) 0 0 0 0 L{ ap pointer type result }
+  cc-next 40 cc-expect cc-expression 1 (local!) ap cc-va-operand 44 cc-expect
+  cc-read-abstract-type cc-declared-type @ cc-unqualified 3 (local!) 41 cc-expect
+  type cc-kind dup 0= over 1 = or swap 6 = or type cc-size 4 = and 0=
+  if s" va_arg requires promoted scalar or pointer" cc-fail then
+  ap cc-value 2 (local!)
+  pointer type cc-pointer-to cc-convert cc-pointer-fetch 4 (local!)
+  pointer 4 cc-const cc-add-entry @ cc-invoke dup 4 cc-pointer-to cc-type!
+  ap swap cc-lvalue-write drop result ;
+: cc-va-copy ( -- value ) 0 0 L{ ap source }
+  cc-next 40 cc-expect cc-expression 1 (local!) ap cc-va-operand 44 cc-expect
+  cc-expression 2 (local!) source cc-va-operand 41 cc-expect
+  ap source cc-value cc-lvalue-write drop cc-va-void ;
+: cc-va-end ( -- value )
+  cc-next 40 cc-expect cc-expression dup cc-va-operand cc-value drop
+  41 cc-expect cc-va-void ;
 : cc-primary ( -- target )
   cc-token @ 34 = if cc-string exit then
   s" _Generic" cc-is if cc-next cc-generic exit then
   s" __builtin_offsetof" cc-is if cc-next cc-offsetof exit then
   s" __builtin_types_compatible_p" cc-is if cc-next cc-compatible exit then
+  s" __builtin_va_start" cc-is if cc-nest cc-va-start cc-unnest exit then
+  s" __builtin_va_arg" cc-is if cc-nest cc-va-arg cc-unnest exit then
+  s" __builtin_va_copy" cc-is if cc-nest cc-va-copy cc-unnest exit then
+  s" __builtin_va_end" cc-is if cc-nest cc-va-end cc-unnest exit then
   cc-token @ 40 = if cc-next cc-nest
     cc-token @ 123 = if
       cc-in-function @ 0= if s" statement expression outside function" cc-fail then
@@ -2015,7 +2056,6 @@ variable cc-generic-depth
   loop
   cc-unevaluated @ if cc-cell dup type cc-pointee cc-unqualified cc-type!
     -1 cc-indirect-depth +! cc-unnest exit then
-  1 shape cc-fget 2 and if s" variadic indirect call pending" cc-fail then
   type cc-pointee cc-record? if s" aggregate indirect return pending" cc-fail then
   callee cc-check-function-pointer
   callee 0 cc-description-read 5 (local!)
@@ -2029,7 +2069,10 @@ variable cc-generic-depth
   cc-cell 7 (local!) 32 resultptr cc-zero @ cc-op 21 resultptr pointer 3 + cc-op
   resultptr type cc-pointee cc-pointer-to cc-type!
   nargs 0 ?do
-    callee i 3 + cc-description-read newsp cc-add-entry @ cc-invoke
+    1 shape cc-fget 2 and i 0 shape cc-fget >= and if
+      callee 11 cc-description-read i 0 shape cc-fget - 32 * cc-const cc-add-entry @ cc-invoke
+    else callee i 3 + cc-description-read then
+    newsp cc-add-entry @ cc-invoke
     32 cc-indirect-parameters i 32 * + rot cc-op
   loop
   32 cc-sp newsp cc-op
@@ -2612,6 +2655,8 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     i cc-function-argc cc-fget 0 ?do
       j i cc-param cc-data-base - 32 description i 3 + 32 * + cc-value!
     loop
+    i cc-function-varargs cc-fget dup if cc-data-base - 32 description 352 + cc-value!
+    else drop then
   loop ;
 : cc-end-function-scope
   cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
@@ -2637,6 +2682,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     cc-function-count @ dup 16 >= cc-limit 5 (local!) 1 cc-function-count +!
     cc-storage @ 2 = if 1 else 0 then cc-function-linkage fn + c!
     cc-function-names fn 32 * + cc-name! 0 fn cc-function-entry cc-fset
+    0 fn cc-function-varargs cc-fset
     type fn cc-function-signatures cc-fset
   else 5 (local!)
     cc-storage @ 2 = cc-function-linkage fn + c@ 0= and if
@@ -2665,10 +2711,12 @@ here cc-function-names - constant cc-infer-snapshot-bytes
       fn 8 * i + cells cc-function-params + !
       i 2 + shape cc-fget fn 8 * i + cells cc-function-parameter-types + !
     loop
+    1 shape cc-fget 2 and if
+      cc-data @ 31 + 31 invert and dup cc-data ! fn cc-function-varargs cc-fset
+      256 cc-data +! cc-data @ 147456 > cc-limit then
   then
   definition 0= if cc-end-function-scope 0 exit then
   cc-external-prototype-shape @ 0= if s" function definition requires parameter list" cc-fail then
-  1 shape cc-fget 2 and if s" variadic definition pending" cc-fail then
   cc-symbol-count @ 0 shape cc-fget <> if s" parameter name missing in definition" cc-fail then
   cc-boundary fn cc-function-entry cc-fset
   fn cc-main-index @ = if

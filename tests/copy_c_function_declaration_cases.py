@@ -33,6 +33,5 @@ invalid = [
     ("function-declaration-return-name-leak", b'int (*get(void))(int n){return n;}int main(){return 0;}'),
     ("function-declaration-no-prototype-char", b'int f();int f(char n){return n;}int main(){return 0;}'),
     ("function-declaration-definition-count", b'int f(int);int f(){return 0;}int main(){return 0;}'),
-    ("function-declaration-variadic-definition-pending", b'int f(int n,...){return n;}int main(){return 0;}'),
-    ("function-declaration-variadic-call-pending", b'int f(int,...);int main(){return f(1,2);}'),
+    ("function-declaration-variadic-undefined", b'int f(int,...);int main(){return f(1,2);}'),
 ]

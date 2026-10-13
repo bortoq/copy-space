@@ -1,5 +1,15 @@
 """GNU auto type deduction and binding after the initializer."""
 valid = [
+    ("auto-global", b"__auto_type x=3;int main(){x+=4;return x;}", 7),
+    ("auto-global-wide", b"__auto_type x=1ULL<<32;int main(){return sizeof(x)+(x>>32);}", 9),
+    ("auto-global-static", b"const static __auto_type x=7;int main(){return x;}", 7),
+    ("auto-global-extern", b"extern __auto_type x=7;int main(){return x;}", 7),
+    ("auto-global-pointer", b"int n=7;__auto_type p=&n;int main(){return *p;}", 7),
+    ("auto-global-function", b"int f(int x){return x+3;}__auto_type p=f;int main(){return p(4);}", 7),
+    ("auto-static", b"int f(){static __auto_type x=2;return ++x;}int main(){return f()+f();}", 7),
+    ("auto-static-wide", b"int main(){static __auto_type x=1ULL<<32;return sizeof(x)+(x>>32);}", 9),
+    ("auto-static-const", b"int main(){const static __auto_type x=7;return x;}", 7),
+    ("auto-static-shadow", b"int main(){enum {x=7};{static __auto_type x=x;return x;}}", 7),
     ("auto-const-prefix", b"int main(){const __auto_type x=7;return x;}", 7),
     ("auto-const-postfix", b"int main(){__auto_type const x=7;return x;}", 7),
     ("auto-volatile", b"int main(){volatile __auto_type x=7;return x;}", 7),
@@ -19,6 +29,13 @@ valid = [
     ("auto-guest", b"int main(){int n=3;__auto_type x=n++;return x+n;}", 7),
 ]
 invalid = [
+    ("auto-global-self", b"__auto_type x=x;int main(){return 0;}"),
+    ("auto-global-nonconstant", b"int n=7;__auto_type x=n;int main(){return x;}"),
+    ("auto-global-multiple", b"__auto_type x=3,y=4;int main(){return x+y;}"),
+    ("auto-static-nonconstant", b"int main(){int n=7;static __auto_type x=n;return x;}"),
+    ("auto-static-call", b"int f(){return 7;}int main(){static __auto_type x=f();return x;}"),
+    ("auto-static-for", b"int main(){for(static __auto_type i=0;i<1;i++){}return 0;}"),
+    ("auto-static-const-write", b"int main(){static __auto_type const x=7;x=9;return x;}"),
     ("auto-const-write", b"int main(){const __auto_type x=7;x=9;return x;}"),
     ("auto-for-scope", b"int main(){for(__auto_type i=0;i<1;i++){}return i;}"),
     ("auto-no-initializer", b"int main(){__auto_type x;return 0;}"),

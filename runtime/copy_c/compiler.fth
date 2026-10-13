@@ -2530,13 +2530,23 @@ variable cc-pending-initializer
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-expression then ;
 : cc-initialize-write ( target value -- value )
   1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
+: cc-auto-prefix ( -- quals static ) 0 0 L{ quals storage }
+  begin quals cc-read-qualifiers 1 (local!) s" static" cc-is while
+    storage if s" duplicate static" cc-fail then -1 2 (local!) cc-next repeat
+  quals storage ;
 : cc-auto-start? ( -- flag )
-  cc-token-start @ >r 0 cc-read-qualifiers drop s" __auto_type" cc-is
+  cc-token-start @ >r cc-auto-prefix 2drop s" __auto_type" cc-is
   r> cc-pos ! cc-next ;
-: cc-auto-declaration ( -- ) 0 0 0 0 0 L{ name value type after quals }
-  0 cc-read-qualifiers 5 (local!) cc-next quals cc-read-qualifiers 5 (local!)
+defer cc-static-auto-value
+: cc-auto-declaration ( -- ) 0 0 0 0 0 0 L{ name value type after quals storage }
+  cc-auto-prefix 6 (local!) 5 (local!) cc-next quals cc-read-qualifiers 5 (local!)
   cc-token @ 2 <> if s" auto type requires identifier" cc-fail then
   cc-token-start @ 1 (local!) cc-next 61 cc-expect
+  storage if
+    cc-in-for-declaration @ if s" static object in for initializer" cc-fail then
+    quals cc-static-auto-value 2 (local!)
+    cc-token-start @ 4 (local!) name cc-pos ! cc-next value cc-symbol-at drop
+    after cc-pos ! cc-next 59 cc-expect exit then
   cc-expression cc-value 2 (local!) value cc-type cc-unqualified quals cc-qualify 3 (local!)
   cc-token-start @ 4 (local!) name cc-pos ! cc-next
   type cc-symbol dup type cc-type! value cc-initialize-write drop
@@ -2862,7 +2872,7 @@ defer cc-local-static-initialize
   tags 8 rshift cc-tag-scope !
   cc-next 40 cc-expect
   1 cc-scope-level +!
-  cc-auto-start? if cc-auto-declaration else
+  cc-auto-start? if 1 cc-in-for-declaration ! cc-auto-declaration 0 cc-in-for-declaration ! else
     cc-type-start if 1 cc-in-for-declaration ! cc-declaration else
       cc-token @ 59 <> if cc-full-expression cc-discard-value then 59 cc-expect then then
   cc-boundary 2 (local!)
@@ -3127,6 +3137,15 @@ variable cc-static-high
 : cc-static-scalar ( target -- value )
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-static-expression then ;
+: cc-static-auto-value-body ( quals -- target )
+  cc-token-start @ 0 L{ quals start target }
+  2 cc-inspect dup cc-kind 3 = if cc-pointee cc-pointer-to else
+    dup cc-kind 7 = if cc-pointer-to then then
+  cc-unqualified quals cc-qualify cc-static-object 3 (local!)
+  start cc-pos ! cc-next target cc-static-scalar
+  target cc-type cc-width 32 min target cc-value!
+  target cc-type cc-width 64 = if cc-static-high @ 32 target 32 + cc-value! then target ;
+' cc-static-auto-value-body is cc-static-auto-value
 : cc-static-binding! ( target binding -- )
   dup 0< if negate 1- cells cc-symbol-address + ! else cells cc-binding-values + ! then ;
 : cc-static-aggregate ( target alias original -- )
@@ -3207,10 +3226,23 @@ variable cc-static-high
     then
     cc-token @ 44 = if cc-next base 2 (local!) 0 else -1 then
   until 59 cc-expect ;
+: cc-global-auto ( -- ) 0 0 L{ name quals }
+  cc-auto-prefix if cc-storage @ 1 = if s" conflicting storage classes" cc-fail then
+    2 cc-storage ! then 2 (local!)
+  cc-next quals cc-read-qualifiers 2 (local!)
+  cc-token @ 2 <> if s" auto type requires identifier" cc-fail then
+  cc-token-start @ 1 (local!) cc-next 61 cc-expect
+  2 cc-inspect dup cc-kind 3 = if cc-pointee cc-pointer-to else
+    dup cc-kind 7 = if cc-pointer-to then then
+  cc-unqualified quals cc-qualify dup cc-base-type ! cc-declared-type !
+  cc-token @ 59 <> if s" auto type requires single declaration" cc-fail then
+  name cc-pos ! cc-next cc-global ;
 : cc-external ( -- )
-  0 cc-storage ! s" extern" cc-is if 1 cc-storage ! cc-next then
+  0 cc-storage ! cc-auto-start? if cc-global-auto exit then
+  s" extern" cc-is if 1 cc-storage ! cc-next then
   s" static" cc-is if cc-storage @ if s" conflicting storage classes" cc-fail then
     2 cc-storage ! cc-next then
+  cc-auto-start? if cc-global-auto exit then
   cc-read-type
   cc-token @ 59 = if cc-next exit then
   cc-global ;

@@ -663,6 +663,8 @@ create cc-function-value 16 cells allot
 create cc-function-argc 16 cells allot
 create cc-function-params 16 8 * cells allot
 create cc-function-signatures 16 cells allot
+create cc-function-result-types 16 cells allot
+create cc-function-parameter-types 16 8 * cells allot
 variable cc-function-prototyped
 create cc-symbol-names 128 32 * allot
 create cc-symbol-address 128 cells allot
@@ -1095,6 +1097,7 @@ variable cc-prefix-quals
     cc-token @ 44 = if cc-next base cc-read-stars 2 (local!) 0 else -1 then
   until 59 cc-expect ;
 : cc-param ( fn index -- target ) swap 8 * + cells cc-function-params + @ ;
+: cc-param-type ( fn index -- type ) swap 8 * + cells cc-function-parameter-types + @ ;
 defer cc-statement
 defer cc-increment
 defer cc-subscript
@@ -1141,7 +1144,7 @@ create cc-switch-cases 32 128 * 3 * cells allot
   cc-statement-expression-parents cc-statement-expression-current @ cells + @
   cc-statement-expression-current ! -1 cc-statement-expression-depth +! ;
 
-: cc-call ( fn -- value ) 0 L{ fn nargs }
+: cc-call ( fn -- value ) 0 0 0 L{ fn nargs index type }
   fn 0< fn cc-function-count @ >= or if s" unknown function" cc-fail then
   40 cc-expect
   cc-token @ 41 <> if
@@ -1153,14 +1156,14 @@ create cc-switch-cases 32 128 * 3 * cells allot
   41 cc-expect
   nargs fn cc-function-argc cc-fget <> if s" wrong argument count" cc-fail then
   nargs 0 ?do
-    dup fn nargs 1- i - cc-param swap cc-assignment-check
-    fn nargs 1- i - cc-param cc-type cc-convert
-    32 cc-call-args nargs 1- i - 32 * + rot cc-op
+    nargs 1- i - 3 (local!) fn index cc-param-type 4 (local!)
+    cc-cell dup type cc-type! over cc-assignment-check type cc-convert
+    32 cc-call-args index 32 * + rot cc-op
   loop
   cc-sp cc-stack-last cc-const cc-eq-entry @ cc-invoke cc-branch >r
   r@ 32 + cc-stack-error-entry @ cc-patch r> cc-current cc-patch
   cc-sp cc-frame-bits cc-const cc-add-entry @ cc-invoke 32 cc-sp rot cc-op
-  nargs 0 ?do fn i cc-param dup cc-type cc-width swap cc-call-args i 32 * + cc-op loop
+  nargs 0 ?do fn i cc-param-type cc-width fn i cc-param cc-call-args i 32 * + cc-op loop
   2 cc-room cc-current cc-layer-bits + cc-const
   24 fn cc-function-return cc-fget rot cc-op
   fn cc-function-entry cc-fget dup if cc-jump else drop
@@ -1173,7 +1176,7 @@ create cc-switch-cases 32 128 * 3 * cells allot
   then
   32 cc-saved-result fn cc-function-value cc-fget cc-op
   cc-sp cc-frame-bits negate cc-const cc-add-entry @ cc-invoke 32 cc-sp rot cc-op
-  cc-cell dup fn cc-function-value cc-fget cc-type cc-unqualified cc-type!
+  cc-cell dup fn cc-function-result-types cc-fget cc-type!
   dup 32 swap cc-saved-result cc-op ;
 
 : cc-address ( target -- pointer )
@@ -2582,10 +2585,10 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   1 cc-prototype-count +! shape 18 cells 0 fill
   fn cc-function-argc cc-fget 0 shape cc-fset cc-function-prototyped @ 1 shape cc-fset
   fn cc-function-argc cc-fget 0 ?do
-    fn i cc-param cc-type cc-unqualified i 2 + shape cc-fset
+    fn i cc-param-type i 2 + shape cc-fset
     -1 i 10 + shape cc-fset
   loop
-  fn cc-function-value cc-fget cc-type shape cc-function-type-to
+  fn cc-function-result-types cc-fget shape cc-function-type-to
   fn cc-function-signatures cc-fset ;
 : cc-store-function-descriptions ( -- ) 0 L{ description }
   cc-function-count @ 0 ?do
@@ -2610,18 +2613,20 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     cc-storage @ 2 = if 1 else 0 then cc-function-linkage cc-function-index @ + c!
     cc-function-names cc-function-index @ 32 * + cc-name!
     0 cc-function-index @ cc-function-entry cc-fset
-    cc-cell cc-function-index @ cc-function-return cc-fset
-    cc-cell dup cc-function-type @ cc-type!
-    cc-function-index @ cc-function-value cc-fset
+    cc-function-type @ cc-unqualified cc-function-index @ cc-function-result-types cc-fset
     0 cc-function-index @ cc-function-argc cc-fset
     1 cc-function-count +!
   else cc-function-index ! 0 cc-new-function !
     cc-storage @ 2 = cc-function-linkage cc-function-index @ + c@ 0= and if
       s" conflicting function linkage" cc-fail then
-    cc-function-index @ cc-function-value cc-fget cc-type cc-unqualified cc-function-type @ cc-unqualified <>
+    cc-function-index @ cc-function-result-types cc-fget cc-function-type @ cc-unqualified <>
     if s" conflicting function return type" cc-fail then
   then
   s" main" cc-is if cc-function-index @ cc-main-index ! then
+  cc-data-base cc-data ! cc-types 2048 0 fill cc-lvalues 2048 0 fill
+  cc-fold-flags 2048 0 fill cc-pointer-origins 2048 cells 0 fill
+  cc-cell cc-function-index @ cc-function-return cc-fset
+  cc-cell dup cc-function-type @ cc-type! cc-function-index @ cc-function-value cc-fset
   0 cc-symbol-count ! 0 cc-parameter-count ! 1 cc-scope-level ! cc-next 40 cc-expect
   cc-token @ 41 <> if 1 else 0 then cc-function-prototyped !
   cc-token @ 41 <> if
@@ -2637,17 +2642,15 @@ here cc-function-names - constant cc-infer-snapshot-bytes
           dup cc-kind 7 = if cc-pointer-to then then cc-declared-type !
         cc-declared-type @ cc-record? if s" aggregate parameter unsupported" cc-fail then
         cc-parameter-count @ dup 8 >= cc-limit >r
-        cc-new-function @ if
-          cc-declared-type @ cc-object dup cc-declared-type @ cc-type!
-          dup cc-function-index @ 8 * r@ + cells cc-function-params + !
-        else
+        cc-new-function @ 0= if
           r@ cc-function-index @ cc-function-argc cc-fget >=
           if s" conflicting prototype" cc-fail then
-          cc-function-index @ r@ cc-param
-          dup cc-type cc-unqualified cc-declared-type @ cc-unqualified <>
+          cc-function-index @ r@ cc-param-type cc-declared-type @ cc-unqualified cc-types-compatible? 0=
           if s" conflicting parameter type" cc-fail then
-          dup cc-declared-type @ cc-type!
         then
+        cc-declared-type @ cc-object dup cc-declared-type @ cc-type!
+        dup cc-function-index @ 8 * r@ + cells cc-function-params + !
+        cc-declared-type @ cc-unqualified cc-function-index @ 8 * r@ + cells cc-function-parameter-types + !
         cc-parameter-name @ 0< if drop else cc-parameter-name @ cc-pos ! cc-next
           cc-symbol-at drop cc-parameter-after @ cc-pos ! cc-next then
         r> 1+ cc-parameter-count !

@@ -140,6 +140,7 @@ variable cc-origin
 create cc-fold-flags 2048 allot
 create cc-fold-values 2048 cells allot
 create cc-pointer-origins 2048 cells allot
+create cc-pointer-unaligned 2048 allot
 create cc-literal-values 512 cells allot
 : cc-current ( -- target ) cc-layer @ cc-layer-bits * cc-origin @ + ;
 : cc-new 1 cc-layer +! cc-layer @ cc-layer-max >= cc-limit 3 cc-slot ! ;
@@ -169,6 +170,7 @@ create cc-literal-values 512 cells allot
   cc-data @ 32 + 147456 > cc-limit
   0 cc-fold-flags cc-data @ cc-data-base - 8 / + c!
   0 cc-pointer-origins cc-data @ cc-data-base - 8 / cells + !
+  0 cc-pointer-unaligned cc-data @ cc-data-base - 8 / + c!
   cc-data @ 32 cc-data +! ;
 : cc-const ( value -- target )
   cc-constants @ 32 cc-constants +!
@@ -954,6 +956,8 @@ create cc-type-bases 128 allot
 create cc-type-complete 128 allot
 create cc-type-unqualified 128 allot
 create cc-type-qualifiers 128 allot
+create cc-type-packed 128 allot
+create cc-type-member-attributes 128 allot
 variable cc-initializing
 variable cc-static-initializing
 create cc-tag-names 128 32 * allot
@@ -965,6 +969,7 @@ create cc-member-names 256 32 * allot
 create cc-member-owners 256 allot
 create cc-member-types 256 allot
 create cc-member-offsets 256 cells allot
+create cc-member-attributes 256 cells allot
 variable cc-member-count
 variable cc-type-count
 create cc-type-function-shapes 128 cells allot
@@ -976,6 +981,9 @@ variable cc-prototype-count
   cc-type-bases 128 0 fill
   cc-type-complete 128 1 fill
   cc-type-qualifiers 128 0 fill
+  cc-type-packed 128 0 fill
+  cc-type-member-attributes 128 0 fill cc-member-attributes 256 cells 0 fill
+  cc-pointer-unaligned 2048 0 fill
   128 0 do i cc-type-unqualified i + c! loop
   14 cc-type-count !
   0 cc-prototype-count !
@@ -1112,6 +1120,12 @@ cc-wide-bool-entry @ ,
 : cc-fold-hi@ ( source -- bits ) L{ source }
   source cc-type cc-width 64 = if source 32 + cc-fold@ else
     source cc-type cc-signed? source cc-fold@ 0< and if -1 else 0 then then ;
+: cc-unaligned? ( pointer -- flag )
+  dup cc-type cc-kind 3 = over cc-lvalue 2 = and if cc-lvalue-pointer @ recurse exit then
+  dup cc-lvalue 0<> if drop 0 exit then
+  dup cc-frame? if
+    cc-data-base - 8 / cc-pointer-unaligned + c@ else drop 0 then ;
+: cc-unaligned! ( flag pointer -- ) cc-data-base - 8 / cc-pointer-unaligned + c! ;
 : cc-pointer-origin ( pointer -- origin )
   dup cc-type cc-kind 3 = if
     dup cc-lvalue 2 = if cc-lvalue-pointer @ recurse then exit then
@@ -1202,7 +1216,9 @@ create cc-wide-fold-output 2 cells allot
     32 value cc-zero @ cc-op width value source cc-op
     type cc-signed? if 32 width do 1 value i + source width 1- + cc-op loop then
   then then source type value cc-fold-load
-  type cc-kind 1 = source cc-lvalue 0= and if source cc-pointer-origin value cc-pointer-origin! then value ;
+  type cc-kind 1 = source cc-lvalue 0= and if
+    source cc-pointer-origin value cc-pointer-origin!
+    source cc-unaligned? value cc-unaligned! then value ;
 defer cc-decay
 ' cc-raw-value is cc-decay
 defer cc-indirect-value
@@ -1360,7 +1376,8 @@ variable cc-prefix-quals
   s" __builtin_types_compatible_p" cc-is or
   s" __builtin_va_start" cc-is or s" __builtin_va_arg" cc-is or
   s" __builtin_va_copy" cc-is or s" __builtin_va_end" cc-is or
-  s" typedef" cc-is or s" static" cc-is or s" __auto_type" cc-is or cc-keyword-type? or
+  s" typedef" cc-is or s" static" cc-is or s" __auto_type" cc-is or
+  s" __attribute__" cc-is or s" __attribute" cc-is or cc-keyword-type? or
   if s" reserved name" cc-fail then
   cc-token @ 2 <> cc-token-size @ 31 > or cc-limit cc-text rot place ;
 : cc-symbol-at ( target -- target )
@@ -1499,6 +1516,7 @@ create cc-switch-cases 32 128 * 5 * cells allot
   target cc-lvalue 2 = if
     32 result target cc-lvalue-pointer @ cc-value cc-op
     target cc-lvalue-pointer @ cc-pointer-origin result cc-pointer-origin!
+    target cc-lvalue-pointer @ cc-unaligned? result cc-unaligned!
     target cc-lvalue-pointer @ dup cc-known? if cc-fold@ result cc-fold! else drop then
     result target cc-type cc-pointer-to cc-type! result exit then
   target cc-static-base >= target cc-data-base < and if
@@ -1526,10 +1544,13 @@ create cc-switch-cases 32 128 * 5 * cells allot
     pointer pointer cc-type cc-pointee cc-size 1- cc-const cc-add-entry @ cc-invoke
     cc-zero @ cc-pointer-check-entry @ cc-invoke drop
   then
-  alignment 1 > if
-    cc-cell 3 (local!) 32 bad cc-zero @ cc-op
-    1 bad pointer cc-op
-    alignment 4 = if bad cc-table-base 24 + bad pointer 1+ cc-lut2 then
+  alignment 1 > pointer cc-unaligned? 0= and if
+    alignment 4 <= if
+      cc-cell 3 (local!) 32 bad cc-zero @ cc-op
+      1 bad pointer cc-op
+      alignment 4 = if bad cc-table-base 24 + bad pointer 1+ cc-lut2 then
+    else pointer alignment 1- cc-const cc-and-entry @ cc-invoke
+      cc-zero @ cc-bool-entry @ cc-invoke 3 (local!) then
     bad cc-branch >r r@ 32 + cc-pointer-error-entry @ cc-patch
     r> cc-current cc-patch
   then ;
@@ -1730,14 +1751,16 @@ create cc-switch-cases 32 128 * 5 * cells allot
     cc-invoke 5 (local!) result lhs cc-effective-type cc-unqualified cc-type!
     lhs cc-pointer-origin rhs cc-known? and if
       rhs cc-fold@ lhs cc-pointee-size * 8 * token 45 = if negate then
-      lhs cc-pointer-origin + result cc-pointer-origin! then result exit
+      lhs cc-pointer-origin + result cc-pointer-origin! then
+    lhs cc-unaligned? result cc-unaligned! result exit
   then
   rhs cc-pointer? if
     token 43 <> if s" cannot subtract pointer from int" cc-fail then
     rhs lhs rhs cc-pointee-size cc-scale-index cc-add-entry @ cc-invoke
     5 (local!) result rhs cc-effective-type cc-unqualified cc-type!
     rhs cc-pointer-origin lhs cc-known? and if
-      lhs cc-fold@ rhs cc-pointee-size * 8 * rhs cc-pointer-origin + result cc-pointer-origin! then result exit
+      lhs cc-fold@ rhs cc-pointee-size * 8 * rhs cc-pointer-origin + result cc-pointer-origin! then
+    rhs cc-unaligned? result cc-unaligned! result exit
   then
   lhs rhs token 43 = if cc-add-entry @ else cc-sub-entry @ then cc-integer-op ;
  : cc-subscript-body ( base -- value )
@@ -1945,6 +1968,7 @@ variable cc-constant-high
 : cc-rewind-temps ( data -- )
   dup cc-data-base - 8 / over cc-data @ swap - 8 / >r
   dup cc-types + r@ 0 fill dup cc-lvalues + r@ 0 fill dup cc-fold-flags + r@ 0 fill
+  dup cc-pointer-unaligned + r@ 0 fill
   cells cc-pointer-origins + r> cells 0 fill cc-data ! ;
 create cc-declarator-contexts 32 101 * cells allot
 variable cc-declarator-depth
@@ -2122,13 +2146,23 @@ create cc-external-parameter-addresses 8 cells allot
     else 125 cc-expect 1 cc-type-complete owner + c! exit then
   again ;
 ' cc-read-enumerators-body is cc-read-enumerators
-: cc-read-members ( owner -- ) 0 0 0 0 0 0 L{ owner base type name after offset slot }
+defer cc-read-layout-attributes
+defer cc-merge-layout-attributes
+: cc-read-member-attributes ( attributes -- attributes )
+  dup 0< swap 2147483647 and 1 cc-merge-layout-attributes swap if 2147483648 or then ;
+: cc-member-alignment ( type attributes packed -- alignment ) L{ type attributes packed }
+  attributes 0< packed or if 1 else type cc-alignment then
+  attributes 2147483647 and max ;
+: cc-read-members ( owner -- ) 0 0 0 0 0 0 0 L{ owner base type name after offset slot attributes }
   begin cc-token @ 125 <> while
     cc-token @ 0= if s" unfinished aggregate" cc-fail then
+    0 cc-read-member-attributes >r
     cc-nest cc-read-type cc-unnest cc-base-type @ 2 (local!)
     cc-declared-type @ 3 (local!)
+    r> cc-read-member-attributes >r
     begin
-      type cc-declarator 4 (local!) 3 (local!) cc-token-start @ 5 (local!)
+      type cc-declarator 4 (local!) 3 (local!)
+      r@ cc-read-member-attributes 8 (local!) cc-token-start @ 5 (local!)
       type cc-kind 7 = if s" function member unsupported" cc-fail then
       type cc-kind 2 = type cc-size 0= or if s" incomplete member type" cc-fail then
       type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
@@ -2140,16 +2174,56 @@ create cc-external-parameter-addresses 8 cells allot
       owner cc-kind 5 = if 0 else owner cc-size
         type cc-alignment dup 1- rot + swap negate and then 6 (local!)
       owner cc-member-owners slot + c! type cc-member-types slot + c!
+      attributes cc-member-attributes slot cells + !
+      attributes if 1 cc-type-member-attributes owner + c! then
       offset cc-member-offsets slot cells + ! 1 cc-member-count +!
       offset type cc-size + owner cc-size max cc-type-sizes owner cells + !
       type cc-alignment owner cc-alignment max cc-type-aligns owner cells + !
       cc-token @ 44 = if cc-next base cc-read-stars 3 (local!) 0 else -1 then
-    until 59 cc-expect
+    until rdrop 59 cc-expect
   repeat cc-next
   owner cc-size owner cc-alignment dup 1- rot + swap negate and
   cc-type-sizes owner cells + ! 1 cc-type-complete owner + c! ;
-: cc-read-record-body ( -- type ) 0 0 0 0 0 L{ kind type index name after }
+: cc-layout-attribute? ( -- flag ) s" __attribute__" cc-is s" __attribute" cc-is or ;
+: cc-read-layout-attributes-body ( packed alignment minimum -- packed alignment )
+  0 L{ packed alignment minimum value }
+  begin cc-layout-attribute? while
+    cc-next 40 cc-expect 40 cc-expect
+    begin cc-token @ 41 <> while
+      cc-token @ 44 = if cc-next else
+        s" packed" cc-is s" __packed__" cc-is or if 1 1 (local!) cc-next else
+          s" aligned" cc-is s" __aligned__" cc-is or if
+            cc-next 16 4 (local!) cc-token @ 40 = if
+              cc-next cc-read-small-constant 4 (local!) 41 cc-expect then
+            value if
+              value 0> value 268435456 <= and value value 1- and 0= and 0= if
+                s" invalid alignment" cc-fail then
+              minimum if alignment value max else value then 2 (local!) then
+          else s" unsupported layout attribute" cc-fail then
+        then
+        cc-token @ dup 44 = swap 41 = or 0= if s" expected attribute separator" cc-fail then
+      then
+    repeat 41 cc-expect 41 cc-expect
+  repeat packed alignment ;
+' cc-read-layout-attributes-body is cc-merge-layout-attributes
+: cc-read-type-layout-attributes ( packed alignment -- packed alignment ) 0 cc-merge-layout-attributes ;
+' cc-read-type-layout-attributes is cc-read-layout-attributes
+: cc-record-layout ( owner packed alignment -- ) 0 0 0 0
+  L{ owner packed requested size alignment member offset }
+  requested 1 max 5 (local!)
+  cc-member-count @ 0 ?do cc-member-owners i + c@ owner = if
+    cc-member-types i + c@ 6 (local!)
+    member cc-member-attributes i cells + @ packed cc-member-alignment
+    dup alignment max 5 (local!)
+    owner cc-kind 5 = if drop 0 else dup 1- size + swap negate and then 7 (local!)
+    offset cc-member-offsets i cells + !
+    size offset member cc-size + max 4 (local!)
+  then loop
+  size alignment dup 1- rot + swap negate and cc-type-sizes owner cells + !
+  alignment cc-type-aligns owner cells + ! packed cc-type-packed owner + c! ;
+: cc-read-record-body ( -- type ) 0 0 0 0 0 0 0 L{ kind type index name after packed alignment }
   s" enum" cc-is if 6 else s" union" cc-is if 5 else 4 then then 1 (local!) cc-next
+  0 0 cc-read-layout-attributes 7 (local!) 6 (local!)
   cc-token @ 2 = if
     cc-tag-names cc-tag-count @ cc-find 3 (local!)
     cc-token-start @ 4 (local!) cc-next cc-token-start @ 5 (local!)
@@ -2169,15 +2243,27 @@ create cc-external-parameter-addresses 8 cells allot
   cc-token @ 123 = if
     type cc-complete if s" duplicate aggregate definition" cc-fail then
     2 cc-type-complete type + c!
-    cc-next kind 6 = if type cc-read-enumerators else type cc-read-members then then type ;
+    cc-next kind 6 = if
+      packed alignment or if s" enum layout attributes unsupported" cc-fail then
+      type cc-read-enumerators
+    else type cc-read-members
+      packed alignment cc-read-layout-attributes 7 (local!) 6 (local!)
+      packed alignment or cc-type-member-attributes type + c@ or if
+        type packed alignment cc-record-layout then
+    then
+  else packed alignment or if s" layout attributes require definition" cc-fail then then type ;
 ' cc-read-record-body is cc-read-record
-: cc-field-view ( pointer index -- value ) 0 0 L{ pointer index quals result }
+: cc-field-view ( pointer index -- value ) 0 0 0 L{ pointer index quals result unaligned }
   pointer cc-type cc-pointee cc-quals 3 (local!)
+  cc-member-types index + c@ dup cc-member-attributes index cells + @
+  cc-member-owners index + c@ cc-type-packed + c@ cc-member-alignment
+  swap cc-alignment < pointer cc-unaligned? or 5 (local!)
   cc-cell 4 (local!) result 6 cc-pointer-to cc-type! 32 result pointer cc-op
   pointer 6 cc-pointer-to result cc-fold-load
   pointer cc-pointer-origin result cc-pointer-origin! result 1 (local!)
   pointer cc-member-offsets index cells + @ cc-const 43 cc-additive-op 1 (local!)
   pointer cc-member-types index + c@ quals cc-qualify cc-pointer-to cc-type!
+  unaligned pointer cc-unaligned!
   pointer cc-pointer-read ;
 : cc-member-body ( object -- value ) 0 0 0 L{ object type index pointer }
   cc-token @ 266 = if

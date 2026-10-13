@@ -28,5 +28,5 @@ invalid = [
     ("pp-splice-hides-close", b"int main(){return 7;// close\\\n}"),
     ("pp-dangling-backslash", b"int main(){return 7;}\\"),
     ("pp-newline-string", b'int main(){return "a\nb"[0];}'),
-    ("pp-unknown-directive", b"#define N 7\nint main(){return N;}"),
+    ("pp-unknown-directive", b"#unknown N 7\nint main(){return N;}"),
 ]

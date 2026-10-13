@@ -30,12 +30,14 @@ def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
     custom_signature = hashlib.sha256((PORT / "custom.c").read_bytes()).hexdigest()
     fold_signature = hashlib.sha256((FORTH.parent / "integer64_fold.h").read_bytes()).hexdigest()
     phase2_signature = hashlib.sha256((FORTH.parent / "preprocess_phase2.h").read_bytes()).hexdigest()
+    macros_signature = hashlib.sha256((FORTH.parent / "preprocess_macros.h").read_bytes()).hexdigest()
     metadata = dictionary.with_name(dictionary.name+".json")
     cached = json.loads(metadata.read_text()) if metadata.is_file() else {}
     if (cached.get("compiler_forth_sha256") != signature
             or cached.get("compiler_custom_sha256") != custom_signature
             or cached.get("compiler_integer64_fold_sha256") != fold_signature
             or cached.get("compiler_preprocess_phase2_sha256") != phase2_signature
+            or cached.get("compiler_preprocess_macros_sha256") != macros_signature
             or cached.get("headers_reserve_bytes") != 4096
             or cached.get("code_reserve_bytes") != 8192
             or cached.get("prepare_code_capacity_bytes") != 4194304
@@ -50,6 +52,7 @@ def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
         manifest["compiler_custom_sha256"] = custom_signature
         manifest["compiler_integer64_fold_sha256"] = fold_signature
         manifest["compiler_preprocess_phase2_sha256"] = phase2_signature
+        manifest["compiler_preprocess_macros_sha256"] = macros_signature
         manifest["prepare_code_capacity_bytes"] = 4194304
         manifest["prepare_pool_bytes"] = 8388608
         metadata.write_text(json.dumps(manifest, indent=2)+"\n")

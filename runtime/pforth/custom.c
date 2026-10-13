@@ -3,6 +3,7 @@
 #ifdef COPY_SPACE_C_COMPILER
 #include "../copy_c/integer64_fold.h"
 #include "../copy_c/preprocess_phase2.h"
+#include "../copy_c/preprocess_macros.h"
 /* Guest memory/channel primitives. C parsing and copy selection stay in Forth. */
 static cell_t read_bytes(cell_t address, cell_t bytes)
 {
@@ -44,9 +45,14 @@ static cell_t preprocess_phase2(cell_t source, cell_t length)
     return (cell_t)cc_preprocess_phase2((unsigned char *)(uintptr_t)source,
                                       (unsigned)length);
 }
-CFunc0 CustomFunctionTable[6] = {
+static cell_t preprocess_macros(cell_t source, cell_t length)
+{
+    return (cell_t)cc_preprocess_macros((unsigned char *)(uintptr_t)source,
+                                      (unsigned)length);
+}
+CFunc0 CustomFunctionTable[7] = {
     (CFunc0)read_bytes, (CFunc0)write_bytes, (CFunc0)exit_guest, (CFunc0)put_bits,
-    (CFunc0)fold_integer64, (CFunc0)preprocess_phase2
+    (CFunc0)fold_integer64, (CFunc0)preprocess_phase2, (CFunc0)preprocess_macros
 };
 Err CompileCustomFunctions(void)
 {
@@ -61,7 +67,9 @@ Err CompileCustomFunctions(void)
     if(err < 0) return err;
     err = CreateGlueToC("CS-FOLD64", 4, C_RETURNS_VALUE, 3);
     if(err < 0) return err;
-    return CreateGlueToC("CS-PREPROCESS-PHASE2", 5, C_RETURNS_VALUE, 2);
+    err = CreateGlueToC("CS-PREPROCESS-PHASE2", 5, C_RETURNS_VALUE, 2);
+    if(err < 0) return err;
+    return CreateGlueToC("CS-PREPROCESS-MACROS", 6, C_RETURNS_VALUE, 2);
 #else
     return 0;
 #endif

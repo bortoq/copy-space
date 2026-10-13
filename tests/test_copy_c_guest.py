@@ -59,6 +59,10 @@ def main():
             phase2 = (ROOT / "runtime/copy_c/preprocess_phase2.h").read_bytes()
             assert sha(phase2) == manifest["compiler_dictionary"]["compiler_preprocess_phase2_sha256"]
             (folder / "preprocess_phase2.h").write_bytes(phase2)
+        if "compiler_preprocess_macros_sha256" in manifest["compiler_dictionary"]:
+            macros = (ROOT / "runtime/copy_c/preprocess_macros.h").read_bytes()
+            assert sha(macros) == manifest["compiler_dictionary"]["compiler_preprocess_macros_sha256"]
+            (folder / "preprocess_macros.h").write_bytes(macros)
     else:
         manifest = json.loads((folder / "compiler.json").read_text())
         assert (folder / "source.c").read_bytes() == source
@@ -74,6 +78,9 @@ def main():
     if "compiler_preprocess_phase2_sha256" in manifest["compiler_dictionary"]:
         assert sha((folder / "preprocess_phase2.h").read_bytes()) == manifest["compiler_dictionary"]["compiler_preprocess_phase2_sha256"]
         runtime_names += ("preprocess_phase2.h",)
+    if "compiler_preprocess_macros_sha256" in manifest["compiler_dictionary"]:
+        assert sha((folder / "preprocess_macros.h").read_bytes()) == manifest["compiler_dictionary"]["compiler_preprocess_macros_sha256"]
+        runtime_names += ("preprocess_macros.h",)
     emulator = {2097152: ROOT / "build/bin/space", 67108864: ROOT / "build/bin/space-64m"}[manifest["space_bytes"]]
     proof = execute_segments(emulator, folder, folder / "in.bin",
                              space_bytes=manifest["space_bytes"],

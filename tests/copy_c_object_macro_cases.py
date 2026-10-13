@@ -44,7 +44,6 @@ invalid = [
     ("pp-object-missing-name", b"#define\nint main(){return 7;}"),
     ("pp-object-number-name", b"#define 3 7\nint main(){return 7;}"),
     ("pp-object-function-pending", b"#define F(x) x\nint main(){return F(7);}"),
-    ("pp-object-conditional-pending", b"#if 1\nint main(){return 7;}\n#endif\n"),
     ("pp-object-include-pending", b'#include "x.h"\nint main(){return 7;}'),
     ("pp-object-paste-first", b"#define N ## 7\nint main(){return N;}"),
     ("pp-object-paste-last", b"#define N 7 ##\nint main(){return N;}"),

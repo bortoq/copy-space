@@ -51,6 +51,7 @@ from copy_c_wide_control_cases import volatile_reads as wide_control_volatile_re
 from copy_c_local_static_cases import valid as local_static_valid, invalid as local_static_invalid
 from copy_c_preprocess_cases import valid as preprocess_valid, invalid as preprocess_invalid
 from copy_c_object_macro_cases import valid as object_macro_valid, invalid as object_macro_invalid
+from copy_c_conditional_cases import valid as conditional_valid, invalid as conditional_invalid
 volatile_reads = dict(volatile_reads, **long_long_volatile_reads, **wide_control_volatile_reads)
 arithmetic_faults = arithmetic_faults+long_long_faults
 
@@ -95,6 +96,9 @@ assert json.loads(dictionary.read_text())["compiler_preprocess_phase2_sha256"] =
 macros_source = Path("runtime/copy_c/preprocess_macros.h").read_bytes()
 assert json.loads(dictionary.read_text())["compiler_preprocess_macros_sha256"] == hashlib.sha256(macros_source).hexdigest(), "rebuild stale macros"
 (ROOT / "preprocess_macros.h").write_bytes(macros_source)
+condition_source = Path("runtime/copy_c/preprocess_condition.h").read_bytes()
+assert json.loads(dictionary.read_text())["compiler_preprocess_condition_sha256"] == hashlib.sha256(condition_source).hexdigest(), "rebuild stale conditions"
+(ROOT / "preprocess_condition.h").write_bytes(condition_source)
 reference_runtime = ROOT / "reference_integer64.c"
 reference_runtime.write_bytes(Path("tests/fixtures/copy_c/reference_integer64.c").read_bytes())
 captured_compiler = ROOT / "compiler32"
@@ -279,6 +283,7 @@ valid += wide_control_valid
 valid += local_static_valid
 valid += preprocess_valid
 valid += object_macro_valid
+valid += conditional_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -387,6 +392,7 @@ invalid += wide_control_invalid
 invalid += local_static_invalid
 invalid += preprocess_invalid
 invalid += object_macro_invalid
+invalid += conditional_invalid
 assert len({name for name, _ in invalid}) == len(invalid), "duplicate rejected case name"
 for name, source in invalid:
     compile_native(name, source, True)

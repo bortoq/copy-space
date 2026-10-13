@@ -14,6 +14,7 @@ static cc_pp_macro cc_pp_macros[CC_PP_MACROS];
 static cc_pp_token cc_pp_tokens[CC_PP_TOKENS];
 static unsigned char cc_pp_text[CC_PP_TEXT], cc_pp_output[CC_PP_OUTPUT];
 static unsigned cc_pp_macro_count, cc_pp_token_count, cc_pp_text_count, cc_pp_output_count;
+static int cc_pp_enabled, cc_pp_skipping;
 
 static int cc_pp_name(unsigned char byte)
 {
@@ -73,14 +74,26 @@ static cc_pp_token cc_pp_next(cc_pp_reader *r)
         unsigned char delimiter = r->text[quote];
         r->at = quote+1;
         while (r->at < r->size && r->text[r->at] != delimiter) {
-            if (!r->text[r->at] || r->text[r->at] == '\n') { r->failed=1; return token; }
+            if (!r->text[r->at]) { r->failed=1; return token; }
+            if (r->text[r->at] == '\n') {
+                if (cc_pp_skipping) goto literal_done;
+                r->failed=1; return token;
+            }
             if (r->text[r->at++] == '\\') {
-                if (r->at == r->size || !r->text[r->at]) { r->failed=1; return token; }
+                if (r->at == r->size) {
+                    if (cc_pp_skipping) goto literal_done;
+                    r->failed=1; return token;
+                }
+                if (!r->text[r->at]) { r->failed=1; return token; }
                 ++r->at;
             }
         }
-        if (r->at == r->size) { r->failed=1; return token; }
+        if (r->at == r->size) {
+            if (cc_pp_skipping) goto literal_done;
+            r->failed=1; return token;
+        }
         ++r->at;
+literal_done:
         token.kind=CC_PP_LITERAL;
     } else if (cc_pp_name(r->text[first])) {
         ++r->at;
@@ -154,10 +167,14 @@ static int cc_pp_expand(cc_pp_token token, unsigned depth)
     macro->active=0;
     return 1;
 }
+#include "preprocess_condition.h"
 static int cc_pp_directive(cc_pp_reader *reader)
 {
     cc_pp_token directive=cc_pp_next(reader), name, token;
     if (!directive.kind || directive.kind == '\n') return !reader->failed;
+    int conditional=cc_pp_condition_directive(reader,directive);
+    if (conditional>=0) return conditional;
+    if (!cc_pp_enabled) return cc_pp_skip_line(reader);
     int define=cc_pp_is(directive, "define"), undef=cc_pp_is(directive, "undef");
     if (!define && !undef) return 0;
     name=cc_pp_next(reader);
@@ -192,6 +209,7 @@ static int cc_pp_directive(cc_pp_reader *reader)
 static int cc_preprocess_macros(unsigned char *source, unsigned size)
 {
     cc_pp_macro_count=cc_pp_token_count=cc_pp_text_count=cc_pp_output_count=0;
+    cc_pp_group_count=0; cc_pp_enabled=1; cc_pp_skipping=0;
     for (unsigned i=0; i<CC_PP_MACROS; ++i) {
         cc_pp_macros[i].present=cc_pp_macros[i].active=0;
         cc_pp_macros[i].count=0;
@@ -199,6 +217,7 @@ static int cc_preprocess_macros(unsigned char *source, unsigned size)
     cc_pp_reader reader={source,size,0,0};
     int beginning=1;
     for (;;) {
+        cc_pp_skipping=!cc_pp_enabled;
         cc_pp_token token=cc_pp_next(&reader);
         if (reader.failed) return -1;
         if (!token.kind) break;
@@ -206,10 +225,11 @@ static int cc_preprocess_macros(unsigned char *source, unsigned size)
             if (!cc_pp_directive(&reader)) return -1;
             beginning=1;
         } else {
-            if (!cc_pp_expand(token,0)) return -1;
+            if (cc_pp_enabled && !cc_pp_expand(token,0)) return -1;
             beginning=token.kind == '\n';
         }
     }
+    if (cc_pp_group_count) return -1;
     for (unsigned i=0; i<cc_pp_output_count; ++i) source[i]=cc_pp_output[i];
     return (int)cc_pp_output_count;
 }

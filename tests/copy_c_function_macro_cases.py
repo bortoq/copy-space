@@ -1,5 +1,17 @@
 """GNU function macro calls, argument prescan, stringification and rescan."""
 valid = [
+    ("pp-argument-opening-boundary", b"int F(int x){return x;}\n#define F(x) ((x)+100)\nint main(){return F\n#define N 7\n(N);}", 7),
+    ("pp-argument-reuse-definition", b"#define F(x) x\nint a[]={"+b"".join(
+        b"F(\n"+(b"#undef N\n" if i else b"")+f"#define N {i}\nN),".encode()
+        for i in range(65))+b"};int main(){return a[64];}", 64),
+    ("pp-argument-define", b"#define F(x) x\nint main(){return F(\n#define N 7\nN);}", 7),
+    ("pp-argument-undef-call", b"#define F(x) x\nint main(){return F(\n#undef F\n7);}", 7),
+    ("pp-argument-old-body", b"#define F(x) ((x)+(x))\nint main(){return F(1+\n#undef F\n#define F 2\nF);}", 6),
+    ("pp-argument-new-prescan", b"#define F(x) ((x)+3)\nint main(){return F(\n#undef F\n#define F(x) ((x)+5)\nF(1));}", 9),
+    ("pp-argument-old-parameters", b"#define F(x,y) ((x)+(y))\nint main(){return F(3,\n#undef F\n#define F(x) ((x)+1)\n4);}", 7),
+    ("pp-argument-condition", b"#define F(x) x\nint main(){return F(\n#if 1\n7\n#else\n9\n#endif\n);}", 7),
+    ("pp-argument-alias", b"#define A F\n#define F(x) ((x)+3)\nint main(){return A(\n#undef F\n#define F(x) ((x)+100)\n4);}", 7),
+    ("pp-argument-prefix-order", b"#define N 3\n#define F(x) x\nint a=N;int main(){return a+F(\n#undef N\n#define N 4\nN);}", 7),
     ("pp-va-opt-empty", b"#define F(...) (7 __VA_OPT__(+1))\nint main(){return F();}", 7),
     ("pp-va-opt-nonempty", b"#define F(...) (3 __VA_OPT__(+4))\nint main(){return F(x);}", 7),
     ("pp-va-opt-expanded-empty", b"#define E\n#define F(...) (7 __VA_OPT__(+1))\nint main(){return F(E);}", 7),

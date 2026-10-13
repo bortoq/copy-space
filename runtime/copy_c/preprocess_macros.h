@@ -456,9 +456,25 @@ failed:
     return 0;
 }
 #define CC_PP_NODES 32768
-typedef struct { cc_pp_token token; unsigned next; } cc_pp_node;
+typedef struct { cc_pp_token token; unsigned next, frozen; } cc_pp_node;
 static cc_pp_node cc_pp_nodes[CC_PP_NODES+1];
 static unsigned cc_pp_node_count, cc_pp_node_free;
+typedef struct { cc_pp_macro macro; unsigned index, next; } cc_pp_frozen;
+static cc_pp_frozen cc_pp_frozen_macros[65];
+static unsigned cc_pp_frozen_count, cc_pp_frozen_free, cc_pp_blocked;
+static int cc_pp_allow_incomplete;
+static unsigned cc_pp_freeze(cc_pp_macro macro, unsigned index)
+{
+    unsigned slot;
+    if (cc_pp_frozen_free) {
+        slot=cc_pp_frozen_free; cc_pp_frozen_free=cc_pp_frozen_macros[slot].next;
+    } else {
+        if (cc_pp_frozen_count == 64) return 0;
+        slot=++cc_pp_frozen_count;
+    }
+    cc_pp_frozen_macros[slot]=(cc_pp_frozen){macro,index,0};
+    return slot;
+}
 static unsigned cc_pp_node_new(cc_pp_token token)
 {
     unsigned index;
@@ -468,11 +484,15 @@ static unsigned cc_pp_node_new(cc_pp_token token)
         if (cc_pp_node_count == CC_PP_NODES) return 0;
         index=++cc_pp_node_count;
     }
-    cc_pp_nodes[index]=(cc_pp_node){token,0};
+    cc_pp_nodes[index]=(cc_pp_node){token,0,0};
     return index;
 }
 static void cc_pp_node_release(unsigned index)
 {
+    unsigned frozen=cc_pp_nodes[index].frozen;
+    if (frozen) {
+        cc_pp_frozen_macros[frozen].next=cc_pp_frozen_free; cc_pp_frozen_free=frozen;
+    }
     cc_pp_nodes[index].next=cc_pp_node_free; cc_pp_node_free=index;
 }
 static void cc_pp_list_release(unsigned head)
@@ -609,19 +629,39 @@ static int cc_pp_rescan_depth(unsigned *head, unsigned depth)
     while (*cursor) {
         unsigned current=*cursor;
         cc_pp_token token=cc_pp_nodes[current].token;
-        int index=token.kind == CC_PP_IDENT ? cc_pp_find(token) : -1;
-        if (index < 0 || !cc_pp_macros[index].present || cc_pp_hide_contains(token.hidden,(unsigned)index)) {
+        unsigned frozen=cc_pp_nodes[current].frozen;
+        int index=frozen ? (int)cc_pp_frozen_macros[frozen].index
+                         : (token.kind == CC_PP_IDENT ? cc_pp_find(token) : -1);
+        cc_pp_macro *macro=frozen ? &cc_pp_frozen_macros[frozen].macro
+                                 : (index >= 0 ? cc_pp_macros+index : 0);
+        if (index < 0 || !macro->present || cc_pp_hide_contains(token.hidden,(unsigned)index)) {
             cursor=&cc_pp_nodes[current].next; continue;
         }
         int hidden=cc_pp_hide_add(token.hidden,(unsigned)index);
         if (hidden < 0) return 0;
-        cc_pp_macro *macro=cc_pp_macros+index;
         unsigned replacement=0, tail=0;
         unsigned consumed=current;
         if (macro->function) {
             unsigned opening=cc_pp_nodes[current].next;
             while (opening && cc_pp_nodes[opening].token.kind == '\n') opening=cc_pp_nodes[opening].next;
             if (!opening || cc_pp_nodes[opening].token.kind != '(') { cursor=&cc_pp_nodes[current].next; continue; }
+            if (cc_pp_allow_incomplete && !depth) {
+                unsigned balance=1, node=cc_pp_nodes[opening].next;
+                while (node) {
+                    unsigned kind=cc_pp_nodes[node].token.kind;
+                    if (kind == '(') ++balance;
+                    else if (kind == ')' && !--balance) break;
+                    node=cc_pp_nodes[node].next;
+                }
+                if (!node) {
+                    if (!frozen) {
+                        frozen=cc_pp_freeze(*macro,(unsigned)index);
+                        if (!frozen) return 0;
+                        cc_pp_nodes[current].frozen=frozen;
+                    }
+                    cc_pp_blocked=current; return 1;
+                }
+            }
             if (!cc_pp_function_replace(macro,opening,depth,&replacement,&tail,&consumed)) return 0;
             hidden=cc_pp_hide_merge(token.hidden,cc_pp_nodes[consumed].token.hidden,1);
             if (hidden >= 0) hidden=cc_pp_hide_add((unsigned)hidden,(unsigned)index);
@@ -669,6 +709,19 @@ static int cc_pp_flush(unsigned head)
         if (!cc_pp_emit(cc_pp_nodes[node].token)) { success=0; break; }
     cc_pp_list_release(head);
     return success;
+}
+static int cc_pp_flush_prefix(unsigned *head)
+{
+    cc_pp_allow_incomplete=1; cc_pp_blocked=0;
+    int success=cc_pp_rescan(head);
+    cc_pp_allow_incomplete=0;
+    if (!success) return 0;
+    while (*head && *head != cc_pp_blocked) {
+        unsigned node=*head;
+        if (!cc_pp_emit(cc_pp_nodes[node].token)) return 0;
+        *head=cc_pp_nodes[node].next; cc_pp_node_release(node);
+    }
+    return 1;
 }
 static int cc_pp_expand(cc_pp_token token, unsigned depth)
 {
@@ -743,6 +796,7 @@ static int cc_preprocess_macros(unsigned char *source, unsigned size)
 {
     cc_pp_macro_count=cc_pp_token_count=cc_pp_text_count=cc_pp_output_count=0;
     cc_pp_parameter_count=cc_pp_node_count=cc_pp_node_free=0;
+    cc_pp_frozen_count=cc_pp_frozen_free=cc_pp_blocked=0; cc_pp_allow_incomplete=0;
     cc_pp_hide_reset();
     cc_pp_group_count=0; cc_pp_enabled=1; cc_pp_skipping=0;
     for (unsigned i=0; i<CC_PP_MACROS; ++i) {
@@ -758,8 +812,9 @@ static int cc_preprocess_macros(unsigned char *source, unsigned size)
         if (reader.failed) return -1;
         if (!token.kind) break;
         if (beginning && cc_pp_is(token,"#")) {
-            if (!cc_pp_flush(head)) return -1;
-            head=tail=0;
+            if (!cc_pp_flush_prefix(&head)) return -1;
+            tail=head;
+            while (tail && cc_pp_nodes[tail].next) tail=cc_pp_nodes[tail].next;
             if (!cc_pp_directive(&reader)) return -1;
             beginning=1;
         } else {

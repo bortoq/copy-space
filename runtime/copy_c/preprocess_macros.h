@@ -1,3 +1,4 @@
+#include "preprocess_phase2.h"
 /* Guest preprocessing. All pointers refer to guest memory; no file or host
  * service participates in token recognition or macro substitution. */
 #ifdef COPY_SPACE_C_COMPILER
@@ -730,6 +731,7 @@ static int cc_pp_expand(cc_pp_token token, unsigned depth)
     return head && cc_pp_flush(head);
 }
 #include "preprocess_condition.h"
+#include "preprocess_include.h"
 static int cc_pp_directive(cc_pp_reader *reader)
 {
     cc_pp_token directive=cc_pp_next(reader), name, token;
@@ -737,6 +739,9 @@ static int cc_pp_directive(cc_pp_reader *reader)
     int conditional=cc_pp_condition_directive(reader,directive);
     if (conditional>=0) return conditional;
     if (!cc_pp_enabled) return cc_pp_skip_line(reader);
+    if (cc_pp_is(directive,"include") || cc_pp_is(directive,"include_next"))
+        return cc_pp_include_directive(reader,cc_pp_is(directive,"include_next"));
+    if (cc_pp_is(directive,"pragma")) return cc_pp_pragma(reader);
     int define=cc_pp_is(directive, "define"), undef=cc_pp_is(directive, "undef");
     if (!define && !undef) return 0;
     name=cc_pp_next(reader);
@@ -798,24 +803,55 @@ static int cc_preprocess_macros(unsigned char *source, unsigned size)
     cc_pp_parameter_count=cc_pp_node_count=cc_pp_node_free=0;
     cc_pp_frozen_count=cc_pp_frozen_free=cc_pp_blocked=0; cc_pp_allow_incomplete=0;
     cc_pp_hide_reset();
-    cc_pp_group_count=0; cc_pp_enabled=1; cc_pp_skipping=0;
+    cc_pp_group_count=cc_pp_group_floor=0; cc_pp_enabled=1; cc_pp_skipping=0;
+    cc_input_file_count=cc_file_root_count=0;
+    cc_pp_include_depth=0; cc_pp_current_file=CC_FILES_MAX;
+    cc_pp_current_root=cc_pp_include_file=-1;
+    for (unsigned i=0;i<CC_FILES_MAX;++i) cc_pp_file_once[i]=0;
     for (unsigned i=0; i<CC_PP_MACROS; ++i) {
         cc_pp_macros[i].present=cc_pp_macros[i].active=0;
         cc_pp_macros[i].count=0;
     }
     cc_pp_reader reader={source,size,0,0};
+    if (cc_files_magic(source,size)) {
+        if (!cc_files_decode(source,size)) return -1;
+        for (unsigned i=0;i<cc_input_file_count;++i)
+            cc_input_files[i].size=cc_preprocess_phase2_text(cc_input_files[i].data,cc_input_files[i].size);
+        cc_pp_current_file=cc_main_file;
+        reader=(cc_pp_reader){cc_input_files[cc_main_file].data,cc_input_files[cc_main_file].size,0,0};
+    }
     int beginning=1;
     unsigned head=0, tail=0;
     for (;;) {
         cc_pp_skipping=!cc_pp_enabled;
         cc_pp_token token=cc_pp_next(&reader);
         if (reader.failed) return -1;
-        if (!token.kind) break;
+        if (!token.kind) {
+            if (cc_pp_group_count!=cc_pp_group_floor) return -1;
+            if (!cc_pp_include_depth) break;
+            if (!cc_pp_flush(head)) return -1;
+            head=tail=0;
+            cc_pp_include_frame frame=cc_pp_include_stack[--cc_pp_include_depth];
+            reader=frame.reader; cc_pp_current_file=frame.file;
+            cc_pp_current_root=frame.root; cc_pp_group_floor=frame.floor;
+            beginning=1;
+            continue;
+        }
         if (beginning && cc_pp_is(token,"#")) {
             if (!cc_pp_flush_prefix(&head)) return -1;
             tail=head;
             while (tail && cc_pp_nodes[tail].next) tail=cc_pp_nodes[tail].next;
             if (!cc_pp_directive(&reader)) return -1;
+            if (cc_pp_include_file>=0) {
+                if (cc_pp_include_depth==CC_PP_INCLUDE_DEPTH) return -1;
+                cc_pp_include_stack[cc_pp_include_depth++]=(cc_pp_include_frame){
+                    reader,cc_pp_current_file,cc_pp_group_floor,cc_pp_current_root};
+                cc_pp_current_file=(unsigned)cc_pp_include_file;
+                cc_pp_current_root=cc_pp_include_root; cc_pp_include_file=-1;
+                cc_pp_group_floor=cc_pp_group_count;
+                cc_input_file file=cc_input_files[cc_pp_current_file];
+                reader=(cc_pp_reader){file.data,file.size,0,0};
+            }
             beginning=1;
         } else {
             if (cc_pp_enabled) {

@@ -102,6 +102,10 @@ assert json.loads(dictionary.read_text())["compiler_preprocess_macros_sha256"] =
 condition_source = Path("runtime/copy_c/preprocess_condition.h").read_bytes()
 assert json.loads(dictionary.read_text())["compiler_preprocess_condition_sha256"] == hashlib.sha256(condition_source).hexdigest(), "rebuild stale conditions"
 (ROOT / "preprocess_condition.h").write_bytes(condition_source)
+for name in ("input_files", "preprocess_include"):
+    content = Path("runtime/copy_c/"+name+".h").read_bytes()
+    assert json.loads(dictionary.read_text())["compiler_"+name+"_sha256"] == hashlib.sha256(content).hexdigest(), "rebuild stale input/include support"
+    (ROOT / (name+".h")).write_bytes(content)
 reference_runtime = ROOT / "reference_integer64.c"
 reference_runtime.write_bytes(Path("tests/fixtures/copy_c/reference_integer64.c").read_bytes())
 captured_compiler = ROOT / "compiler32"

@@ -4,7 +4,7 @@ typedef struct { uint64_t bits; int unsign; } cc_pp_value;
 typedef struct { cc_pp_reader reader; cc_pp_token token; int failed; unsigned depth; } cc_pp_eval;
 typedef struct { int parent, taken, active, saw_else; } cc_pp_group;
 static cc_pp_group cc_pp_groups[64];
-static unsigned cc_pp_group_count;
+static unsigned cc_pp_group_count, cc_pp_group_floor;
 
 static void cc_pp_eval_next(cc_pp_eval *e)
 {
@@ -243,7 +243,7 @@ static int cc_pp_condition_directive(cc_pp_reader *r, cc_pp_token directive)
         cc_pp_group group={cc_pp_enabled,truth,cc_pp_enabled && truth,0};
         cc_pp_groups[cc_pp_group_count++]=group; cc_pp_enabled=group.active;
     } else {
-        if (!cc_pp_group_count) return 0;
+        if (cc_pp_group_count == cc_pp_group_floor) return 0;
         cc_pp_group *group=cc_pp_groups+cc_pp_group_count-1;
         if (elif) {
             if (group->saw_else || !cc_pp_condition_line(r,group->parent && !group->taken,&truth)) return 0;

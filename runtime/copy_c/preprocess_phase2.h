@@ -1,6 +1,9 @@
+#ifndef COPY_C_PREPROCESS_PHASE2_H
+#define COPY_C_PREPROCESS_PHASE2_H
+#include "input_files.h"
 /* Translation before token recognition. Compiled into the compiler guest,
  * never into the host space emulator. The result fits in the input buffer. */
-static unsigned cc_preprocess_phase2(unsigned char *source, unsigned length)
+static unsigned cc_preprocess_phase2_text(unsigned char *source, unsigned length)
 {
     unsigned read_at = 0, write_at = 0;
     while (read_at < length) {
@@ -27,3 +30,8 @@ static unsigned cc_preprocess_phase2(unsigned char *source, unsigned length)
     }
     return write_at;
 }
+static unsigned cc_preprocess_phase2(unsigned char *source, unsigned length)
+{
+    return cc_files_magic(source,length) ? length : cc_preprocess_phase2_text(source,length);
+}
+#endif

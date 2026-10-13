@@ -120,6 +120,7 @@ test-copy-c: copy-c
 	python3 tests/test_copy_c_macro_arguments.py
 	python3 tests/test_copy_c_macro_hidesets.py
 	python3 tests/test_copy_c_preprocessor.py
+	python3 tests/test_copy_c_include.py
 	python3 tests/test_copy_c.py
 
 test-sanitize:

@@ -114,6 +114,12 @@ copy-c-job: copy-c
 
 test-copy-c: copy-c
 	python3 tests/test_copy_c_bitpack.py
+	python3 tests/test_copy_c_macro_parameters.py
+	python3 tests/test_copy_c_macro_stringify.py
+	python3 tests/test_copy_c_macro_substitute.py
+	python3 tests/test_copy_c_macro_arguments.py
+	python3 tests/test_copy_c_macro_hidesets.py
+	python3 tests/test_copy_c_preprocessor.py
 	python3 tests/test_copy_c.py
 
 test-sanitize:

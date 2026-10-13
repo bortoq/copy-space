@@ -1,5 +1,7 @@
 """Token-aware object macro substitution inside the compiler guest."""
 valid = [
+    ("pp-object-long-chain", b"".join(f"#define N{i} N{i+1}\n".encode() for i in range(65))+b"#define N65 7\nint main(){return N0;}", 7),
+    ("pp-object-consecutive-paste", b"#define NAME val #### ue\nint main(){int value=7;return NAME;}", 7),
     ("pp-object-simple", b"#define N 7\nint main(){return N;}", 7),
     ("pp-object-chain", b"#define A B\n#define B C\n#define C 7\nint main(){return A;}", 7),
     ("pp-object-repeat", b"#define N 3\nint main(){return N+N+1;}", 7),
@@ -43,7 +45,6 @@ valid = [
 invalid = [
     ("pp-object-missing-name", b"#define\nint main(){return 7;}"),
     ("pp-object-number-name", b"#define 3 7\nint main(){return 7;}"),
-    ("pp-object-function-pending", b"#define F(x) x\nint main(){return F(7);}"),
     ("pp-object-include-pending", b'#include "x.h"\nint main(){return 7;}'),
     ("pp-object-paste-first", b"#define N ## 7\nint main(){return N;}"),
     ("pp-object-paste-last", b"#define N 7 ##\nint main(){return N;}"),
@@ -52,6 +53,5 @@ invalid = [
     ("pp-object-undef-missing", b"#undef\nint main(){return 7;}"),
     ("pp-object-undef-extra", b"#undef N extra\nint main(){return 7;}"),
     ("pp-object-capacity-exceeded", b"".join(f"#define N{i} {i}\n".encode() for i in range(513))+b"int main(){return 7;}"),
-    ("pp-object-depth-exceeded", b"".join(f"#define N{i} N{i+1}\n".encode() for i in range(65))+b"#define N65 7\nint main(){return N0;}"),
     ("pp-object-output-exceeded", b"#define N0 7\n"+b"".join(f"#define N{i} N{i-1} N{i-1}\n".encode() for i in range(1,21))+b"int main(){return N20;}"),
 ]

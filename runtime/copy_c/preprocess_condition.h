@@ -195,6 +195,7 @@ static int cc_pp_condition_line(cc_pp_reader *reader, int run, int *truth)
     if (!run) return cc_pp_skip_line(reader);
     cc_pp_skipping=0;
     unsigned start=cc_pp_output_count;
+    unsigned head=0, tail=0;
     cc_pp_token t=cc_pp_next(reader);
     while (t.kind && t.kind!='\n' && !reader->failed) {
         if (cc_pp_is(t,"defined")) {
@@ -203,12 +204,16 @@ static int cc_pp_condition_line(cc_pp_reader *reader, int run, int *truth)
             if (t.kind!=CC_PP_IDENT) return 0;
             int i=cc_pp_find(t), exists=i>=0 && cc_pp_macros[i].present;
             if (parens && !cc_pp_is(cc_pp_next(reader),")")) return 0;
-            cc_pp_token number={(const unsigned char *)(exists ? "1" : "0"),1,CC_PP_NUMBER};
-            if (!cc_pp_emit(number)) return 0;
-        } else if (!cc_pp_expand(t,0)) return 0;
+            t=(cc_pp_token){(const unsigned char *)(exists ? "1" : "0"),1,CC_PP_NUMBER,0,0};
+        }
+        unsigned node=cc_pp_node_new(t);
+        if (!node) { cc_pp_list_release(head); return 0; }
+        if (tail) cc_pp_nodes[tail].next=node; else head=node;
+        tail=node;
         t=cc_pp_next(reader);
     }
-    cc_pp_eval e={{cc_pp_output+start,cc_pp_output_count-start,0,0},{0,0,0},0,0};
+    if (!cc_pp_flush(head)) return 0;
+    cc_pp_eval e={{cc_pp_output+start,cc_pp_output_count-start,0,0},{0,0,0,0,0},0,0};
     cc_pp_eval_next(&e);
     cc_pp_value value=cc_pp_evaluate(&e,1,1);
     cc_pp_output_count=start;

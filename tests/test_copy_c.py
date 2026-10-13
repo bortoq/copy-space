@@ -51,6 +51,7 @@ from copy_c_wide_control_cases import volatile_reads as wide_control_volatile_re
 from copy_c_local_static_cases import valid as local_static_valid, invalid as local_static_invalid
 from copy_c_preprocess_cases import valid as preprocess_valid, invalid as preprocess_invalid
 from copy_c_object_macro_cases import valid as object_macro_valid, invalid as object_macro_invalid
+from copy_c_function_macro_cases import valid as function_macro_valid, invalid as function_macro_invalid
 from copy_c_conditional_cases import valid as conditional_valid, invalid as conditional_invalid
 from copy_c_zero_object_cases import valid as zero_object_valid
 from copy_c_auto_cases import valid as auto_valid, invalid as auto_invalid
@@ -142,7 +143,15 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
     folder = ROOT / "target" / name
     command = ["build/bin/space", "--ticks", "20000", "--trace", str(folder / "trace.txt"),
                "--dump-space", str(folder / "space.bin")]
-    record(folder, command, packet)
+    reference_packet = ROOT / "native" / name / "program.in"
+    if reference_packet.is_file() and reference_packet.read_bytes() == packet:
+        folder.mkdir(parents=True, exist_ok=True)
+        incoming = folder / "in.bin"
+        incoming.unlink(missing_ok=True)
+        incoming.hardlink_to(reference_packet)
+        (folder / "args.json").write_text(json.dumps(command, indent=2)+"\n")
+    else:
+        record(folder, command, packet)
     result = subprocess.run(command, input=packet, capture_output=True, timeout=options.target_timeout)
     (folder / "result.out").write_bytes(result.stdout)
     (folder / "stderr.txt").write_bytes(result.stderr)
@@ -296,6 +305,7 @@ valid += wide_control_valid
 valid += local_static_valid
 valid += preprocess_valid
 valid += object_macro_valid
+valid += function_macro_valid
 valid += conditional_valid
 valid += zero_object_valid
 valid += auto_valid
@@ -407,6 +417,7 @@ invalid += wide_control_invalid
 invalid += local_static_invalid
 invalid += preprocess_invalid
 invalid += object_macro_invalid
+invalid += function_macro_invalid
 invalid += conditional_invalid
 invalid += auto_invalid
 assert len({name for name, _ in invalid}) == len(invalid), "duplicate rejected case name"

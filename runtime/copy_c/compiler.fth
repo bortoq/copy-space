@@ -1269,6 +1269,11 @@ create cc-switch-cases 32 128 * 3 * cells allot
   2 (local!) cc-cell dup fn cc-function-signatures cc-fget cc-type!
   dup 2 cc-lvalue! dup pointer swap cc-lvalue-pointer ! ;
 
+: cc-named-call ( fn -- value ) 0 L{ fn flags }
+  fn 0< fn cc-function-count @ >= or if s" unknown function" cc-fail then
+  fn cc-function-signatures cc-fget cc-type-function-shapes cc-fget 1 swap cc-fget 2 (local!)
+  flags 2 and flags 1 and 0= fn cc-function-entry cc-fget 0= and or if
+    fn cc-function-designator cc-indirect-call else fn cc-call then ;
 : cc-primary ( -- target )
   cc-token @ 34 = if cc-string exit then
   s" _Generic" cc-is if cc-next cc-generic exit then
@@ -1292,7 +1297,7 @@ create cc-switch-cases 32 128 * 3 * cells allot
       dup cells cc-binding-values + @ cc-const swap cc-alias-types + c@ over swap cc-type!
       cc-next exit then drop
     cc-find-symbol >r cc-find-function >r cc-next
-    cc-token @ 40 = if r> r> dup 0< if drop cc-nest cc-call cc-unnest else
+    cc-token @ 40 = if r> r> dup 0< if drop cc-nest cc-named-call cc-unnest else
       swap drop cells cc-symbol-address + @ then else
       r> r> dup 0< if drop dup 0< if drop s" unknown variable" cc-fail then
         cc-function-designator else swap drop cells cc-symbol-address + @ then then exit
@@ -1576,6 +1581,10 @@ variable cc-constant-type
 create cc-declarator-contexts 32 101 * cells allot
 variable cc-declarator-depth
 variable cc-parameter-name
+variable cc-external-declarator
+variable cc-keep-prototype
+variable cc-external-prototype-shape
+create cc-external-parameter-addresses 8 cells allot
 : cc-declarator-node ( context index -- node ) 2 * 5 + cells + ;
 : cc-declarator-add ( context kind argument -- ) L{ context kind argument }
   0 context cc-fget dup 32 >= cc-limit
@@ -1601,7 +1610,10 @@ variable cc-parameter-name
     cc-token @ 91 = if
       cc-next cc-token @ 93 = if 0 else cc-read-constant dup 1 < if
         s" nonpositive array size" cc-fail then then 3 (local!) 93 cc-expect
-      context 3 mask cc-declarator-add else context 7 cc-prototype cc-declarator-add then
+      context 3 mask cc-declarator-add else
+        cc-external-declarator @ cc-declarator-depth @ 1 = and
+        0 context cc-fget 0= and 1 context cc-fget 0< 0= and cc-keep-prototype !
+        context 7 cc-prototype cc-declarator-add then
   repeat
   begin 3 context cc-fget start > while
     3 context cc-fget 1- dup 3 context cc-fset 69 + cells context + @
@@ -1628,8 +1640,10 @@ variable cc-parameter-name
 ' cc-read-abstract-type-body is cc-read-abstract-type
 : cc-prototype-body ( -- shape )
   cc-prototype-count @ dup 128 >= cc-limit 18 * cells cc-prototype-shapes +
-  cc-symbol-count @ cc-tag-count @ 256 * cc-tag-scope @ + cc-scope-level @
+  cc-symbol-count @ cc-tag-count @ 256 * cc-tag-scope @ +
+  cc-keep-prototype @ if 65536 else 0 then or cc-scope-level @
   cc-alias-count @ cc-data @ 0 0 L{ shape symbols tags scope aliases data type name }
+  0 cc-keep-prototype !
   1 cc-prototype-count +! shape 18 cells 0 fill
   cc-tag-count @ cc-tag-scope ! 1 cc-scope-level +! 40 cc-expect
   cc-token @ 41 <> if 1 1 shape cc-fset then
@@ -1648,15 +1662,24 @@ variable cc-parameter-name
           type cc-kind 7 = if drop type then cc-pointer-to 7 (local!) then
         0 shape cc-fget dup 8 >= cc-limit 2 + shape type cc-unqualified -rot cc-fset
         name 0 shape cc-fget 10 + shape cc-fset 0 shape cc-fget 1+ 0 shape cc-fset
+        tags 65536 and if
+          type cc-record? if s" aggregate parameter unsupported" cc-fail then
+          type cc-object dup type cc-type!
+          dup 0 shape cc-fget 1- cells cc-external-parameter-addresses + !
+        then
         name 0< 0= if
           cc-token-start @ >r name cc-pos ! cc-next
-          cc-cell dup type cc-type! cc-symbol-at drop r> cc-pos ! cc-next then
+          tags 65536 and 0= if cc-cell dup type cc-type! then
+          cc-symbol-at drop r> cc-pos ! cc-next else tags 65536 and if drop then then
         cc-token @ 44 = if cc-next cc-token @ 41 = if s" trailing prototype comma" cc-fail then
         else cc-token @ 41 <> if s" expected prototype comma" cc-fail then then
       then
     then
   repeat 41 cc-expect
-  symbols cc-symbol-count ! tags 8 rshift cc-tag-count ! tags 255 and cc-tag-scope !
+  tags 65536 and if
+    shape cc-external-prototype-shape ! aliases cc-function-aliases !
+    tags 65535 and 8 rshift cc-function-tags ! shape exit then
+  symbols cc-symbol-count ! tags 65535 and 8 rshift cc-tag-count ! tags 255 and cc-tag-scope !
   aliases cc-alias-count ! scope cc-scope-level ! data cc-rewind-temps shape ;
 ' cc-prototype-body is cc-prototype
 : cc-function-type-to-body ( base shape -- type ) 0 0 0 L{ base shape candidate other same }
@@ -2580,16 +2603,6 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   cc-token @ 59 = if cc-next exit then
   cc-full-expression cc-statement-result ! 59 cc-expect ;
 ' cc-statement-body is cc-statement
-: cc-register-function-signature ( fn -- ) 0 L{ fn shape }
-  cc-prototype-count @ dup 128 >= cc-limit 18 * cells cc-prototype-shapes + 2 (local!)
-  1 cc-prototype-count +! shape 18 cells 0 fill
-  fn cc-function-argc cc-fget 0 shape cc-fset cc-function-prototyped @ 1 shape cc-fset
-  fn cc-function-argc cc-fget 0 ?do
-    fn i cc-param-type i 2 + shape cc-fset
-    -1 i 10 + shape cc-fset
-  loop
-  fn cc-function-result-types cc-fget shape cc-function-type-to
-  fn cc-function-signatures cc-fset ;
 : cc-store-function-descriptions ( -- ) 0 L{ description }
   cc-function-count @ 0 ?do
     i cc-function-description 1 (local!)
@@ -2600,89 +2613,72 @@ here cc-function-names - constant cc-infer-snapshot-bytes
       j i cc-param cc-data-base - 32 description i 3 + 32 * + cc-value!
     loop
   loop ;
-: cc-function
-  cc-token @ 59 = if cc-next exit then
-  cc-function-type @ cc-kind dup 3 = swap 7 = or if s" invalid function return type" cc-fail then
-  cc-function-type @ cc-record? if s" aggregate return unsupported" cc-fail then
-  cc-find-alias-raw 0< 0= if s" function conflicts with ordinary name" cc-fail then
-  cc-alias-count @ cc-function-aliases !
-  cc-tag-count @ cc-function-tags ! cc-tag-count @ cc-tag-scope !
-  cc-find-function dup -1 = if drop
-    -1 cc-new-function !
-    cc-function-count @ dup cc-function-index ! 16 >= cc-limit
-    cc-storage @ 2 = if 1 else 0 then cc-function-linkage cc-function-index @ + c!
-    cc-function-names cc-function-index @ 32 * + cc-name!
-    0 cc-function-index @ cc-function-entry cc-fset
-    cc-function-type @ cc-unqualified cc-function-index @ cc-function-result-types cc-fset
-    0 cc-function-index @ cc-function-argc cc-fset
-    1 cc-function-count +!
-  else cc-function-index ! 0 cc-new-function !
-    cc-storage @ 2 = cc-function-linkage cc-function-index @ + c@ 0= and if
-      s" conflicting function linkage" cc-fail then
-    cc-function-index @ cc-function-result-types cc-fget cc-function-type @ cc-unqualified <>
-    if s" conflicting function return type" cc-fail then
-  then
-  s" main" cc-is if cc-function-index @ cc-main-index ! then
-  cc-data-base cc-data ! cc-types 2048 0 fill cc-lvalues 2048 0 fill
-  cc-fold-flags 2048 0 fill cc-pointer-origins 2048 cells 0 fill
-  cc-cell cc-function-index @ cc-function-return cc-fset
-  cc-cell dup cc-function-type @ cc-type! cc-function-index @ cc-function-value cc-fset
-  0 cc-symbol-count ! 0 cc-parameter-count ! 1 cc-scope-level ! cc-next 40 cc-expect
-  cc-token @ 41 <> if 1 else 0 then cc-function-prototyped !
-  cc-token @ 41 <> if
-      begin
-        cc-read-type
-        cc-declared-type @ cc-parameter-declarator cc-parameter-name ! cc-declared-type !
-        cc-token-start @ cc-parameter-after !
-        cc-declared-type @ cc-kind 2 = if
-          cc-parameter-count @ 0= cc-token @ 41 = and cc-parameter-name @ 0< and 0=
-          if s" void parameter unsupported" cc-fail then -1
-        else
-        cc-declared-type @ dup cc-kind 3 = if cc-pointee cc-pointer-to else
-          dup cc-kind 7 = if cc-pointer-to then then cc-declared-type !
-        cc-declared-type @ cc-record? if s" aggregate parameter unsupported" cc-fail then
-        cc-parameter-count @ dup 8 >= cc-limit >r
-        cc-new-function @ 0= if
-          r@ cc-function-index @ cc-function-argc cc-fget >=
-          if s" conflicting prototype" cc-fail then
-          cc-function-index @ r@ cc-param-type cc-declared-type @ cc-unqualified cc-types-compatible? 0=
-          if s" conflicting parameter type" cc-fail then
-        then
-        cc-declared-type @ cc-object dup cc-declared-type @ cc-type!
-        dup cc-function-index @ 8 * r@ + cells cc-function-params + !
-        cc-declared-type @ cc-unqualified cc-function-index @ 8 * r@ + cells cc-function-parameter-types + !
-        cc-parameter-name @ 0< if drop else cc-parameter-name @ cc-pos ! cc-next
-          cc-symbol-at drop cc-parameter-after @ cc-pos ! cc-next then
-        r> 1+ cc-parameter-count !
-        cc-token @ 44 = if cc-next 0 else -1 then
-        then
-      until
-  then 41 cc-expect
-  cc-new-function @ if
-    cc-parameter-count @ cc-function-index @ cc-function-argc cc-fset
-  else cc-parameter-count @ cc-function-index @ cc-function-argc cc-fget <>
-    if s" conflicting prototype" cc-fail then
-  then
-  cc-function-index @ cc-register-function-signature
-  cc-token @ 59 = if cc-next cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
-    cc-function-aliases @ cc-alias-count ! 0 cc-symbol-count ! 0 cc-scope-level ! exit then
-  cc-function-index @ cc-function-entry cc-fget
-  if s" duplicate function definition" cc-fail then
-  cc-symbol-count @ cc-parameter-count @ <>
-  if s" parameter name missing in definition" cc-fail then
-  cc-boundary cc-function-index @ cc-function-entry cc-fset
-  cc-function-index @ cc-main-index @ = if
-    cc-function-type @ cc-unqualified if s" main must return int" cc-fail then
-    cc-function-index @ cc-function-argc cc-fget 0<> if s" main takes no parameters" cc-fail then
-  then
-  cc-token @ 123 <> if s" expected function body" cc-fail then
-  cc-label-reset
-  -1 cc-first-block !
-  -1 cc-in-function ! cc-statement 0 cc-in-function !
-  cc-goto-finish
-  cc-function-type @ cc-kind 2 = if cc-cell dup 3 cc-type! else cc-zero @ then cc-return-value
+: cc-end-function-scope
   cc-function-tags @ cc-tag-count ! 0 cc-tag-scope !
   cc-function-aliases @ cc-alias-count ! 0 cc-symbol-count ! 0 cc-scope-level ! ;
+: cc-external-frame
+  cc-data-base cc-data ! cc-types 2048 0 fill cc-lvalues 2048 0 fill
+  cc-fold-flags 2048 0 fill cc-pointer-origins 2048 cells 0 fill
+  cc-cell drop cc-cell drop 0 cc-symbol-count ! 0 cc-scope-level !
+  cc-alias-count @ cc-function-aliases ! cc-tag-count @ cc-function-tags !
+  0 cc-external-prototype-shape ! ;
+: cc-refresh-function-layout? ( old shape definition -- flag ) L{ old shape definition }
+  definition old 0= or if -1 exit then
+  1 shape cc-fget 1 and if -1 exit then
+  old cc-type-function-shapes cc-fget 1 swap cc-fget 1 and 0= ;
+: cc-function ( type name after -- definition ) 0 0 0 cc-alias-count @ cc-token @ 123 =
+  L{ type name after shape fn old aliases definition }
+  type cc-pointee cc-function-type !
+  cc-function-type @ cc-record? if s" aggregate return unsupported" cc-fail then
+  cc-external-prototype-shape @ dup 0= if drop type cc-type-function-shapes cc-fget then 4 (local!)
+  name cc-pos ! cc-next cc-function-aliases @ cc-alias-count !
+  cc-find-alias-raw 0< 0= if s" function conflicts with ordinary name" cc-fail then
+  cc-find-function dup -1 = if drop
+    cc-function-count @ dup 16 >= cc-limit 5 (local!) 1 cc-function-count +!
+    cc-storage @ 2 = if 1 else 0 then cc-function-linkage fn + c!
+    cc-function-names fn 32 * + cc-name! 0 fn cc-function-entry cc-fset
+    type fn cc-function-signatures cc-fset
+  else 5 (local!)
+    cc-storage @ 2 = cc-function-linkage fn + c@ 0= and if
+      s" conflicting function linkage" cc-fail then
+    fn cc-function-signatures cc-fget 6 (local!)
+    type old cc-types-compatible? 0= if s" conflicting function type" cc-fail then
+    definition if
+      fn cc-function-entry cc-fget if s" duplicate function definition" cc-fail then
+      old cc-type-function-shapes cc-fget dup 1 swap cc-fget 1 and if
+        0 swap cc-fget 0 shape cc-fget <> if s" conflicting definition parameters" cc-fail then
+      else drop then
+    then
+    type cc-type-function-shapes cc-fget 1 swap cc-fget 1 and if
+      type fn cc-function-signatures cc-fset then
+  then
+  fn cc-function-index ! s" main" cc-is if fn cc-main-index ! then
+  aliases cc-alias-count ! after cc-pos ! cc-next
+  fn cc-function-entry cc-fget 0= old shape definition cc-refresh-function-layout? and if
+    cc-data-base fn cc-function-return cc-fset
+    cc-data-base 32 + dup cc-function-type @ cc-type! fn cc-function-value cc-fset
+    cc-function-type @ cc-unqualified fn cc-function-result-types cc-fset
+    0 shape cc-fget fn cc-function-argc cc-fset
+    0 shape cc-fget 0 ?do
+      cc-external-prototype-shape @ if cc-external-parameter-addresses i cells + @ else
+        i 2 + shape cc-fget cc-object then
+      fn 8 * i + cells cc-function-params + !
+      i 2 + shape cc-fget fn 8 * i + cells cc-function-parameter-types + !
+    loop
+  then
+  definition 0= if cc-end-function-scope 0 exit then
+  cc-external-prototype-shape @ 0= if s" function definition requires parameter list" cc-fail then
+  1 shape cc-fget 2 and if s" variadic definition pending" cc-fail then
+  cc-symbol-count @ 0 shape cc-fget <> if s" parameter name missing in definition" cc-fail then
+  cc-boundary fn cc-function-entry cc-fset
+  fn cc-main-index @ = if
+    cc-function-type @ cc-unqualified if s" main must return int" cc-fail then
+    fn cc-function-argc cc-fget 0<> if s" main takes no parameters" cc-fail then
+  then
+  cc-label-reset -1 cc-first-block !
+  -1 cc-in-function ! cc-statement 0 cc-in-function ! cc-goto-finish
+  cc-function-type @ cc-kind 2 = if cc-cell dup 3 cc-type! else cc-zero @ then cc-return-value
+  cc-end-function-scope -1 ;
 
 : cc-static-expression ( target -- bits )
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ 0 cc-global-evaluation-level @
@@ -2723,9 +2719,13 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   L{ base type name after target value alias original }
   begin
     0 8 (local!)
+    cc-external-frame -1 cc-external-declarator !
     type cc-declarator 3 (local!) 2 (local!) cc-token-start @ 4 (local!)
+    0 cc-external-declarator !
+    type cc-kind 7 = if
+      type name after cc-function if exit then
+    else
     type cc-kind 2 = if s" void global object" cc-fail then
-    type cc-kind 7 = if s" function declaration via declarator pending" cc-fail then
     type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
       s" incomplete global object" cc-fail then then
     type cc-kind 3 = type cc-size 0= and if
@@ -2761,17 +2761,16 @@ here cc-function-names - constant cc-infer-snapshot-bytes
       2 cc-global-state alias + c!
     else cc-storage @ 1 <> cc-global-state alias + c@ 0= and if
       1 cc-global-state alias + c! then then
-    cc-token @ 44 = if cc-next base cc-declarator-type 2 (local!) 0 else -1 then
+    then
+    cc-token @ 44 = if cc-next base 2 (local!) 0 else -1 then
   until 59 cc-expect ;
-: cc-external ( -- ) 0 0 L{ name simple-name }
+: cc-external ( -- )
   0 cc-storage ! s" extern" cc-is if 1 cc-storage ! cc-next then
   s" static" cc-is if cc-storage @ if s" conflicting storage classes" cc-fail then
     2 cc-storage ! cc-next then
-  cc-read-type cc-declared-type @ cc-function-type !
+  cc-read-type
   cc-token @ 59 = if cc-next exit then
-  cc-token @ 2 = 2 (local!) cc-token-start @ 1 (local!) cc-next
-  cc-token @ 40 = simple-name and if name cc-pos ! cc-next cc-function else
-    name cc-pos ! cc-next cc-global then ;
+  cc-global ;
 
 : cc-finish
   cc-global-ref-count @ 0 ?do
@@ -2812,6 +2811,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
 : CC-RUN
   0 cc-pos ! 0 cc-token-start ! 0 cc-depth ! 0 cc-function-count ! 0 cc-call-count !
   0 cc-indirect-depth !
+  0 cc-external-declarator ! 0 cc-keep-prototype ! 0 cc-external-prototype-shape !
   cc-function-description-base cc-image-base - 8 / cc-image + 1024 0 fill
   0 cc-loop-level ! 0 cc-break-level ! 0 cc-switch-depth !
   0 cc-statement-expression-depth !

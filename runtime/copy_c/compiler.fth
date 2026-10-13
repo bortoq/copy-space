@@ -1,4 +1,4 @@
-\ C subset compiler. All source parsing and target emission run in Forth.
+\ C grammar and target emission run in Forth; preprocessing runs in guest C.
 \ Target bit addresses; int values use LSB-first fields in MSB-first bytes.
 decimal
 1048576 constant cc-source-max
@@ -54,6 +54,9 @@ variable cc-static-data
 155648 constant cc-function-description-base
 8388608 constant cc-stack-base
 16384 constant cc-frame-bits
+cc-code-base cc-frame-bits - constant cc-object-zeros
+: cc-check-object-zeros cc-saved-result 64 + cc-object-zeros > if -1 throw then ;
+cc-check-object-zeros
 16760832 constant cc-stack-last
 
 \ Small local-name compiler over pForth's existing local primitives.
@@ -2494,7 +2497,8 @@ variable cc-union-count
   target bytes cc-union-wipe
   cc-static-initializing @ if target cc-static-location cc-image-base - 8 / cc-image +
     bytes 0 fill exit then
-  bytes 0 ?do 8 target i 8 * + cc-zero @ cc-op loop ;
+  bytes 8 * dup cc-frame-bits > cc-limit
+  dup if target cc-object-zeros cc-op else drop then ;
 : cc-union-key ( origin type -- slot ) L{ origin type }
   origin 0= if s" unknown initializer destination" cc-fail then
   cc-union-count @ 0 ?do cc-union-origins i cells + @ origin =
@@ -3264,6 +3268,7 @@ variable cc-static-high
   -1 cc-main-index ! cc-data-base cc-data !
   cc-static-base cc-static-data !
   cc-static-types 4096 0 fill cc-image 4096 0 fill
+  cc-object-zeros cc-image-base - 8 / cc-image + cc-frame-bits 8 / 0 fill
   cc-init-types cc-fold-flags 2048 0 fill cc-types 2048 0 fill
   0 cc-tag-count ! 0 cc-tag-scope ! 0 cc-member-count !
   cc-lvalues 2048 0 fill

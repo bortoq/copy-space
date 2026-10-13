@@ -52,6 +52,7 @@ from copy_c_local_static_cases import valid as local_static_valid, invalid as lo
 from copy_c_preprocess_cases import valid as preprocess_valid, invalid as preprocess_invalid
 from copy_c_object_macro_cases import valid as object_macro_valid, invalid as object_macro_invalid
 from copy_c_conditional_cases import valid as conditional_valid, invalid as conditional_invalid
+from copy_c_zero_object_cases import valid as zero_object_valid
 volatile_reads = dict(volatile_reads, **long_long_volatile_reads, **wide_control_volatile_reads)
 arithmetic_faults = arithmetic_faults+long_long_faults
 
@@ -151,6 +152,7 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
     assert result.stdout == want, (name, result.stdout.hex(), want.hex())
     raw = (folder / "space.bin").read_bytes()
     assert len(raw) == 2097152 and raw[:2272] == bytes(2272)
+    assert raw[245760//8:262144//8] == bytes(2048), "modified immutable zero interval"
     # The upper MiB is the direct program's call stack. Its pointer is updated
     # by the copy program, and must return to main after balanced calls.
     sp = sum(((raw[(152128+i)//8] >> (7-(152128+i)%8)) & 1) << i for i in range(32))
@@ -160,6 +162,16 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
         # n has a distinct address in each active recursive invocation.
         assert len({raw[1048576+i*2048:1048576+(i+1)*2048] for i in range(5)}) == 5
     trace = (folder / "trace.txt").read_bytes()
+    zeroing = {"frame-large-functions": (9600, 2), "zero-object-repeat": (9600, 2),
+               "zero-object-guest": (9600, 1), "zero-object-large": (14400, 1)}
+    if name in zeroing:
+        width, count = zeroing[name]
+        rows = [row.decode().strip() for row in trace.splitlines()
+                if (fields := row.split()) and fields[0] == b"copy"
+                and int(fields[3]) == width and int(fields[5]) == 245760]
+        assert len(rows) == count, (name, rows, count)
+        (folder / "zeroing.json").write_text(json.dumps({"source_bit": 245760,
+            "width_bits": width, "copies": rows}, indent=2)+"\n")
     if name in volatile_reads:
         # Main reserves a 32-bit return address and a 64-bit result field.
         # Count actual reads of that object's bits, excluding its initialization.
@@ -284,6 +296,7 @@ valid += local_static_valid
 valid += preprocess_valid
 valid += object_macro_valid
 valid += conditional_valid
+valid += zero_object_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),

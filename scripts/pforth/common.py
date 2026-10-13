@@ -8,10 +8,10 @@ REVISION = "e5617638c3a397c644fe82c6301711867a0ca1bf"
 
 
 def sources(bootstrap=False):
-    names = ["pf_cglue.c", "pf_clib.c", "pf_inner.c", "pf_io.c", "pf_mem.c",
+    names = ["pf_cglue.c", "pf_inner.c", "pf_io.c", "pf_mem.c",
              "pf_text.c", "pf_words.c", "pfcompil.c",
              "paging/pagedmem.c", "paging/lockpage.c", "paging/qadmpage.c"]
-    return [UPSTREAM / "csrc" / name for name in names] + [PORT / "core.c", PORT / "custom.c"] + (
+    return [UPSTREAM / "csrc" / name for name in names] + [PORT / "clib.c", PORT / "core.c", PORT / "custom.c"] + (
         [UPSTREAM / "csrc/pf_save.c", PORT / "bootstrap/export.c", PORT / "bootstrap/linux32.c"]
         if bootstrap else [PORT / "dictionary.c", PORT / "main.c"])
 

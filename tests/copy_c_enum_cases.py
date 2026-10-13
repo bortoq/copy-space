@@ -40,7 +40,6 @@ invalid = [
  ('enum-incomplete-size',b'int main(){return sizeof(enum E);}'),
  ('enum-incomplete-object',b'int main(){enum E e;return 0;}'),
  ('enum-increment-overflow',b'enum E{A=0xffffffffU,B};int main(){return 0;}'),
- ('enum-wide-range',b'enum E{A=-1,B=0xffffffffU};int main(){return 0;}'),
  ('enum-generic-duplicate',b'enum E{A};int main(){return _Generic(0,enum E:1,unsigned int:2,default:3);}'),
  ('enum-generic-multiple',b'enum E{A};enum F{B};int main(){return _Generic(0U,enum E:1,enum F:2);}'),
 ]

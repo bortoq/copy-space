@@ -44,6 +44,12 @@ from copy_c_indirect_cases import valid as indirect_valid, invalid as indirect_i
 from copy_c_frame_cases import valid as frame_valid
 from copy_c_function_declaration_cases import valid as function_declaration_valid, invalid as function_declaration_invalid
 from copy_c_variadic_cases import valid as variadic_valid, invalid as variadic_invalid
+from copy_c_long_long_cases import valid as long_long_valid, invalid as long_long_invalid, faults as long_long_faults
+from copy_c_long_long_cases import volatile_reads as long_long_volatile_reads
+from copy_c_wide_control_cases import valid as wide_control_valid, invalid as wide_control_invalid
+from copy_c_wide_control_cases import volatile_reads as wide_control_volatile_reads
+volatile_reads = dict(volatile_reads, **long_long_volatile_reads, **wide_control_volatile_reads)
+arithmetic_faults = arithmetic_faults+long_long_faults
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -51,6 +57,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--archive-targets", action="store_true", help="losslessly compress completed raw traces and dumps")
+parser.add_argument("--target-timeout", type=int, default=60, help="seconds per direct target including raw observer writes")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
 parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "inferred-array-guest", "range-guest", "range-chain-guest", "switch-guest", "goto-guest", "declarator-guest", "function-type-guest", "function-address-guest", "indirect-guest", "frame-large-functions", "function-declaration-guest", "variadic-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
@@ -63,6 +70,8 @@ parser.add_argument("--artifacts", type=Path, default=ROOT)
 options = parser.parse_args()
 if options.ticks_per_segment < 0 or options.guest_timeout <= 0:
     parser.error("ticks must not be negative; guest timeout must be positive")
+if options.target_timeout <= 0:
+    parser.error("target timeout must be positive")
 if options.trace_compression == "zstd" and not shutil.which("zstd"):
     parser.error("zstd is required for --trace-compression zstd")
 ROOT = options.artifacts
@@ -74,6 +83,11 @@ dictionary = IMAGE.with_name(IMAGE.name+".build") / "dictionary/pfdicdat.h.json"
 assert json.loads(dictionary.read_text())["compiler_forth_sha256"] == source_signature, "rebuild stale native compiler"
 custom_signature = hashlib.sha256(Path("runtime/pforth/custom.c").read_bytes()).hexdigest()
 assert json.loads(dictionary.read_text())["compiler_custom_sha256"] == custom_signature, "rebuild stale compiler runtime"
+fold_source = Path("runtime/copy_c/integer64_fold.h").read_bytes()
+assert json.loads(dictionary.read_text())["compiler_integer64_fold_sha256"] == hashlib.sha256(fold_source).hexdigest(), "rebuild stale integer64 folding"
+(ROOT / "integer64_fold.h").write_bytes(fold_source)
+reference_runtime = ROOT / "reference_integer64.c"
+reference_runtime.write_bytes(Path("tests/fixtures/copy_c/reference_integer64.c").read_bytes())
 captured_compiler = ROOT / "compiler32"
 captured_compiler.write_bytes(NATIVE.read_bytes())
 captured_compiler.chmod(0o755)
@@ -114,7 +128,7 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
     command = ["build/bin/space", "--ticks", "20000", "--trace", str(folder / "trace.txt"),
                "--dump-space", str(folder / "space.bin")]
     record(folder, command, packet)
-    result = subprocess.run(command, input=packet, capture_output=True, timeout=10)
+    result = subprocess.run(command, input=packet, capture_output=True, timeout=options.target_timeout)
     (folder / "result.out").write_bytes(result.stdout)
     (folder / "stderr.txt").write_bytes(result.stderr)
     assert result.returncode == 0 and result.stderr == b"", (name, result)
@@ -134,11 +148,16 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
         assert len({raw[1048576+i*2048:1048576+(i+1)*2048] for i in range(5)}) == 5
     trace = (folder / "trace.txt").read_bytes()
     if name in volatile_reads:
-        # Main's ABI reserves two 32-bit cells, then the first int object.
+        # Main reserves a 32-bit return address and a 64-bit result field.
         # Count actual reads of that object's bits, excluding its initialization.
         expectation = volatile_reads[name]
-        expected_reads, offset = expectation if isinstance(expectation, tuple) else (expectation, 64)
-        reads = sum(line[0] == b"copy" and int(line[3]) == 32
+        width = 32
+        if isinstance(expectation, tuple) and len(expectation) == 3:
+            expected_reads, offset, width = expectation
+        else:
+            expected_reads, offset = expectation if isinstance(expectation, tuple) else (expectation, 64)
+            offset += 32
+        reads = sum(line[0] == b"copy" and int(line[3]) == width
                     and int(line[5]) == 8388608+offset
                     for row in trace.splitlines() if (line := row.split()))
         assert reads == expected_reads, (name, reads, expected_reads)
@@ -246,6 +265,8 @@ valid += indirect_valid
 valid += frame_valid
 valid += function_declaration_valid
 valid += variadic_valid
+valid += long_long_valid
+valid += wide_control_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -270,7 +291,7 @@ for name, source, expected in valid:
         (folder / "source.c").write_bytes(translation)
         command = ["gcc", "-m32", "-std=gnu11", "-fwrapv", "-O0", "-ffreestanding", "-nostdlib",
                    "-fno-pie", "-no-pie", "-fno-stack-protector", "-Wl,-e,_start",
-                   str(folder / "source.c"), "-o", str(folder / "reference")]
+                   str(folder / "source.c"), str(reference_runtime), "-o", str(folder / "reference")]
         (folder / "args.json").write_text(json.dumps(command, indent=2)+"\n")
         compiled = subprocess.run(command, capture_output=True, timeout=30)
         assert compiled.returncode == 0, compiled.stderr
@@ -305,8 +326,8 @@ invalid = [
     ("dereference-int", b"int main(){int p=1;return *p;}"),
     ("write-through-int", b"int main(){int p=1;*p=7;return 0;}"),
     ("local-hides-function", b"int f(){return 3;}int main(){int f;return f();}"),
-    ("integer-overflow", b"int main(){return 4294967296;}"),
-    ("hex-overflow", b"int main(){return 0x100000000;}"),
+    ("integer-overflow", b"int main(){return 18446744073709551616;}"),
+    ("hex-overflow", b"int main(){return 0x10000000000000000;}"),
     ("bad-hex", b"int main(){return 0x;}"),
     ("comment-eof", b"int main(){/* unfinished"),
     ("comment-final-star", b"int main(){return 7;}/* *"),
@@ -349,6 +370,8 @@ invalid += function_address_invalid
 invalid += indirect_invalid
 invalid += function_declaration_invalid
 invalid += variadic_invalid
+invalid += long_long_invalid
+invalid += wide_control_invalid
 assert len({name for name, _ in invalid}) == len(invalid), "duplicate rejected case name"
 for name, source in invalid:
     compile_native(name, source, True)
@@ -377,6 +400,8 @@ for name, source in [
     ("string-pointer-below", b"int main(){return *(char*)12287;}"),
     ("string-pointer-above", b"int main(){return *(char*)16384;}"),
     ("string-pointer-align", b"int main(){return *(short*)12289;}"),
+    ("ll-pointer-upper", b"int main(){return *(long long*)2097148;}"),
+    ("ll-pointer-static-upper", b"int main(){return *(long long*)16380;}"),
 ]:
     target(name, compile_native(name, source), 0, pointer_fault=True)
 for name, source in indirect_faults:
@@ -399,7 +424,7 @@ def payload_start(packet):
 # by the generated copy program, rather than corrupting a neighbouring int.
 forged = bytearray(packets["pointer-read"])
 constants = payload_start(forged)+(163840-98304)//8
-encoded_address = bytes(int(f"{byte:08b}"[::-1], 2) for byte in (1048584).to_bytes(4, "little"))
+encoded_address = bytes(int(f"{byte:08b}"[::-1], 2) for byte in (1048588).to_bytes(4, "little"))
 location = forged.find(encoded_address, constants, constants+2048)
 assert location >= constants
 forged[location] ^= 0x80

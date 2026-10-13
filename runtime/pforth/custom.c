@@ -1,6 +1,7 @@
 #include "pf_all.h"
 
 #ifdef COPY_SPACE_C_COMPILER
+#include "../copy_c/integer64_fold.h"
 /* Guest memory/channel primitives. C parsing and copy selection stay in Forth. */
 static cell_t read_bytes(cell_t address, cell_t bytes)
 {
@@ -31,8 +32,15 @@ static cell_t put_bits(cell_t value, cell_t width, cell_t position,
     }
     return 0;
 }
-CFunc0 CustomFunctionTable[4] = {
-    (CFunc0)read_bytes, (CFunc0)write_bytes, (CFunc0)exit_guest, (CFunc0)put_bits
+static cell_t fold_integer64(cell_t operation, cell_t input, cell_t output)
+{
+    return cc_integer64_fold((unsigned)operation,
+                            (const uint32_t *)(uintptr_t)input,
+                            (uint32_t *)(uintptr_t)output);
+}
+CFunc0 CustomFunctionTable[5] = {
+    (CFunc0)read_bytes, (CFunc0)write_bytes, (CFunc0)exit_guest, (CFunc0)put_bits,
+    (CFunc0)fold_integer64
 };
 Err CompileCustomFunctions(void)
 {
@@ -43,7 +51,9 @@ Err CompileCustomFunctions(void)
     if(err < 0) return err;
     err = CreateGlueToC("CS-EXIT", 2, C_RETURNS_VOID, 1);
     if(err < 0) return err;
-    return CreateGlueToC("CS-PUT-BITS", 3, C_RETURNS_VOID, 5);
+    err = CreateGlueToC("CS-PUT-BITS", 3, C_RETURNS_VOID, 5);
+    if(err < 0) return err;
+    return CreateGlueToC("CS-FOLD64", 4, C_RETURNS_VALUE, 3);
 #else
     return 0;
 #endif

@@ -1,0 +1,77 @@
+"""64-bit C objects, expressions and calls; GNU i386 independently checks them."""
+import random
+
+valid = [
+    ("ll-decimal-narrow", b"int main(){return 4294967296;}", 0),
+    ("ll-hex-narrow", b"int main(){return 0x100000000;}", 0),
+    ("decimal-needs-64", b"int main(){return 2147483648;}", 0x80000000),
+    ("types-long-decimal-needs-64", b"int main(){return 2147483648L;}", 0x80000000),
+    ("long-long-suffix", b"int main(){return 3ULL;}", 3),
+    ("ll-layout", b"int main(){return sizeof(long long)*10+_Alignof(long long);}", 84),
+    ("ll-specifiers", b"int main(){long int long signed a=-3;unsigned long long int b=9;return a+b;}", 6),
+    ("ll-low-high", b"int main(){long long x=4294967297LL;return (x>>32)+(int)x;}", 2),
+    ("ll-high-add", b"int main(){unsigned long long x=0xffffffffULL;return (x+1)>>32;}", 1),
+    ("ll-high-sub", b"int main(){unsigned long long x=0x100000000ULL;return (x-1)>>32;}", 0),
+    ("ll-negative-extend", b"int main(){int x=-1;unsigned long long y=x;return y==0xffffffffffffffffULL;}", 1),
+    ("ll-unsigned-extend", b"int main(){unsigned x=0xffffffffU;long long y=x;return y==4294967295LL;}", 1),
+    ("ll-char-extend", b"int main(){signed char x=-3;long long y=x;return (y>>32)==-1;}", 1),
+    ("ll-bool-high", b"int main(){unsigned long long x=1ULL<<32;_Bool y=x;return y+!x;}", 1),
+    ("ll-convert-short", b"int main(){unsigned long long x=0xfedcba987654ffffULL;return (short)x;}", -1),
+    ("ll-signed-order", b"int main(){long long a=-4294967297LL,b=1;return a<b&&b>a;}", 1),
+    ("ll-mixed-order", b"int main(){int a=-1;unsigned long long b=1;return a>b;}", 1),
+    ("ll-mixed-int", b"int main(){unsigned x=0xffffffffU;long long y=-1;return x>y;}", 1),
+    ("ll-shift32", b"int main(){return (1ULL<<32)>>32;}", 1),
+    ("ll-shift63", b"int main(){return (1ULL<<63)>>63;}", 1),
+    ("ll-signed-shift", b"int main(){long long x=-4294967296LL;return x>>32;}", -1),
+    ("ll-bitwise", b"int main(){unsigned long long x=0xfedcba9876543210ULL;return ((~x)&0xffffffff00000000ULL)>>32;}", 0x01234567),
+    ("ll-multiply", b"int main(){unsigned long long x=4294967297ULL;return (x*x)>>32;}", 2),
+    ("ll-unsigned-div", b"int main(){unsigned long long x=0xffffffffffffffffULL;return x/3ULL;}", 0x55555555),
+    ("ll-signed-div", b"int main(){long long x=-4294967297LL;return x/3LL;}", -1431655765),
+    ("ll-signed-mod", b"int main(){long long x=-4294967297LL;return x%3LL;}", -2),
+    ("ll-conditional-wide", b"int main(){int x=1;long long y=x?4294967297LL:-1;return (y>>32)+(int)y;}", 2),
+    ("ll-conditional-sign", b"int main(){int x=1;unsigned long long y=x?-1:1ULL;return y>>32;}", -1),
+    ("ll-conditional-uint", b"int main(){int x=1;long long y=x?0xffffffffU:-1LL;return y>>32;}", 0),
+    ("ll-lazy-div", b"int main(){return 1?7:1LL/0LL;}", 7),
+    ("ll-logical-high", b"int main(){long long x=1LL<<32;return (x&&3)+(0||x);}", 2),
+    ("ll-increment", b"int main(){unsigned long long x=0xffffffffULL;long long a=x++;long long h=x>>32;--x;return h+(a>>32)+(x==a);}", 2),
+    ("ll-compound", b"int main(){unsigned long long x=1;x<<=32;x+=7;x^=3;return (x>>32)+(int)x;}", 5),
+    ("ll-pointer", b"int main(){long long x=1LL<<32;long long*p=&x;*p+=3;return (*p>>32)+(int)*p;}", 4),
+    ("ll-array", b"int main(){long long a[3]={1LL<<32,2LL<<32,3LL<<32};return (a[2]>>32)+(a+2-a);}", 5),
+    ("ll-byte-view", b"int main(){unsigned long long x=0x123456789abcdef0ULL;unsigned char*p=(unsigned char*)&x;return p[0]+p[4]+p[7];}", 378),
+    ("ll-record", b"struct S{char c;long long x;short y;};int main(){struct S s={1,1LL<<32,3};return sizeof(s)+__builtin_offsetof(struct S,x)+(s.x>>32);}", 21),
+    ("ll-global", b"long long x=4294967297LL;int main(){return (x>>32)+(int)x;}", 2),
+    ("ll-global-array", b"unsigned long long a[]={1ULL<<32,0xfedcba9876543210ULL};int main(){return (a[0]>>32)+(a[1]>>32);}", 0xfedcba99),
+    ("ll-global-range", b"long long a[3]={[0 ... 2]=1LL<<32};int main(){return (a[0]+a[1]+a[2])>>32;}", 3),
+    ("ll-assert-high", b"_Static_assert(1ULL<<32,\"high\");int main(){return 7;}", 7),
+    ("ll-constant-array", b"int main(){int a[(1ULL<<32)>>32];return sizeof(a);}", 4),
+    ("ll-generic", b"int main(){unsigned long long x=1;return _Generic(x,long long:3,unsigned long long:7,default:9);}", 7),
+    ("ll-type-literal", b"_Static_assert(__builtin_types_compatible_p(typeof(2147483648),long long),\"type\");int main(){return 7;}", 7),
+    ("ll-direct", b"long long f(long long x){return x+4294967296LL;}int main(){return f(3)>>32;}", 1),
+    ("ll-forward", b"long long f(long long);int main(){return f(4294967296LL)>>32;}long long f(long long x){return x+4294967296LL;}", 2),
+    ("ll-indirect", b"long long f(long long x){return x+4294967296LL;}int main(){long long(*p)(long long)=f;return p(3)>>32;}", 1),
+    ("ll-recursive", b"long long f(int n){if(n==0)return 1LL<<32;return f(n-1)+1LL;}int main(){return (f(3)>>32)+(int)f(3);}", 4),
+    ("ll-eight-args", b"long long f(int a,long long b,int c,long long d,int e,long long f,int g,long long h){return a+b+c+d+e+f+g+h;}int main(){return f(1,1LL<<32,2,1LL<<32,3,1LL<<32,4,1LL<<32)>>32;}", 4),
+    ("ll-variadic", b"long long f(int n,...){__builtin_va_list a;__builtin_va_start(a,n);int x=__builtin_va_arg(a,int);long long y=__builtin_va_arg(a,long long);int z=__builtin_va_arg(a,int);__builtin_va_end(a);return x+y+z;}int main(){return (f(3,1,4294967296LL,2)>>32);}", 1),
+    ("ll-va-copy", b"long long f(int n,...){__builtin_va_list a,b;__builtin_va_start(a,n);__builtin_va_copy(b,a);long long x=__builtin_va_arg(a,long long),y=__builtin_va_arg(b,long long);__builtin_va_end(a);__builtin_va_end(b);return x+y;}int main(){return f(1,1LL<<32)>>32;}", 2),
+    ("ll-volatile-narrow", b"int main(){volatile long long x=4294967297LL;return (int)x;}", 1),
+    ("ll-volatile-add", b"int main(){volatile long long x=1LL<<32;return (x+x)>>32;}", 2),
+    ("ll-volatile-sizeof", b"int main(){volatile long long x=1LL<<32;return sizeof(x);}", 8),
+    ("ll-guest", b"long long f(long long x){return x+4294967296LL;}int main(){return (f(3)>>32)+(int)f(3);}", 4),
+]
+volatile_reads = {"ll-volatile-narrow": (1, 96, 64), "ll-volatile-add": (2, 96, 64), "ll-volatile-sizeof": (0, 96, 64)}
+invalid = [
+    ("ll-third-long", b"int main(){long long long x;return 0;}"),
+    ("ll-mixed-suffix", b"int main(){return 3lL;}"),
+    ("ll-separated-suffix", b"int main(){return 3lUl;}"),
+    ("ll-overflow", b"int main(){return 18446744073709551616ULL;}"),
+    ("ll-signed-overflow", b"int main(){return 9223372036854775808LL;}"),
+    ("ll-array-high-bound", b"int main(){int a[(1ULL<<32)+1];return sizeof(a);}"),
+]
+faults = [("ll-div-zero", b"int main(){return 1LL/0LL;}", b"copy-c: divide by zero\n"),
+          ("ll-shift64", b"int main(){return 1ULL<<64;}", b"copy-c: shift error\n"),
+          ("ll-shift-high", b"int main(){return 1ULL<<(1ULL<<32);}", b"copy-c: shift error\n")]
+rng = random.Random(0xC064C)
+for i in range(20):
+    a,b=rng.getrandbits(64), rng.getrandbits(64) or 1
+    code=f"int main(){{unsigned long long a={a}ULL,b={b}ULL;return ((a/b)^(a%b))>>32;}}".encode()
+    valid.append((f"ll-random-div-{i}",code, ((a//b)^(a%b))>>32))

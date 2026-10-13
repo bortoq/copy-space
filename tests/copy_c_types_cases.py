@@ -71,7 +71,6 @@ invalid = [
     ("types-conflicting-char", b"int main(){int char x;return 0;}"),
     ("types-conflicting-bool", b"int main(){unsigned _Bool x;return 0;}"),
     ("types-conflicting-void", b"int main(){signed void x;return 0;}"),
-    ("types-long-decimal-needs-64", b"int main(){return 2147483648L;}"),
     ("types-duplicate-L", b"int main(){return 3Ll;}"),
     ("types-void-object", b"int main(){void x;return 0;}"),
     ("types-void-parameter", b"int f(void x){return 0;}int main(){return f(0);}"),

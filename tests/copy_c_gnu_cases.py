@@ -74,11 +74,9 @@ for i in range(12):
     valid.append((f"division-random-{i}", source, (a//b)^(a%b)))
 
 invalid = [
-    ("decimal-needs-64", b"int main(){return 2147483648;}"),
     ("bad-octal", b"int main(){return 08;}"),
     ("bad-binary", b"int main(){return 0b102;}"),
     ("bad-suffix", b"int main(){return 3uu;}"),
-    ("long-long-suffix", b"int main(){return 3ULL;}"),
     ("sign-conflict", b"int main(){unsigned signed x;return 0;}"),
     ("unsigned-prototype-conflict", b"unsigned f(int);int f(int);int main(){return 0;}"),
     ("unsigned-param-conflict", b"int f(unsigned);int f(int);int main(){return 0;}"),

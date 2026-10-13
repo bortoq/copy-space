@@ -51,6 +51,10 @@ def main():
             (folder / name).write_bytes(content)
         for name in ("custom.c", "clib.c"):
             (folder / name).write_bytes((ROOT / "runtime/pforth" / name).read_bytes())
+        if "compiler_integer64_fold_sha256" in manifest["compiler_dictionary"]:
+            fold = (ROOT / "runtime/copy_c/integer64_fold.h").read_bytes()
+            assert sha(fold) == manifest["compiler_dictionary"]["compiler_integer64_fold_sha256"]
+            (folder / "integer64_fold.h").write_bytes(fold)
     else:
         manifest = json.loads((folder / "compiler.json").read_text())
         assert (folder / "source.c").read_bytes() == source
@@ -59,6 +63,10 @@ def main():
     image = (folder / "in.bin").read_bytes()[:manifest["stream_bytes"]]
     assert (folder / "in.bin").read_bytes() == image+incoming
     assert sha((folder / "compiler.fth").read_bytes()) == manifest["compiler_forth_sha256"]
+    runtime_names = ("custom.c", "clib.c")
+    if "compiler_integer64_fold_sha256" in manifest["compiler_dictionary"]:
+        assert sha((folder / "integer64_fold.h").read_bytes()) == manifest["compiler_dictionary"]["compiler_integer64_fold_sha256"]
+        runtime_names += ("integer64_fold.h",)
     emulator = {2097152: ROOT / "build/bin/space", 67108864: ROOT / "build/bin/space-64m"}[manifest["space_bytes"]]
     proof = execute_segments(emulator, folder, folder / "in.bin",
                              space_bytes=manifest["space_bytes"],
@@ -86,7 +94,7 @@ def main():
                   "output_sha256": sha(output), "compiler_image_sha256": sha(image),
                   "compiler_forth_sha256": manifest["compiler_forth_sha256"],
                   "runtime_sources": {name: sha((folder / name).read_bytes())
-                                      for name in ("custom.c", "clib.c")}})
+                                      for name in runtime_names}})
     (folder / "evidence.json").write_text(json.dumps(proof, indent=2)+"\n")
     print(f"OK C compiled in space and executed directly: {args.case}, OUT={result.stdout.hex()}", flush=True)
 

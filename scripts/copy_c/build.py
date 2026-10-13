@@ -34,24 +34,24 @@ def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
             or cached.get("compiler_custom_sha256") != custom_signature
             or cached.get("headers_reserve_bytes") != 4096
             or cached.get("code_reserve_bytes") != 8192
-            or cached.get("prepare_code_capacity_bytes") != 2097152
-            or cached.get("prepare_pool_bytes") != 4194304):
+            or cached.get("prepare_code_capacity_bytes") != 4194304
+            or cached.get("prepare_pool_bytes") != 8388608):
         prepare_flags = ["-DCOPY_SPACE_C_COMPILER", "-UPF_DEFAULT_HEADER_SIZE",
                          "-DPF_DEFAULT_HEADER_SIZE=65536", "-UPF_DEFAULT_CODE_SIZE",
-                         "-DPF_DEFAULT_CODE_SIZE=2097152", "-UPF_MEM_POOL_SIZE",
-                         "-DPF_MEM_POOL_SIZE=4194304"]
+                         "-DPF_DEFAULT_CODE_SIZE=4194304", "-UPF_MEM_POOL_SIZE",
+                         "-DPF_MEM_POOL_SIZE=8388608"]
         manifest = prepare(dictionary, [FORTH], prepare_flags, artifacts / "prepare",
                            headers_reserve=4096, code_reserve=8192)
         manifest["compiler_forth_sha256"] = signature
         manifest["compiler_custom_sha256"] = custom_signature
-        manifest["prepare_code_capacity_bytes"] = 2097152
-        manifest["prepare_pool_bytes"] = 4194304
+        manifest["prepare_code_capacity_bytes"] = 4194304
+        manifest["prepare_pool_bytes"] = 8388608
         metadata.write_text(json.dumps(manifest, indent=2)+"\n")
     manifest = json.loads(metadata.read_text())
     if hashlib.sha256(dictionary.read_bytes()).hexdigest() != manifest["header_sha256"]:
         raise ValueError("compiler dictionary checksum mismatch")
     port_flags = ["-I"+str(dictionary.parent), "-DCOPY_SPACE_C_COMPILER"] + flags()
-    port_flags += ["-UPF_MEM_POOL_SIZE", "-DPF_MEM_POOL_SIZE=4194304"]
+    port_flags += ["-UPF_MEM_POOL_SIZE", "-DPF_MEM_POOL_SIZE=8388608"]
     native = artifacts / "compiler32"
     command = shlex.split(os.environ.get("CC", "cc")) + [
         "-m32", "-O2", "-g", "-std=c99", "-ffreestanding", "-nostdlib", "-fno-pie", "-no-pie",

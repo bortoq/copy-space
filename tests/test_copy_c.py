@@ -39,6 +39,7 @@ from copy_c_goto_cases import valid as goto_valid, invalid as goto_invalid
 from copy_c_declarator_cases import valid as declarator_valid, invalid as declarator_invalid
 from copy_c_function_type_cases import valid as function_type_valid, invalid as function_type_invalid
 from copy_c_function_address_cases import valid as function_address_valid, invalid as function_address_invalid
+from copy_c_indirect_cases import valid as indirect_valid, invalid as indirect_invalid, faults as indirect_faults
 
 ROOT = Path("tmp/space-tests/copy-c")
 IMAGE = Path("build/copy-c/compiler.stream")
@@ -46,7 +47,7 @@ NATIVE = IMAGE.with_name(IMAGE.name+".build") / "compiler32"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "inferred-array-guest", "range-guest", "range-chain-guest", "switch-guest", "goto-guest", "declarator-guest", "function-type-guest", "function-address-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "inferred-array-guest", "range-guest", "range-chain-guest", "switch-guest", "goto-guest", "declarator-guest", "function-type-guest", "function-address-guest", "indirect-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -126,13 +127,15 @@ def target(name, packet, expected, *, fault=False, stack_fault=False, pointer_fa
     if name in volatile_reads:
         # Main's ABI reserves two 32-bit cells, then the first int object.
         # Count actual reads of that object's bits, excluding its initialization.
+        expectation = volatile_reads[name]
+        expected_reads, offset = expectation if isinstance(expectation, tuple) else (expectation, 64)
         reads = sum(line[0] == b"copy" and int(line[3]) == 32
-                    and int(line[5]) == 8388608+64
+                    and int(line[5]) == 8388608+offset
                     for row in trace.splitlines() if (line := row.split()))
-        assert reads == volatile_reads[name], (name, reads, volatile_reads[name])
+        assert reads == expected_reads, (name, reads, expected_reads)
         (folder / "volatile.json").write_text(json.dumps({
-            "object_bit_address": 8388608+64, "reads": reads,
-            "expected_reads": volatile_reads[name],
+            "object_bit_address": 8388608+offset, "reads": reads,
+            "expected_reads": expected_reads,
         }, indent=2)+"\n")
     assert trace.splitlines()[-1].endswith(b" idle") and b"copy " in trace
     assert b"channel " in trace
@@ -228,6 +231,7 @@ valid += goto_valid
 valid += declarator_valid
 valid += function_type_valid
 valid += function_address_valid
+valid += indirect_valid
 for name, expression, expected in [
     ("signed-lt", "0x80000000<0", 0), ("signed-gt", "0xffffffff>0", 1),
     ("signed-ge", "0x80000000>=0x80000000", 1), ("signed-le", "7<=6", 0),
@@ -294,13 +298,12 @@ invalid = [
     ("comment-final-stars", b"int main(){return 7;}/***"),
     ("main-args", b"int main(int a){return a;}"),
     ("reserved-name", b"int main(){int return;return 0;}"),
-    ("main-call", b"int main(){return 0;}int f(){return main();}"),
     ("nul-source", b"int main(){return 0;}\0"),
     ("block-scope", b"int main(){{int a=1;}return a;}"),
     ("source-capacity", b" "*(SOURCE_CAPACITY+1)),
     ("nesting-capacity", b"int main(){return "+b"("*40+b"1"+b")"*40+b";}"),
     ("name-capacity", b"int main(){int "+b"x"*32+b";return 0;}"),
-    ("code-capacity", b"int main(){int a=0;"+b"a=a+1;"*100+b"return a;}"),
+    ("code-capacity", b"volatile int n=0;int main(){"+b"if(n);"*200+b"return n;}"),
 ]
 invalid += gnu_invalid
 invalid += types_invalid
@@ -328,6 +331,7 @@ invalid += goto_invalid
 invalid += declarator_invalid
 invalid += function_type_invalid
 invalid += function_address_invalid
+invalid += indirect_invalid
 for name, source in invalid:
     compile_native(name, source, True)
     print(f"OK copy-c rejects {name}", flush=True)
@@ -343,7 +347,7 @@ for name, source in [
 for name, source, expected in [
     ("types-last-byte", b"int main(){unsigned char*p=(unsigned char*)2097151;*p=171;return *p;}", 171),
     ("types-last-half", b"int main(){unsigned short*p=(unsigned short*)2097150;*p=43981;return *p;}", 43981),
-    ("types-odd-byte", b"int main(){unsigned char*p=(unsigned char*)1048577;*p=7;return *p;}", 7),
+    ("types-odd-byte", b"int main(){unsigned char*p=(unsigned char*)2097137;*p=7;return *p;}", 7),
 ]:
     # Raw ABI addresses test the space boundary, not defined C objects on GCC.
     target(name, compile_native(name, source), expected)
@@ -357,6 +361,10 @@ for name, source in [
     ("string-pointer-align", b"int main(){return *(short*)12289;}"),
 ]:
     target(name, compile_native(name, source), 0, pointer_fault=True)
+for name, source in indirect_faults:
+    target(name, compile_native(name, source), 0, pointer_fault=True)
+main_overflow = compile_native("main-stack-overflow", b"int main(){return main();}")
+target("main-stack-overflow", main_overflow, 0, stack_fault=True)
 def payload_start(packet):
     for start in range(0, len(packet), 37):
         # First installation records carry zero IN length. The last one

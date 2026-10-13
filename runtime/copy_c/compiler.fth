@@ -2,7 +2,7 @@
 \ Target bit addresses; int values use LSB-first fields in MSB-first bytes.
 decimal
 1048576 constant cc-source-max
-128 constant cc-layer-max
+384 constant cc-layer-max
 18176 constant cc-layer-bits
 2272 constant cc-layer-bytes
 98304 constant cc-image-base
@@ -48,6 +48,9 @@ variable cc-static-data
 154176 constant cc-shift-return
 154208 constant cc-shift-right
 154240 constant cc-shift-signed
+154304 constant cc-indirect-entry
+154336 constant cc-indirect-return
+154368 constant cc-indirect-parameters
 155648 constant cc-function-description-base
 8388608 constant cc-stack-base
 16384 constant cc-frame-bits
@@ -1102,6 +1105,9 @@ defer cc-alignof
 defer cc-offsetof
 defer cc-compatible
 defer cc-generic
+defer cc-indirect-call
+create cc-indirect-types 32 8 * cells allot
+variable cc-indirect-depth
 create cc-break-fields 128 cells allot
 create cc-continue-fields 128 cells allot
 variable cc-break-count
@@ -1137,7 +1143,6 @@ create cc-switch-cases 32 128 * 3 * cells allot
 
 : cc-call ( fn -- value ) 0 L{ fn nargs }
   fn 0< fn cc-function-count @ >= or if s" unknown function" cc-fail then
-  fn cc-main-index @ = cc-unevaluated @ 0= and if s" main cannot be called" cc-fail then
   40 cc-expect
   cc-token @ 41 <> if
     begin nargs 8 >= cc-limit cc-expression
@@ -1284,18 +1289,19 @@ create cc-switch-cases 32 128 * 3 * cells allot
       dup cells cc-binding-values + @ cc-const swap cc-alias-types + c@ over swap cc-type!
       cc-next exit then drop
     cc-find-symbol >r cc-find-function >r cc-next
-    cc-token @ 40 = if r> r> 0< 0= if s" indirect call unsupported" cc-fail then
-      cc-nest cc-call cc-unnest else
+    cc-token @ 40 = if r> r> dup 0< if drop cc-nest cc-call cc-unnest else
+      swap drop cells cc-symbol-address + @ then else
       r> r> dup 0< if drop dup 0< if drop s" unknown variable" cc-fail then
         cc-function-designator else swap drop cells cc-symbol-address + @ then then exit
   then s" expected expression" cc-fail ;
 : cc-postfix ( -- value )
   cc-primary begin
+    cc-token @ 40 = if cc-indirect-call else
     cc-token @ dup 46 = swap 266 = or if cc-member else
     cc-token @ 91 = if cc-subscript else
       cc-token @ dup 264 = swap 265 = or if
         cc-token @ cc-next -1 cc-increment else exit then
-    then then
+    then then then
   again ;
 : cc-unary-body ( -- target )
   s" sizeof" cc-is if cc-next cc-sizeof exit then
@@ -1942,6 +1948,72 @@ variable cc-generic-depth
   cc-alignment cc-const dup 1 cc-type! ;
 ' cc-alignof-body is cc-alignof
 
+: cc-description-read ( pointer field -- value ) cc-cell 0 L{ pointer field value slot }
+  2 pointer cc-frame-extra + value cc-frame-extra + cc-room
+  cc-slot @ 1+ pointer cc-frame-extra + value cc-frame-extra + 4 (local!)
+  12 slot 71 * 56 + pointer 6 + cc-op 32 value field 32 * cc-op value ;
+: cc-reject-pointer-if ( condition -- ) cc-branch dup 32 + cc-pointer-error-entry @ cc-patch
+  cc-current cc-patch ;
+: cc-check-function-pointer ( pointer -- ) L{ pointer }
+  pointer cc-function-description-base 8 / cc-const cc-ult-entry @ cc-invoke cc-reject-pointer-if
+  pointer cc-function-description-base 8192 + 8 / cc-const cc-ult-entry @ cc-invoke
+  cc-invert cc-reject-pointer-if
+  pointer 63 cc-const cc-and-entry @ cc-invoke cc-zero @ cc-eq-entry @ cc-invoke
+  cc-invert cc-reject-pointer-if ;
+: cc-description-write ( destination width source -- ) 0 L{ destination width source slot }
+  2 cc-room cc-slot @ 1+ 4 (local!)
+  24 slot 71 * 23 + destination cc-op width 0 source cc-op ;
+: cc-restore-call-frame
+  3 cc-room 32 cc-a cc-sp cc-op 32 cc-b cc-frame-bits negate cc-const cc-op
+  cc-current cc-layer-bits + cc-const 24 cc-lret rot cc-op
+  cc-add-entry @ cc-jump 32 cc-sp cc-r cc-op ;
+: cc-indirect-call-body ( callee -- value ) 0 0 0 0 0 0 0
+  L{ callee type shape nargs pointer newsp resultptr types }
+  cc-nest
+  callee cc-value 1 (local!) callee cc-type dup cc-kind 1 <> if s" call requires function pointer" cc-fail then
+  cc-pointee dup cc-kind 7 <> if s" call requires function pointer" cc-fail then 2 (local!)
+  type cc-type-function-shapes cc-fget 3 (local!)
+  cc-indirect-depth @ dup 32 >= cc-limit 8 * cells cc-indirect-types + 8 (local!)
+  1 cc-indirect-depth +! 40 cc-expect
+  cc-token @ 41 <> if begin nargs 8 >= cc-limit cc-expression nargs 1+ 4 (local!)
+    cc-token @ 44 = if cc-next 0 else -1 then until then 41 cc-expect
+  1 shape cc-fget 1 and if
+    1 shape cc-fget 2 and if nargs 0 shape cc-fget < else nargs 0 shape cc-fget <> then
+    if s" wrong argument count" cc-fail then then
+  nargs 0 ?do
+    nargs 1- i - 5 (local!)
+    1 shape cc-fget 1 and pointer 0 shape cc-fget < and if pointer 2 + shape cc-fget else
+      dup cc-effective-type cc-promoted then
+    dup pointer types cc-fset cc-cell dup 2 pick cc-type! 2 pick cc-assignment-check
+    cc-convert 32 cc-call-args pointer 32 * + rot cc-op
+  loop
+  cc-unevaluated @ if cc-cell dup type cc-pointee cc-unqualified cc-type!
+    -1 cc-indirect-depth +! cc-unnest exit then
+  1 shape cc-fget 2 and if s" variadic indirect call pending" cc-fail then
+  type cc-pointee cc-record? if s" aggregate indirect return pending" cc-fail then
+  callee cc-check-function-pointer
+  callee 0 cc-description-read 5 (local!)
+  pointer cc-zero @ cc-eq-entry @ cc-invoke cc-reject-pointer-if
+  32 cc-indirect-entry pointer cc-op
+  cc-sp cc-stack-last cc-const cc-eq-entry @ cc-invoke cc-branch dup 32 +
+  cc-stack-error-entry @ cc-patch cc-current cc-patch
+  cc-sp cc-frame-bits cc-const cc-add-entry @ cc-invoke 6 (local!)
+  callee 1 cc-description-read newsp cc-add-entry @ cc-invoke 32 cc-indirect-return rot cc-op
+  callee 2 cc-description-read newsp cc-add-entry @ cc-invoke 5 (local!)
+  cc-cell 7 (local!) 32 resultptr cc-zero @ cc-op 21 resultptr pointer 3 + cc-op
+  resultptr type cc-pointee cc-pointer-to cc-type!
+  nargs 0 ?do
+    callee i 3 + cc-description-read newsp cc-add-entry @ cc-invoke
+    32 cc-indirect-parameters i 32 * + rot cc-op
+  loop
+  32 cc-sp newsp cc-op
+  nargs 0 ?do cc-indirect-parameters i 32 * + i types cc-fget cc-width
+    cc-call-args i 32 * + cc-description-write loop
+  3 cc-room cc-indirect-return 24 cc-current cc-layer-bits + cc-const cc-description-write
+  cc-indirect-entry cc-dynamic cc-restore-call-frame
+  type cc-pointee cc-kind 2 = if cc-cell dup 3 cc-type! else resultptr cc-pointer-read cc-value then
+  -1 cc-indirect-depth +! cc-unnest ;
+' cc-indirect-call-body is cc-indirect-call
 : cc-return-value ( value -- )
   cc-function-index @ cc-function-value cc-fget cc-type cc-kind 2 = if
     dup cc-type cc-kind 2 <> if s" value returned from void function" cc-fail then
@@ -1949,9 +2021,8 @@ variable cc-generic-depth
   then
   dup cc-function-index @ cc-function-value cc-fget swap cc-assignment-check
   cc-function-index @ cc-function-value cc-fget cc-type cc-convert
-  cc-function-index @ cc-main-index @ = if 32 cc-r rot cc-op cc-output-entry @ cc-jump else
-    32 cc-function-index @ cc-function-value cc-fget rot cc-op
-    cc-function-index @ cc-function-return cc-fget cc-dynamic then ;
+  32 cc-function-index @ cc-function-value cc-fget rot cc-op
+  cc-function-index @ cc-function-return cc-fget cc-dynamic ;
 : cc-if
   cc-next 40 cc-expect cc-full-expression 41 cc-expect cc-truth cc-branch L{ table }
   table 32 + cc-current cc-patch cc-nest cc-statement cc-unnest
@@ -2713,7 +2784,11 @@ here cc-function-names - constant cc-infer-snapshot-bytes
     cc-call-fields i cells + @ dup if swap cc-link! else 2drop then
   loop
   cc-store-function-descriptions
-  cc-main-index @ cc-function-entry cc-fget 32 64 cc-guard-constants cc-bits!
+  cc-boundary 32 64 cc-guard-constants cc-bits!
+  2 cc-room cc-current cc-layer-bits + cc-const
+  24 cc-main-index @ cc-function-return cc-fget rot cc-op
+  cc-main-index @ cc-function-entry cc-fget cc-jump
+  32 cc-r cc-main-index @ cc-function-value cc-fget cc-op cc-output-entry @ cc-jump
   cc-current cc-image-base - 2 * 32 0 cc-guard-constants cc-bits! ;
 : cc-export
   cc-prelude cc-prelude-bytes @ dup >r cs-write r> <> if 1 cs-exit then
@@ -2733,6 +2808,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   again ;
 : CC-RUN
   0 cc-pos ! 0 cc-token-start ! 0 cc-depth ! 0 cc-function-count ! 0 cc-call-count !
+  0 cc-indirect-depth !
   cc-function-description-base cc-image-base - 8 / cc-image + 1024 0 fill
   0 cc-loop-level ! 0 cc-break-level ! 0 cc-switch-depth !
   0 cc-statement-expression-depth !

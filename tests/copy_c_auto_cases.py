@@ -1,5 +1,11 @@
 """GNU auto type deduction and binding after the initializer."""
 valid = [
+    ("auto-const-prefix", b"int main(){const __auto_type x=7;return x;}", 7),
+    ("auto-const-postfix", b"int main(){__auto_type const x=7;return x;}", 7),
+    ("auto-volatile", b"int main(){volatile __auto_type x=7;return x;}", 7),
+    ("auto-for", b"int main(){int n=0;for(__auto_type i=0;i<4;i++)n+=i;return n+1;}", 7),
+    ("auto-for-shadow", b"int main(){int i=7;for(__auto_type i=i;i<8;i++){}return i;}", 7),
+    ("auto-for-guest", b"int main(){int n=0;for(__auto_type i=0;i<4;i++)n+=i;return n+1;}", 7),
     ("auto-int", b"int main(){__auto_type x=7;return x;}", 7),
     ("auto-wide", b"int main(){__auto_type x=1ULL<<32;return sizeof(x)+(x>>32);}", 9),
     ("auto-char", b"int main(){char c=7;__auto_type x=c;return sizeof(x)+x;}", 8),
@@ -13,6 +19,8 @@ valid = [
     ("auto-guest", b"int main(){int n=3;__auto_type x=n++;return x+n;}", 7),
 ]
 invalid = [
+    ("auto-const-write", b"int main(){const __auto_type x=7;x=9;return x;}"),
+    ("auto-for-scope", b"int main(){for(__auto_type i=0;i<1;i++){}return i;}"),
     ("auto-no-initializer", b"int main(){__auto_type x;return 0;}"),
     ("auto-multiple", b"int main(){__auto_type x=1,y=2;return x+y;}"),
     ("auto-pointer-declarator", b"int main(){int n;__auto_type*p=&n;return 0;}"),

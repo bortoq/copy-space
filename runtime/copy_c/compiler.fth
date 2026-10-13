@@ -2530,10 +2530,14 @@ variable cc-pending-initializer
     cc-token @ 44 = if cc-next then 125 cc-expect else cc-expression then ;
 : cc-initialize-write ( target value -- value )
   1 cc-initializing ! cc-lvalue-write 0 cc-initializing ! ;
-: cc-auto-declaration ( -- ) 0 0 0 0 L{ name value type after }
-  cc-next cc-token @ 2 <> if s" auto type requires identifier" cc-fail then
+: cc-auto-start? ( -- flag )
+  cc-token-start @ >r 0 cc-read-qualifiers drop s" __auto_type" cc-is
+  r> cc-pos ! cc-next ;
+: cc-auto-declaration ( -- ) 0 0 0 0 0 L{ name value type after quals }
+  0 cc-read-qualifiers 5 (local!) cc-next quals cc-read-qualifiers 5 (local!)
+  cc-token @ 2 <> if s" auto type requires identifier" cc-fail then
   cc-token-start @ 1 (local!) cc-next 61 cc-expect
-  cc-expression cc-value 2 (local!) value cc-type cc-unqualified 3 (local!)
+  cc-expression cc-value 2 (local!) value cc-type cc-unqualified quals cc-qualify 3 (local!)
   cc-token-start @ 4 (local!) name cc-pos ! cc-next
   type cc-symbol dup type cc-type! value cc-initialize-write drop
   after cc-pos ! cc-next 59 cc-expect ;
@@ -2858,8 +2862,9 @@ defer cc-local-static-initialize
   tags 8 rshift cc-tag-scope !
   cc-next 40 cc-expect
   1 cc-scope-level +!
-  cc-type-start if 1 cc-in-for-declaration ! cc-declaration else
-    cc-token @ 59 <> if cc-full-expression cc-discard-value then 59 cc-expect then
+  cc-auto-start? if cc-auto-declaration else
+    cc-type-start if 1 cc-in-for-declaration ! cc-declaration else
+      cc-token @ 59 <> if cc-full-expression cc-discard-value then 59 cc-expect then then
   cc-boundary 2 (local!)
   cc-token @ 59 = if cc-one @ else cc-full-expression cc-truth then
   59 cc-expect cc-branch 3 (local!)
@@ -3002,7 +3007,7 @@ defer cc-local-static-initialize
   cc-label? if cc-define-label exit then
   s" typedef" cc-is if cc-typedef exit then
   s" _Static_assert" cc-is if cc-static-assert exit then
-  s" __auto_type" cc-is if cc-auto-declaration exit then
+  cc-auto-start? if cc-auto-declaration exit then
   cc-token @ 123 = if
     cc-block cc-discard-value 0 cc-statement-result ! exit then
   cc-type-start s" static" cc-is or if cc-declaration 0 cc-statement-result ! exit then

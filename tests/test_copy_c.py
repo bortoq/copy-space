@@ -74,6 +74,10 @@ dictionary = IMAGE.with_name(IMAGE.name+".build") / "dictionary/pfdicdat.h.json"
 assert json.loads(dictionary.read_text())["compiler_forth_sha256"] == source_signature, "rebuild stale native compiler"
 custom_signature = hashlib.sha256(Path("runtime/pforth/custom.c").read_bytes()).hexdigest()
 assert json.loads(dictionary.read_text())["compiler_custom_sha256"] == custom_signature, "rebuild stale compiler runtime"
+captured_compiler = ROOT / "compiler32"
+captured_compiler.write_bytes(NATIVE.read_bytes())
+captured_compiler.chmod(0o755)
+NATIVE = captured_compiler
 
 
 def record(folder, command, data):
@@ -403,11 +407,20 @@ target("pointer-misaligned", bytes(forged), 0, pointer_fault=True)
 
 for cut in (0, 1, 2271):
     target(f"truncated-{cut}", packets["sum"][:payload_start(packets["sum"])+cut], 0, fault=True)
-print(f"OK copy-c native: {len(valid)} valid, {len(invalid)} rejected, stack overflow, pointer boundary/alignment guards, 3 truncated packets", flush=True)
+# A large payload crosses the old guard location. The guard must survive
+# both a complete load and EOF inside that former location.
+large = packets["indirect-many-sites"]
+start = payload_start(large)
+cuts = ((4128768-98304)//8, (4194304-98304)//8+2271, len(large)-start-1)
+for i, cut in enumerate(cuts):
+    assert 0 < cut < len(large)-start
+    target(f"truncated-large-{i}", large[:start+cut], 0, fault=True)
+print(f"OK copy-c native: {len(valid)} valid, {len(invalid)} rejected, stack overflow, pointer boundary/alignment guards, 6 truncated packets", flush=True)
 for name, source, expected in arithmetic_faults:
     target(name, compile_native(name, source), expected)
 (ROOT / "native-summary.json").write_text(json.dumps({
     "valid": len(valid), "rejected": len(invalid), "arithmetic_faults": len(arithmetic_faults),
+    "truncated_packets": 6,
     "gcc_reference": options.gcc_reference,
     "native_reference_sha256": hashlib.sha256(options.native_reference.read_bytes()).hexdigest() if options.native_reference else None,
     "compiler_forth_sha256": hashlib.sha256((ROOT / "compiler.fth").read_bytes()).hexdigest(),

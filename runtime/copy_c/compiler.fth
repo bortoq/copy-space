@@ -342,6 +342,200 @@ variable cc-library-end
   1 cc-div-signed cc-zero @ cc-op 1 cc-div-mod cc-one @ cc-op cc-div-core @ cc-jump
   cc-current cc-mod-entry !
   1 cc-div-signed cc-one @ cc-op 1 cc-div-mod cc-one @ cc-op cc-div-core @ cc-jump ;
+
+\ 64-bit integer procedures; all runtime work is interval copying.
+200704 constant cc-wide-zero
+200768 constant cc-wide-a
+200832 constant cc-wide-b
+200896 constant cc-wide-r
+200960 constant cc-wide-mul-a
+201024 constant cc-wide-mul-b
+201088 constant cc-wide-mul-result
+201152 constant cc-wide-mul-return
+201184 constant cc-wide-div-n
+201248 constant cc-wide-div-d
+201312 constant cc-wide-div-q
+201376 constant cc-wide-div-r
+201440 constant cc-wide-div-return
+201472 constant cc-wide-div-count
+201504 constant cc-wide-div-carry
+201536 constant cc-wide-div-sign-q
+201568 constant cc-wide-div-sign-r
+201600 constant cc-wide-div-signed
+201632 constant cc-wide-div-mod
+201664 constant cc-wide-shift-value
+201728 constant cc-wide-shift-count
+201760 constant cc-wide-shift-return
+201792 constant cc-wide-shift-right
+201824 constant cc-wide-shift-signed
+201856 constant cc-wide-output
+variable cc-wide-add-entry
+variable cc-wide-sub-entry
+variable cc-wide-eq-entry
+variable cc-wide-lt-entry
+variable cc-wide-ult-entry
+variable cc-wide-and-entry
+variable cc-wide-or-entry
+variable cc-wide-xor-entry
+variable cc-wide-not-entry
+variable cc-wide-shl-entry
+variable cc-wide-shr-entry
+variable cc-wide-sar-entry
+variable cc-wide-mul-entry
+variable cc-wide-div-entry
+variable cc-wide-udiv-entry
+variable cc-wide-mod-entry
+variable cc-wide-umod-entry
+variable cc-wide-bool-entry
+variable cc-wide-output-entry
+variable cc-wide-div-core
+variable cc-wide-div-error-table
+variable cc-wide-shift-core
+variable cc-wide-shift-error-table
+: cc-wide-full-add
+  64 0 do
+    2 cc-tmp cc-table-base cc-wide-a i + cc-wide-b i + cc-carry 1 cc-lut3
+    1 cc-wide-r i + cc-tmp cc-op 1 cc-carry cc-tmp 1+ cc-op
+  loop cc-lret cc-dynamic ;
+: cc-wide-bit-library ( table -- ) L{ table }
+  64 0 do cc-wide-r i + table cc-wide-a i + cc-wide-b i + cc-lut2 loop cc-lret cc-dynamic ;
+: cc-wide-shift-library
+  cc-current cc-wide-shift-core !
+  24 cc-wide-shift-return cc-lret cc-op
+  64 cc-wide-shift-value cc-wide-a cc-op 32 cc-wide-shift-count cc-wide-b cc-op
+  1 cc-carry cc-zero @ cc-op
+  64 6 do cc-carry cc-table-base 24 + cc-carry cc-wide-b i + cc-lut2 loop
+  cc-carry cc-branch dup cc-wide-shift-error-table ! cc-current cc-patch
+  32 cc-a cc-wide-shift-count cc-op cc-bool-entry @ cc-library-call
+  cc-r cc-branch 0 0 0 L{ zero-table head direction-table skip }
+  zero-table 32 + cc-current cc-patch cc-current 2 (local!)
+  cc-wide-shift-right cc-branch 3 (local!) direction-table cc-current cc-patch
+  63 cc-wide-shift-value 1+ cc-wide-shift-value cc-op 1 cc-wide-shift-value cc-zero @ cc-op
+  cc-current 18152 + 4 (local!) 0 cc-jump
+  direction-table 32 + cc-current cc-patch
+  63 cc-wide-shift-value cc-wide-shift-value 1+ cc-op
+  cc-wide-shift-value 63 + cc-table-base 48 + cc-wide-shift-value 63 + cc-wide-shift-signed cc-lut2
+  cc-boundary 24 skip cc-value!
+  32 cc-a cc-wide-shift-count cc-op 32 cc-b cc-one @ cc-op
+  cc-sub-entry @ cc-library-call 32 cc-wide-shift-count cc-r cc-op
+  32 cc-a cc-wide-shift-count cc-op cc-bool-entry @ cc-library-call
+  cc-r cc-branch dup 32 + head cc-patch cc-current cc-patch
+  zero-table cc-current cc-patch
+  64 cc-wide-r cc-wide-shift-value cc-op 24 cc-lret cc-wide-shift-return cc-op cc-lret cc-dynamic
+  cc-current cc-wide-shl-entry !
+  1 cc-wide-shift-right cc-zero @ cc-op 1 cc-wide-shift-signed cc-zero @ cc-op cc-wide-shift-core @ cc-jump
+  cc-current cc-wide-shr-entry !
+  1 cc-wide-shift-right cc-one @ cc-op 1 cc-wide-shift-signed cc-zero @ cc-op cc-wide-shift-core @ cc-jump
+  cc-current cc-wide-sar-entry !
+  1 cc-wide-shift-right cc-one @ cc-op 1 cc-wide-shift-signed cc-one @ cc-op cc-wide-shift-core @ cc-jump ;
+: cc-wide-multiply-library
+  24 cc-wide-mul-return cc-lret cc-op
+  64 cc-wide-mul-a cc-wide-a cc-op 64 cc-wide-mul-b cc-wide-b cc-op
+  64 cc-wide-mul-result cc-wide-zero cc-op
+  cc-boundary L{ head }
+  64 cc-wide-a cc-wide-mul-b cc-op cc-wide-bool-entry @ cc-library-call
+  cc-wide-r cc-branch >r r@ 32 + cc-current cc-patch
+  cc-wide-mul-b cc-branch >r r@ 32 + cc-current cc-patch
+  64 cc-wide-a cc-wide-mul-result cc-op 64 cc-wide-b cc-wide-mul-a cc-op
+  cc-wide-add-entry @ cc-library-call 64 cc-wide-mul-result cc-wide-r cc-op
+  cc-boundary r> swap cc-patch
+  63 cc-wide-mul-a 1+ cc-wide-mul-a cc-op 1 cc-wide-mul-a cc-wide-zero cc-op
+  63 cc-wide-mul-b cc-wide-mul-b 1+ cc-op 1 cc-wide-mul-b 63 + cc-wide-zero cc-op
+  head cc-jump r> cc-current cc-patch
+  64 cc-wide-r cc-wide-mul-result cc-op 24 cc-lret cc-wide-mul-return cc-op cc-lret cc-dynamic ;
+: cc-wide-div-absolute ( value -- ) L{ value }
+  value 63 + cc-branch >r r@ 32 + cc-current cc-patch
+  64 cc-wide-a cc-wide-zero cc-op 64 cc-wide-b value cc-op
+  cc-wide-sub-entry @ cc-library-call 64 value cc-wide-r cc-op
+  cc-boundary r> swap cc-patch ;
+: cc-wide-division-library
+  cc-current cc-wide-div-core !
+  24 cc-wide-div-return cc-lret cc-op
+  64 cc-wide-div-n cc-wide-a cc-op 64 cc-wide-div-d cc-wide-b cc-op
+  64 cc-wide-div-q cc-wide-zero cc-op 64 cc-wide-div-r cc-wide-zero cc-op
+  32 cc-wide-div-count 64 cc-const cc-op
+  1 cc-wide-div-sign-q cc-wide-zero cc-op 1 cc-wide-div-sign-r cc-wide-zero cc-op
+  64 cc-wide-a cc-wide-div-d cc-op cc-wide-bool-entry @ cc-library-call
+  cc-wide-r cc-branch dup cc-wide-div-error-table ! 32 + cc-current cc-patch
+  cc-wide-div-signed cc-branch >r r@ 32 + cc-current cc-patch
+  1 cc-wide-div-sign-r cc-wide-div-n 63 + cc-op
+  cc-wide-div-sign-q cc-table-base 16 + cc-wide-div-n 63 + cc-wide-div-d 63 + cc-lut2
+  cc-wide-div-n cc-wide-div-absolute cc-wide-div-d cc-wide-div-absolute
+  cc-boundary r> swap cc-patch
+  cc-boundary 0 0 0 0 L{ head carry-table compare-table selection-table selection-field }
+  1 cc-wide-div-carry cc-wide-div-r 63 + cc-op
+  63 cc-wide-div-r 1+ cc-wide-div-r cc-op 1 cc-wide-div-r cc-wide-div-n 63 + cc-op
+  63 cc-wide-div-n 1+ cc-wide-div-n cc-op 1 cc-wide-div-n cc-wide-zero cc-op
+  63 cc-wide-div-q 1+ cc-wide-div-q cc-op 1 cc-wide-div-q cc-wide-zero cc-op
+  cc-wide-div-carry cc-branch 2 (local!) carry-table cc-current cc-patch
+  64 cc-wide-a cc-wide-div-r cc-op 64 cc-wide-b cc-wide-div-d cc-op
+  cc-wide-ult-entry @ cc-library-call cc-wide-r cc-branch 3 (local!)
+  compare-table cc-current cc-patch carry-table 32 + cc-current cc-patch
+  64 cc-wide-a cc-wide-div-r cc-op 64 cc-wide-b cc-wide-div-d cc-op
+  cc-wide-sub-entry @ cc-library-call 64 cc-wide-div-r cc-wide-r cc-op
+  1 cc-wide-div-q cc-one @ cc-op
+  cc-boundary compare-table 32 + swap cc-patch
+  32 cc-a cc-wide-div-count cc-op 32 cc-b cc-one @ cc-op
+  cc-sub-entry @ cc-library-call 32 cc-wide-div-count cc-r cc-op
+  32 cc-a cc-wide-div-count cc-op cc-bool-entry @ cc-library-call
+  cc-r cc-branch dup 32 + head cc-patch cc-current cc-patch
+  cc-wide-div-mod cc-branch 4 (local!) selection-table cc-current cc-patch
+  64 cc-wide-r cc-wide-div-q cc-op 1 cc-wide-div-carry cc-wide-div-sign-q cc-op
+  cc-current 18152 + 5 (local!) 0 cc-jump
+  selection-table 32 + cc-current cc-patch
+  64 cc-wide-r cc-wide-div-r cc-op 1 cc-wide-div-carry cc-wide-div-sign-r cc-op
+  cc-boundary 24 selection-field cc-value!
+  cc-wide-div-carry cc-branch >r r@ 32 + cc-current cc-patch
+  64 cc-wide-b cc-wide-r cc-op 64 cc-wide-a cc-wide-zero cc-op
+  cc-wide-sub-entry @ cc-library-call cc-boundary r> swap cc-patch
+  24 cc-lret cc-wide-div-return cc-op cc-lret cc-dynamic
+  cc-current cc-wide-udiv-entry !
+  1 cc-wide-div-signed cc-wide-zero cc-op 1 cc-wide-div-mod cc-wide-zero cc-op cc-wide-div-core @ cc-jump
+  cc-current cc-wide-div-entry !
+  1 cc-wide-div-signed cc-one @ cc-op 1 cc-wide-div-mod cc-wide-zero cc-op cc-wide-div-core @ cc-jump
+  cc-current cc-wide-umod-entry !
+  1 cc-wide-div-signed cc-wide-zero cc-op 1 cc-wide-div-mod cc-one @ cc-op cc-wide-div-core @ cc-jump
+  cc-current cc-wide-mod-entry !
+  1 cc-wide-div-signed cc-one @ cc-op 1 cc-wide-div-mod cc-one @ cc-op cc-wide-div-core @ cc-jump ;
+: cc-wide-library
+  cc-current cc-wide-add-entry ! 1 cc-carry cc-zero @ cc-op cc-wide-full-add
+  cc-current cc-wide-sub-entry !
+  64 0 do cc-wide-b i + cc-table-base 40 + cc-wide-b i + cc-lut1 loop
+  1 cc-carry cc-one @ cc-op cc-wide-full-add
+  cc-current cc-wide-eq-entry ! 64 cc-wide-r cc-wide-zero cc-op
+  1 cc-carry cc-zero @ cc-op
+  64 0 do
+    cc-tmp cc-table-base 16 + cc-wide-a i + cc-wide-b i + cc-lut2
+    cc-carry cc-table-base 24 + cc-carry cc-tmp cc-lut2
+  loop cc-wide-r cc-table-base 40 + cc-carry cc-lut1 cc-lret cc-dynamic
+  cc-current cc-wide-lt-entry ! 64 cc-wide-r cc-wide-zero cc-op
+  63 0 do
+    1 cc-wide-r cc-table-base 32 + cc-wide-a i + cc-wide-b i + cc-wide-r 0 cc-lut3
+  loop
+  cc-tmp cc-table-base 40 + cc-wide-a 63 + cc-lut1
+  cc-tmp 1+ cc-table-base 40 + cc-wide-b 63 + cc-lut1
+  1 cc-wide-r cc-table-base 32 + cc-tmp cc-tmp 1+ cc-wide-r 0 cc-lut3
+  cc-lret cc-dynamic
+  cc-current cc-wide-ult-entry ! 64 cc-wide-r cc-wide-zero cc-op
+  64 0 do 1 cc-wide-r cc-table-base 32 + cc-wide-a i + cc-wide-b i + cc-wide-r 0 cc-lut3 loop
+  cc-lret cc-dynamic
+  cc-current cc-wide-bool-entry ! 64 cc-wide-r cc-wide-zero cc-op
+  64 0 do cc-wide-r cc-table-base 24 + cc-wide-r cc-wide-a i + cc-lut2 loop
+  cc-lret cc-dynamic
+  cc-current cc-wide-and-entry ! cc-table-base 48 + cc-wide-bit-library
+  cc-current cc-wide-or-entry ! cc-table-base 24 + cc-wide-bit-library
+  cc-current cc-wide-xor-entry ! cc-table-base 16 + cc-wide-bit-library
+  cc-current cc-wide-not-entry !
+  64 0 do cc-wide-r i + cc-table-base 40 + cc-wide-a i + cc-lut1 loop cc-lret cc-dynamic
+  cc-wide-shift-library
+  cc-current cc-wide-mul-entry ! cc-wide-multiply-library
+  cc-wide-division-library
+  cc-current cc-wide-output-entry !
+  64 0 do 1 cc-wide-output i 8 / 8 * 7 + i 7 and - + cc-wide-r i + cc-op loop
+  cc-current cc-layer-bits + cc-jump
+  64 cc-wide-output 0 cc-current 142 + cc-row
+  65536 cc-jump ;
+
 : cc-library
   cc-code-base cc-origin ! cc-image-base cc-emission-base ! cc-image cc-emission-buffer !
   0 cc-layer ! 3 cc-slot ! cc-constant-base cc-constants !
@@ -417,6 +611,7 @@ variable cc-library-end
   cc-shift-library
   cc-current cc-mul-entry ! cc-multiply-library
   cc-division-library
+  cc-wide-library
   cc-current cc-output-entry !
   32 0 do 1 cc-output i 8 / 8 * 7 + i 7 and - +
     cc-r i + cc-op loop
@@ -431,8 +626,10 @@ variable cc-library-end
   176 cc-pointer-message 0 cc-current 142 + cc-row
   65536 cc-jump
   cc-shift-error-table @ 32 + cc-current cc-patch
+  cc-wide-shift-error-table @ 32 + cc-current cc-patch
   160 cc-shift-message 0 cc-current 142 + cc-row 65536 cc-jump
   cc-div-error-table @ cc-current cc-patch
+  cc-wide-div-error-table @ cc-current cc-patch
   184 cc-divide-message 0 cc-current 142 + cc-row 65536 cc-jump
   cc-layer @ cc-library-layer ! cc-constants @ cc-library-constants !
   cc-current cc-library-end ! ;
@@ -440,8 +637,11 @@ cc-library
 
 \ This small guard is installed before the large payload is read. Its code
 \ is constant; only the expected count and success entry depend on the C.
-4128768 constant cc-guard-data
-4194304 constant cc-guard-code
+7340032 constant cc-guard-data
+7372800 constant cc-guard-code
+cc-code-base cc-layer-max cc-layer-bits * + cc-guard-data > cc-limit
+cc-guard-data 288 + cc-guard-code > cc-limit
+cc-guard-code cc-layer-bits 2 * + cc-stack-base > cc-limit
 create cc-guard-image cc-layer-bytes 2 * allot
 create cc-guard-constants 36 allot
 create cc-prelude 16384 allot

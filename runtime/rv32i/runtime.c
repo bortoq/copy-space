@@ -30,6 +30,7 @@ void cs_exit(int code)
 }
 
 /* Freestanding GCC may emit these calls even without libc. */
+#ifndef CS_RUNTIME_EXTERNAL_MEMORY
 void *memcpy(void *dst, const void *src, size_t bytes)
 {
     unsigned char *out = dst;
@@ -72,3 +73,4 @@ int memcmp(const void *a, const void *b, size_t bytes)
             return (int)left[i] - (int)right[i];
     return 0;
 }
+#endif

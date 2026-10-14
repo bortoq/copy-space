@@ -13,7 +13,7 @@ from rv32i_toolchain import Toolchain
 
 
 def build(sources, output, optimization="-O2", compiler=None, stack=None, stream=False,
-          memory_bytes=MEMORY_BYTES, *, extra_cflags=(), report_status=False,
+          memory_bytes=MEMORY_BYTES, *, extra_cflags=(), extra_libraries=(), report_status=False,
           space_bytes=SPACE_BYTES):
     generator = Image(io=True, memory_bytes=memory_bytes, report_status=report_status,
                       layout=Layout(space_bytes)).build()
@@ -34,7 +34,7 @@ def build(sources, output, optimization="-O2", compiler=None, stack=None, stream
         "-I", str(runtime), "-T", str(runtime / "link.ld"),
         "-Wl,--defsym=CS_STACK_TOP="+str(stack), "-Wl,-Map="+str(artifacts / "program.map"),
         str(runtime / "start.S"), str(runtime / "runtime.c"),
-    ] + list(extra_cflags) + [str(path) for path in sources] + ["-lgcc", "-o", str(elf)]
+    ] + list(extra_cflags) + [str(path) for path in sources] + list(extra_libraries) + ["-lgcc", "-o", str(elf)]
     (artifacts / "compile.json").write_text(json.dumps(command, indent=2)+"\n")
     result = subprocess.run(command, capture_output=True)
     (artifacts / "compile.stdout").write_bytes(result.stdout)

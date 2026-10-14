@@ -93,13 +93,22 @@ def main():
     cases.append((b'copy.ldi.l $r2,0\ncopy.ldi.l $r3,4\n.Lloop:\n'
                   b'copy.inc $r2,1\ncopy.cmp $r2,$r3\ncopy.branch.ltu .Lloop\n'
                   b'copy.mov $r0,$r2\n',4,suffix))
+    for left in values:
+        for right in values:
+            body=f'copy.ldi.l $r0,{left}\ncopy.ldi.l $r1,{right}\ncopy.mul $r0,$r1\n'.encode()
+            cases.append((body,(left*right)&0xffffffff,suffix))
+        body=f'copy.ldi.l $r0,{left}\ncopy.mul $r0,$r0\n'.encode()
+        cases.append((body,(left*left)&0xffffffff,suffix))
+    cases.append((b'copy.cmp $r0,$r1\ncopy.mul $r0,$r1\ncopy.branch.ltu .Ldone\n'
+                  b'copy.inc $r0,100\n.Ldone:\n',12,suffix))
+    cases.append((b'copy.mul $r0,$r1\ncopy.mul $r0,$r1\n',48,suffix))
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()
         assembly=prefix+body+tail
         (folder/"input.s").write_bytes(assembly)
         result=subprocess.run([str(native)],input=assembly,capture_output=True,check=True)
-        assert len(result.stdout)==32768
+        assert len(result.stdout)==65536
         (folder/"image.bin").write_bytes(result.stdout)
         command=[str(result_emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
         (folder/"command.json").write_text(json.dumps(command)+"\n")
@@ -110,7 +119,7 @@ def main():
         if index==args.guest_case: incoming,expected,expected_value=assembly,result.stdout,value
     if not 0<=args.guest_case<len(cases):
         raise ValueError("guest case index outside fixture list")
-    bad_bodies=[b'copy.mul $r0,$r1\n',b'copy.mov $r99,$r0\n',b'copy.ldi.l $r0,4294967296\n',
+    bad_bodies=[b'copy.div $r0,$r1\n',b'copy.mov $r99,$r0\n',b'copy.ldi.l $r0,4294967296\n',
                 b'copy.ldi.l $r0,08\n',b'copy.jmpa elsewhere\n']
     invalid=[prefix+s+suffix for s in bad_bodies]+[b'.data\nvalue:\ncopy.ret\n',
         prefix+b'copy.add $r0,$r1\n',prefix+b'other:\ncopy.ret\n',
@@ -136,7 +145,7 @@ def main():
         result=subprocess.run([str(native)],input=incoming,capture_output=True,check=True)
         expected=result.stdout
         expected_value=args.expected_result
-        assert len(expected)==32768
+        assert len(expected)==65536
     prefix=args.newlib.resolve()/"riscv64-unknown-elf"
     manifest=build(sources,root/"linker.stream",compiler=args.compiler,stream=True,optimization="-O2",
         extra_cflags=[include,profile_flag,"-isystem",str(prefix/"include"),"-DCS_RUNTIME_EXTERNAL_MEMORY"],

@@ -6,7 +6,7 @@
 static int cs_read(void *p, unsigned n) { return (int)fread(p,1,n,stdin); }
 static int cs_write(const void *p, unsigned n) { return (int)fwrite(p,1,n,stdout); }
 #endif
-static unsigned char image[32768];
+static unsigned char image[65536];
 static char assembly[8192];
 #ifndef CS_COPY_RESULT_ADDRESS_BITS
 #define CS_COPY_RESULT_ADDRESS_BITS 24

@@ -9,6 +9,8 @@ enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
        CMP_EQ=33900, CMP_LTU=33901, CMP_LTS=33902, CMP_LEU=33903,
        CMP_LES=33904, CMP_SIGN=33905, EQ_TABLE=33920, LT_TABLE=33928,
        BRANCH_TABLE=60032,
+       MUL_LEFT=34240, MUL_RIGHT=34272, MUL_ACC=34304,
+       MUL_ADDEND=34336, MUL_MARKER=34368, MUL_STOP=34400,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
@@ -148,6 +150,25 @@ static int compare32(struct context *ctx, uint32_t left, uint32_t right)
     ctx->compared=1;
     return 0;
 }
+static const char *conditional_jump(struct context *ctx, int index,
+                                   uint32_t flag, int inverted, size_t line)
+{
+    if (ctx->jump_count==64) return "jump capacity exceeded";
+    struct cs_copy_program *p=&ctx->program;
+    if (p->image.slot>253 && cs_copy_program_next(p)) return "copy image capacity exceeded";
+    uint32_t table=BRANCH_TABLE+64*ctx->jump_count;
+    uint32_t read_field=(p->image.slot+1)*p->image.instruction_bits+
+                        p->image.count_bits+p->image.address_bits;
+    uint32_t jump_field=255*p->image.instruction_bits+p->image.count_bits+p->image.address_bits;
+    if (cs_copy_program_emit(p,1,read_field+5,flag) ||
+        cs_copy_program_emit(p,p->image.address_bits,jump_field,table)) return "copy image capacity exceeded";
+    unsigned i=ctx->jump_count;
+    if (jump(ctx,index,line)) return "copy image capacity exceeded";
+    ctx->jumps[i].table=table;
+    ctx->jumps[i].inverted=inverted;
+    ctx->jumps[i].fallthrough=p->image.layer;
+    return NULL;
+}
 static const char *branch(struct context *ctx, char *s, size_t line)
 {
     static const struct { const char *name; uint32_t flag; int inverted; } conditions[]={
@@ -164,21 +185,32 @@ static const char *branch(struct context *ctx, char *s, size_t line)
     if (kind==sizeof(conditions)/sizeof(conditions[0])) return "invalid branch condition";
     int index=label(ctx,trim(operand));
     if (index<0) return "invalid copy jump label";
-    if (ctx->jump_count==64) return "jump capacity exceeded";
+    return conditional_jump(ctx,index,conditions[kind].flag,conditions[kind].inverted,line);
+}
+static int multiply32(struct context *ctx, uint32_t destination, uint32_t source)
+{
     struct cs_copy_program *p=&ctx->program;
-    if (p->image.slot>253 && cs_copy_program_next(p)) return "copy image capacity exceeded";
-    uint32_t table=BRANCH_TABLE+64*ctx->jump_count;
-    uint32_t read_field=(p->image.slot+1)*p->image.instruction_bits+
-                        p->image.count_bits+p->image.address_bits;
-    uint32_t jump_field=255*p->image.instruction_bits+p->image.count_bits+p->image.address_bits;
-    if (cs_copy_program_emit(p,1,read_field+5,conditions[kind].flag) ||
-        cs_copy_program_emit(p,p->image.address_bits,jump_field,table)) return "copy image capacity exceeded";
-    unsigned i=ctx->jump_count;
-    if (jump(ctx,index,line)) return "copy image capacity exceeded";
-    ctx->jumps[i].table=table;
-    ctx->jumps[i].inverted=conditions[kind].inverted;
-    ctx->jumps[i].fallthrough=p->image.layer;
-    return NULL;
+    uint32_t zero,one;
+    if (ctx->label_count==32 || constant(ctx,0,&zero) || constant(ctx,1,&one)) return -1;
+    if (cs_copy_program_emit(p,32,MUL_LEFT,destination) ||
+        cs_copy_program_emit(p,32,MUL_RIGHT,source) ||
+        cs_copy_program_emit(p,32,MUL_ACC,zero) ||
+        cs_copy_program_emit(p,32,MUL_MARKER,one) || cs_copy_program_next(p)) return -1;
+    unsigned loop=ctx->label_count++;
+    ctx->labels[loop].defined=1;
+    ctx->labels[loop].address=p->image.layer;
+    for (unsigned bit=0;bit<32;++bit)
+        if (lookup(ctx,MUL_ADDEND+bit,AND_TABLE,MUL_LEFT+bit,MUL_RIGHT,0,2)) return -1;
+    if (cs_copy_program_add32(p,MUL_ACC,MUL_ACC,MUL_ADDEND,ADD_TABLE,TEMPORARY,CARRY) ||
+        cs_copy_program_emit(p,1,MUL_STOP,MUL_MARKER+31) ||
+        cs_copy_program_emit(p,31,MUL_LEFT+1,MUL_LEFT) ||
+        cs_copy_program_emit(p,1,MUL_LEFT,zero) ||
+        cs_copy_program_emit(p,31,MUL_RIGHT,MUL_RIGHT+1) ||
+        cs_copy_program_emit(p,1,MUL_RIGHT+31,zero) ||
+        cs_copy_program_emit(p,31,MUL_MARKER+1,MUL_MARKER) ||
+        cs_copy_program_emit(p,1,MUL_MARKER,zero) ||
+        conditional_jump(ctx,(int)loop,MUL_STOP,1,0)) return -1;
+    return cs_copy_program_emit(p,32,destination,MUL_ACC);
 }
 static int shift32(struct context *ctx, int right, int arithmetic,
                    uint32_t destination, uint32_t count)
@@ -231,6 +263,7 @@ static const char *instruction(struct context *ctx, char *s)
         if (reg(argument,&source)) return "invalid source register";
         if (!strcmp(s,"copy.mov")) rc=cs_copy_program_emit(&ctx->program,32,destination,source);
         else if (!strcmp(s,"copy.cmp")) rc=compare32(ctx,destination,source);
+        else if (!strcmp(s,"copy.mul")) rc=multiply32(ctx,destination,source);
         else if (!strcmp(s,"copy.neg") || !strcmp(s,"copy.not")) {
             uint32_t immutable;
             int invert=!strcmp(s,"copy.not");
@@ -268,6 +301,7 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
     if (cs_copy_constant(&ctx.program.image,EQ_TABLE,8,144) ||
         cs_copy_constant(&ctx.program.image,LT_TABLE,8,212) ||
         cs_copy_constant(&ctx.program.image,XOR_TABLE,4,6) ||
+        cs_copy_constant(&ctx.program.image,AND_TABLE,4,8) ||
         cs_copy_constant(&ctx.program.image,OR_TABLE,4,14)) goto fail;
     for (unsigned i=0;i<argc;++i)
         if (cs_copy_constant(&ctx.program.image,REG_BASE+32*(i+2),32,arguments[i])) goto fail;

@@ -20,11 +20,15 @@ def main():
     parser.add_argument("--assembly",type=Path,help="use an existing GCC-produced assembler file for guest lowering")
     parser.add_argument("--native-only",action="store_true",help="check direct images without building the guest assembler")
     parser.add_argument("--guest-case",type=int,default=0,help="fixture index to lower inside Space")
+    parser.add_argument("--result-space-bytes",type=int,choices=[2097152,67108864,268435456],default=2097152)
     parser.add_argument("--expected-result",type=lambda s:int(s,0),default=2,
                         help="independent unsigned 32-bit result for --assembly (arguments 3,4)")
     args=parser.parse_args()
     if not 0<=args.expected_result<=0xffffffff:
         raise ValueError("expected result must be an unsigned 32-bit value")
+    address_bits=(args.result_space_bytes*8).bit_length()-1
+    result_emulator=ROOT/"build/bin"/{2097152:"space",67108864:"space-64m",268435456:"space-256m"}[args.result_space_bytes]
+    profile_flag=f"-DCS_COPY_RESULT_ADDRESS_BITS={address_bits}"
     root=args.artifacts.resolve();root.mkdir(parents=True,exist_ok=False)
     paths=[ROOT/"tests/fixtures/gcc/copy_link.c"]+[ROOT/"runtime/gcc"/name for name in
         ("copy_link.c","copy_link.h","copy_emit.c","copy_emit.h")]
@@ -36,7 +40,7 @@ def main():
     sources=[root/"sources"/source.relative_to(ROOT) for source in paths if source.suffix==".c"]
     include="-I"+str(root/"sources/runtime/gcc")
     native=root/"native"
-    command=["gcc","-O2","-Wall","-Wextra","-Werror",include]+[str(s) for s in sources]+["-o",str(native)]
+    command=["gcc","-O2","-Wall","-Wextra","-Werror",include,profile_flag]+[str(s) for s in sources]+["-o",str(native)]
     (root/"native-command.json").write_text(json.dumps(command)+"\n")
     subprocess.run(command,check=True,capture_output=True)
     # These are assembler fixtures, not a claim of actual GCC output yet.
@@ -72,6 +76,23 @@ def main():
                 body=b'copy.ldi.l '+register+b','+str(value).encode()+b'\n'
                 body+=b'copy.'+operation+b' $r0,'+register+b'\n'
                 cases.append((body,expected_value,suffix))
+    values=(0,1,0x7fffffff,0x80000000,0xffffffff,0xaaaaaaaa)
+    for left in values:
+        for right in values:
+            signed_left=left if left<0x80000000 else left-0x100000000
+            signed_right=right if right<0x80000000 else right-0x100000000
+            conditions={"eq":left==right,"ne":left!=right,
+                "lt":signed_left<signed_right,"ge":signed_left>=signed_right,
+                "le":signed_left<=signed_right,"gt":signed_left>signed_right,
+                "ltu":left<right,"geu":left>=right,"leu":left<=right,"gtu":left>right}
+            for condition,taken in conditions.items():
+                body=f'copy.ldi.l $r2,{left}\ncopy.ldi.l $r3,{right}\ncopy.cmp $r2,$r3\n'.encode()
+                body+=f'copy.ldi.l $r0,11\ncopy.branch.{condition} .Lyes\n'.encode()
+                body+=b'copy.ldi.l $r0,22\ncopy.ret\n.Lyes:\ncopy.ldi.l $r0,33\n'
+                cases.append((body,33 if taken else 22,suffix))
+    cases.append((b'copy.ldi.l $r2,0\ncopy.ldi.l $r3,4\n.Lloop:\n'
+                  b'copy.inc $r2,1\ncopy.cmp $r2,$r3\ncopy.branch.ltu .Lloop\n'
+                  b'copy.mov $r0,$r2\n',4,suffix))
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()
@@ -80,7 +101,7 @@ def main():
         result=subprocess.run([str(native)],input=assembly,capture_output=True,check=True)
         assert len(result.stdout)==32768
         (folder/"image.bin").write_bytes(result.stdout)
-        command=[str(ROOT/"build/bin/space"),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
+        command=[str(result_emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
         (folder/"command.json").write_text(json.dumps(command)+"\n")
         checked=subprocess.run(command,capture_output=True,check=True,timeout=10)
         (folder/"out.bin").write_bytes(checked.stdout)
@@ -96,12 +117,16 @@ def main():
         prefix+b'copy.ret\ncopy.add $r0,$r1\n',prefix+b'copy.ret\x00\n']
     invalid.extend([prefix+b'copy.jmpa .Lmissing\n'+suffix,
                     prefix+b'.Ldup:\n.Ldup:\n'+suffix])
+    invalid.extend([prefix+b'copy.branch.eq .Lyes\n.Lyes:\n'+suffix,
+                    prefix+b'copy.cmp $r0,$r1\ncopy.branch.zz .Lyes\n.Lyes:\n'+suffix,
+                    prefix+b'copy.cmp $r0,$r1\ncopy.branch.eq .Lmissing\n'+suffix])
     for index,assembly in enumerate(invalid):
         (root/f"invalid-{index}.s").write_bytes(assembly)
         result=subprocess.run([str(native)],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout,(index,result.returncode)
     if args.native_only:
         (root/"evidence.json").write_text(json.dumps({"source_sha256":hashes,
+            "result_space_bytes":args.result_space_bytes,
             "native_direct_cases":results,"rejected_cases":len(invalid)},indent=2)+"\n")
         print(f"OK {len(results)} direct images and {len(invalid)} rejected inputs")
         return
@@ -114,7 +139,7 @@ def main():
         assert len(expected)==32768
     prefix=args.newlib.resolve()/"riscv64-unknown-elf"
     manifest=build(sources,root/"linker.stream",compiler=args.compiler,stream=True,optimization="-O2",
-        extra_cflags=[include,"-isystem",str(prefix/"include"),"-DCS_RUNTIME_EXTERNAL_MEMORY"],
+        extra_cflags=[include,profile_flag,"-isystem",str(prefix/"include"),"-DCS_RUNTIME_EXTERNAL_MEMORY"],
         extra_libraries=["-Wl,--start-group",str(prefix/"lib/libc.a"),"-lgcc","-Wl,--end-group"])
     (root/"in.bin").write_bytes((root/"linker.stream").read_bytes()+incoming)
     execution=execute_segments(ROOT/"build/bin/space",root/"linker",root/"in.bin",
@@ -125,13 +150,14 @@ def main():
     def word(at):return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
     assert word(132128)==10 and word(132160)==0
     direct=root/"guest-result";direct.mkdir();(direct/"image.bin").write_bytes(output)
-    command=[str(ROOT/"build/bin/space"),"--core",str(direct/"image.bin"),"--trace",str(direct/"trace.txt")]
+    command=[str(result_emulator),"--core",str(direct/"image.bin"),"--trace",str(direct/"trace.txt")]
     (direct/"command.json").write_text(json.dumps(command)+"\n")
     checked=subprocess.run(command,capture_output=True,check=True,timeout=10)
     (direct/"out.bin").write_bytes(checked.stdout);assert checked.stdout==struct.pack("<I",expected_value)
     (root/"evidence.json").write_text(json.dumps({"scope":"guest leaf assembler; compiler execution must be verified separately",
         "source_sha256":hashes,"native_direct_cases":results,"rejected_cases":len(invalid),
         "guest_case":args.guest_case,"assembly_sha256":hashlib.sha256(incoming).hexdigest(),
+        "result_space_bytes":args.result_space_bytes,
         "guest_link_execution":execution,"guest_exit":word(132160),
         "guest_image_sha256":hashlib.sha256(output).hexdigest(),"direct_output_hex":checked.stdout.hex()},indent=2)+"\n")
     print(f"OK guest copy assembler generated direct image; result {expected_value:#x} without RV32I")

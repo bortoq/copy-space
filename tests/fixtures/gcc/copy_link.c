@@ -8,6 +8,9 @@ static int cs_write(const void *p, unsigned n) { return (int)fwrite(p,1,n,stdout
 #endif
 static unsigned char image[32768];
 static char assembly[8192];
+#ifndef CS_COPY_RESULT_ADDRESS_BITS
+#define CS_COPY_RESULT_ADDRESS_BITS 24
+#endif
 int main(void)
 {
     unsigned size=0;
@@ -20,7 +23,7 @@ int main(void)
     }
     const uint32_t arguments[]={3,4};
     struct cs_copy_link_error error;
-    if (cs_copy_link_leaf(image,sizeof(image),24,assembly,size,"value",arguments,2,&error)) return 2;
+    if (cs_copy_link_leaf(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,assembly,size,"value",arguments,2,&error)) return 2;
     unsigned written=0;
     while (written<sizeof(image)) {
         int n=cs_write(image+written,sizeof(image)-written);

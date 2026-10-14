@@ -2251,13 +2251,24 @@ cc-declarator-contexts here over - cc-state-span
   type cc-pointee mask cc-qualify
   type cc-array-count cc-array-to ;
 ' cc-qualify-array-body is cc-qualify-array
-: cc-find-member ( owner -- index ) L{ owner }
-  owner cc-unqualified 1 (local!)
+: cc-anonymous-member? ( index -- flag ) 32 * cc-member-names + c@ 0= ;
+: cc-lookup-member ( address length owner -- index ) L{ address length owner }
+  owner cc-unqualified 3 (local!)
   cc-member-count @ 0 ?do
     cc-member-owners i + c@ owner = if
-      cc-text cc-member-names i 32 * + count compare 0= if i unloop exit then
+      i cc-anonymous-member? if
+        address length cc-member-types i + c@ recurse 0< 0= if i unloop exit then
+      else address length cc-member-names i 32 * + count compare 0= if i unloop exit then then
     then
   loop -1 ;
+: cc-find-member ( owner -- index ) cc-text rot cc-lookup-member ;
+: cc-check-anonymous-names ( owner type -- ) L{ owner type }
+  type cc-unqualified 2 (local!)
+  cc-member-count @ 0 ?do cc-member-owners i + c@ type = if
+    i cc-anonymous-member? if owner cc-member-types i + c@ recurse else
+      cc-member-names i 32 * + count owner cc-lookup-member 0< 0= if
+        s" duplicate anonymous member" cc-fail then then
+  then loop ;
 : cc-new-record ( kind -- type ) cc-type-count @ L{ kind type }
   type 128 >= cc-limit 1 cc-type-count +!
   kind cc-type-kinds type + c! 0 cc-type-sizes type cells + !
@@ -2311,16 +2322,25 @@ defer cc-merge-layout-attributes
   attributes 2147483647 and max ;
 : cc-owner-has-member? ( owner -- flag ) L{ owner }
   cc-member-count @ 0 ?do cc-member-owners i + c@ owner = if -1 unloop exit then loop 0 ;
+: cc-record-member-start? ( -- flag )
+  cc-token-start @ >r 0 cc-read-qualifiers drop
+  s" struct" cc-is s" union" cc-is or r> cc-pos ! cc-next ;
+: cc-tagged-record? ( type -- flag ) cc-unqualified L{ type }
+  cc-tag-count @ 0 ?do cc-tag-types i cells + @ type = if -1 unloop exit then loop 0 ;
 : cc-read-members ( owner -- ) 0 0 0 0 0 0 0 L{ owner base type name after offset slot attributes }
   begin cc-token @ 125 <> while
     cc-token @ 0= if s" unfinished aggregate" cc-fail then
     0 cc-read-member-attributes >r
+    cc-record-member-start? 4 (local!)
     cc-nest cc-read-type cc-unnest cc-base-type @ 2 (local!)
     cc-declared-type @ 3 (local!)
     r> cc-read-member-attributes >r
+    cc-token @ 59 = type cc-record? and type cc-tagged-record? and if
+      rdrop cc-next else
     begin
       cc-type-flexible owner + c@ if s" flexible array must be last member" cc-fail then
-      type cc-declarator 4 (local!) 3 (local!)
+      name cc-token @ 59 = and type cc-record? and if -1 4 (local!) else
+        type cc-declarator 4 (local!) 3 (local!) then
       r@ cc-read-member-attributes 8 (local!) cc-token-start @ 5 (local!)
       type cc-kind 7 = if s" function member unsupported" cc-fail then
       type cc-incomplete-array? if
@@ -2331,8 +2351,10 @@ defer cc-merge-layout-attributes
       type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
         s" incomplete member type" cc-fail then then
       cc-member-count @ dup 256 >= cc-limit 7 (local!)
-      name cc-pos ! cc-next owner cc-find-member 0< 0= if s" duplicate member" cc-fail then
-      cc-member-names slot 32 * + cc-name!
+      name 0< if owner type cc-check-anonymous-names
+        0 cc-member-names slot 32 * + c! else
+        name cc-pos ! cc-next owner cc-find-member 0< 0= if s" duplicate member" cc-fail then
+        cc-member-names slot 32 * + cc-name! then
       after cc-pos ! cc-next
       owner cc-kind 5 = if 0 else owner cc-size
         type cc-alignment dup 1- rot + swap negate and then 6 (local!)
@@ -2342,8 +2364,8 @@ defer cc-merge-layout-attributes
       offset cc-member-offsets slot cells + ! 1 cc-member-count +!
       offset type cc-size + owner cc-size max cc-type-sizes owner cells + !
       type cc-alignment owner cc-alignment max cc-type-aligns owner cells + !
-      cc-token @ 44 = if cc-next base cc-read-stars 3 (local!) 0 else -1 then
-    until rdrop 59 cc-expect
+      cc-token @ 44 = if cc-next base cc-read-stars 3 (local!) 0 4 (local!) 0 else -1 then
+    until rdrop 59 cc-expect then
   repeat cc-next
   owner cc-size owner cc-alignment dup 1- rot + swap negate and
   cc-type-sizes owner cells + ! 1 cc-type-complete owner + c! ;
@@ -2428,7 +2450,7 @@ defer cc-merge-layout-attributes
   pointer cc-member-types index + c@ quals cc-qualify cc-pointer-to cc-type!
   unaligned pointer cc-unaligned!
   pointer cc-pointer-read ;
-: cc-member-body ( object -- value ) 0 0 0 L{ object type index pointer }
+: cc-member-body ( object -- value ) 0 0 0 0 L{ object type index pointer offset }
   cc-token @ 266 = if
     object cc-value 1 (local!)
     object cc-pointer? 0= if s" arrow requires pointer" cc-fail then
@@ -2436,20 +2458,28 @@ defer cc-merge-layout-attributes
   else object cc-type 2 (local!) object cc-object-address 4 (local!) then
   type cc-record? 0= if s" member requires aggregate" cc-fail then
   type cc-complete 1 <> if s" incomplete aggregate access" cc-fail then
-  cc-next type cc-find-member dup 0< if s" unknown member" cc-fail then 3 (local!) cc-next
+  cc-next begin
+    type cc-find-member dup 0< if s" unknown member" cc-fail then 3 (local!)
+    offset cc-member-offsets index cells + @ + 5 (local!)
+    index cc-anonymous-member? while
+      pointer index cc-field-view dup cc-type 2 (local!) cc-object-address 4 (local!)
+  repeat cc-next
   pointer index cc-field-view
   object cc-type cc-record? object cc-lvalue 0= and if
     dup cc-type cc-kind 3 = if
       dup cc-type cc-incomplete-array? if
-        object cc-aggregate-width index cells cc-member-offsets + @ 8 * - 0 max
+        object cc-aggregate-width offset 8 * - 0 max
         over cc-data-base - 8 / cells cc-aggregate-extents + ! then
       cc-aggregate-value else cc-value then then ;
 ' cc-member-body is cc-member
 : cc-offset-member ( type offset -- type offset ) 0 L{ type offset member }
   type cc-record? 0= if s" offsetof requires aggregate member" cc-fail then
   type cc-complete 1 <> if s" offsetof incomplete aggregate" cc-fail then
-  type cc-find-member dup 0< if s" unknown offsetof member" cc-fail then 3 (local!)
-  cc-next cc-member-types member + c@ offset cc-member-offsets member cells + @ + ;
+  begin
+    type cc-find-member dup 0< if s" unknown offsetof member" cc-fail then 3 (local!)
+    offset cc-member-offsets member cells + @ + 2 (local!)
+    cc-member-types member + c@ 1 (local!) member cc-anonymous-member?
+  while repeat cc-next type offset ;
 : cc-offsetof-body ( -- value ) 0 0 L{ type offset }
   40 cc-expect cc-read-abstract-type cc-declared-type @ 1 (local!) 44 cc-expect
   type offset cc-offset-member 2 (local!) 1 (local!)
@@ -2761,13 +2791,20 @@ cc-union-origins here over - cc-state-span
     swap cc-union-types i cells + @ cc-size 8 * + origin bytes 8 * + <= and if
       -1 cc-union-members i cells + ! then
   loop ;
-: cc-clear-object ( target bytes -- ) L{ target bytes }
+: cc-clear-object ( target bytes -- ) 0 0 L{ target bytes pointer slot }
   cc-infer-depth @ if exit then
   target bytes cc-union-wipe
   cc-static-initializing @ if target cc-static-location cc-image-base - 8 / cc-image +
     bytes 0 fill exit then
   bytes 8 * dup cc-frame-bits > cc-limit
-  dup if target cc-object-zeros cc-op else drop then ;
+  dup if target cc-lvalue 2 = if
+      drop target cc-lvalue-pointer @ 3 (local!) pointer cc-pointer-check
+      bytes 1 > if pointer bytes 1- cc-const cc-add-entry @ cc-invoke
+        cc-zero @ cc-pointer-check-entry @ cc-invoke drop then
+      2 pointer cc-frame-extra + cc-room
+      cc-slot @ 1+ pointer cc-frame-extra + 4 (local!)
+      21 slot 71 * 26 + pointer cc-op bytes 8 * 0 cc-object-zeros cc-op
+    else target cc-object-zeros cc-op then else drop then ;
 : cc-union-key ( origin type -- slot ) L{ origin type }
   origin 0= if s" unknown initializer destination" cc-fail then
   cc-union-count @ 0 ?do cc-union-origins i cells + @ origin =
@@ -3046,15 +3083,16 @@ cc-initializer-start here over - cc-state-span
       number 0= if i unloop exit then number 1- 2 (local!)
     then
   loop -1 ;
-: cc-initialize-record ( target -- ) 0 0 0 0 0 0 L{ target type number member braces view designated }
+: cc-initialize-record ( target -- ) 0 0 0 0 0 0 0 L{ target type number member braces view designated start }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   cc-initializer-start @ 3 (local!) 0 cc-initializer-start !
   braces if cc-next then
   begin cc-token @ 125 <> cc-pending-initializer @ 0<> or while
     cc-token @ 46 = 7 (local!)
-    designated if cc-next type cc-find-member 4 (local!)
+    designated if cc-token-start @ 8 (local!) cc-next type cc-find-member 4 (local!)
       member 0< if s" unknown initializer member" cc-fail then
-      type member cc-member-ordinal 3 (local!) cc-next
+      type member cc-member-ordinal 3 (local!)
+      member cc-anonymous-member? if start cc-pos ! then cc-next
     else type number cc-member-number 4 (local!)
       member 0< type cc-kind 5 = number 0<> and or if
         braces if s" too many aggregate initializers" cc-fail else exit then then then
@@ -3159,10 +3197,11 @@ cc-range-paths here over - cc-state-span
   begin cc-designator? while
     0 context cc-fget 8 (local!) level 32 >= cc-limit
     context level cc-range-node 6 (local!) parent 3 node cc-fset
-    cc-token @ 46 = if cc-next parent cc-type cc-find-member 7 (local!)
+    cc-token @ 46 = if cc-token-start @ >r cc-next parent cc-type cc-find-member 7 (local!)
       member 0< if s" unknown initializer member" cc-fail then
       1 0 node cc-fset member 1 node cc-fset
-      parent cc-type member cc-member-ordinal dup 2 node cc-fset 1+ 4 node cc-fset cc-next else
+      parent cc-type member cc-member-ordinal dup 2 node cc-fset 1+ 4 node cc-fset
+      member cc-anonymous-member? if r> cc-pos ! else r> drop then cc-next else
       cc-next cc-read-small-constant dup 1 node cc-fset 2 node cc-fset
       cc-token @ 267 = if cc-next cc-read-small-constant 2 node cc-fset then 93 cc-expect
       2 node cc-fget 1+ 4 node cc-fset then

@@ -26,6 +26,8 @@ from copy_c_compound_literal_cases import valid as compound_literal_valid, inval
 from copy_c_attribute_query_cases import valid as attribute_query_valid, invalid as attribute_query_invalid
 from copy_c_expect_cases import valid as expect_valid, invalid as expect_invalid
 from copy_c_expect_cases import volatile_reads as expect_volatile_reads
+from copy_c_anonymous_cases import valid as anonymous_valid, invalid as anonymous_invalid
+from copy_c_anonymous_cases import volatile_reads as anonymous_volatile_reads
 from copy_c_layout_attribute_cases import valid as layout_valid, invalid as layout_invalid
 from copy_c_member_attribute_cases import valid as member_layout_valid, invalid as member_layout_invalid
 from copy_c_flexible_cases import valid as flexible_valid, invalid as flexible_invalid
@@ -72,6 +74,7 @@ from copy_c_auto_cases import valid as auto_valid, invalid as auto_invalid
 volatile_reads = dict(volatile_reads, **long_long_volatile_reads, **wide_control_volatile_reads)
 volatile_reads.update(omitted_conditional_reads)
 volatile_reads.update(expect_volatile_reads)
+volatile_reads.update(anonymous_volatile_reads)
 arithmetic_faults = arithmetic_faults+long_long_faults
 
 ROOT = Path("tmp/space-tests/copy-c")
@@ -301,6 +304,7 @@ valid += omitted_conditional_valid
 valid += compound_literal_valid
 valid += attribute_query_valid
 valid += expect_valid
+valid += anonymous_valid
 valid += layout_valid
 valid += member_layout_valid
 valid += flexible_valid
@@ -426,6 +430,7 @@ invalid += omitted_conditional_invalid
 invalid += compound_literal_invalid
 invalid += attribute_query_invalid
 invalid += expect_invalid
+invalid += anonymous_invalid
 invalid += layout_invalid
 invalid += member_layout_invalid
 invalid += flexible_invalid

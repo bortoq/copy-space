@@ -400,16 +400,33 @@ static const char *instruction(struct context *ctx, char *s)
     if (reg(trim(operands),&destination)) return "invalid destination register";
     char *argument=trim(comma);
     int rc;
-    if (!strcmp(s,"copy.ldi.l") || !strcmp(s,"copy.inc") || !strcmp(s,"copy.dec")) {
+    int load_constant=!strcmp(s,"copy.ldi.l") || !strcmp(s,"copy.ldi.b") || !strcmp(s,"copy.ldi.s");
+    if (load_constant || !strcmp(s,"copy.inc") || !strcmp(s,"copy.dec")) {
         uint32_t value;
         if (integer(argument,&value)) return "invalid 32-bit integer";
+        if (!strcmp(s,"copy.ldi.b")) value&=255;
+        else if (!strcmp(s,"copy.ldi.s")) value&=65535;
         if (constant(ctx,value,&source)) return "constant capacity exceeded";
-        if (!strcmp(s,"copy.ldi.l")) rc=cs_copy_program_emit(&ctx->program,32,destination,source);
+        if (load_constant) rc=cs_copy_program_emit(&ctx->program,32,destination,source);
         else if (!strcmp(s,"copy.inc")) rc=cs_copy_program_add32(&ctx->program,destination,destination,source,ADD_TABLE,TEMPORARY,CARRY);
         else rc=cs_copy_program_sub32(&ctx->program,destination,destination,source,SUB_TABLE,TEMPORARY,CARRY);
     } else {
         if (reg(argument,&source)) return "invalid source register";
         if (!strcmp(s,"copy.mov")) rc=cs_copy_program_emit(&ctx->program,32,destination,source);
+        else if (!strcmp(s,"copy.zex.b") || !strcmp(s,"copy.zex.s") ||
+                 !strcmp(s,"copy.sex.b") || !strcmp(s,"copy.sex.s")) {
+            unsigned width=s[strlen(s)-1]=='b' ? 8 : 16;
+            int signed_extension=s[5]=='s';
+            rc=cs_copy_program_emit(&ctx->program,width,destination,source);
+            if (!rc && signed_extension) {
+                for (unsigned bit=width;bit<32 && !rc;++bit)
+                    rc=cs_copy_program_emit(&ctx->program,1,destination+bit,destination+width-1);
+            } else if (!rc) {
+                uint32_t zero;
+                rc=constant(ctx,0,&zero);
+                if (!rc) rc=cs_copy_program_emit(&ctx->program,32-width,destination+width,zero);
+            }
+        }
         else if (!strcmp(s,"copy.cmp")) rc=compare32(ctx,destination,source);
         else if (!strcmp(s,"copy.mul")) rc=multiply32(ctx,destination,source);
         else if (!strcmp(s,"copy.udiv") || !strcmp(s,"copy.umod") ||

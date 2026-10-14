@@ -144,6 +144,22 @@ def main():
                 body=f'copy.ldi.l $r2,{address}\n'.encode()
                 operands=b'$r0,($r2)' if operation==b'ld' else b'($r2),$r0'
                 cases.append((body+b'copy.'+operation+b'.'+width+b' '+operands+b'\n',None,suffix))
+    narrow_values=(0,0x7f,0x80,0xff,0x7fff,0x8000,0xffff,0x89abcdef,0xffffffff)
+    for width,bits in (('b',8),('s',16)):
+        mask=(1<<bits)-1
+        for value in narrow_values:
+            truncated=value&mask
+            cases.append((f'copy.ldi.{width} $r0,{value}\n'.encode(),truncated,suffix))
+            for kind in ('zex','sex'):
+                extended=truncated
+                if kind=='sex' and truncated&(1<<(bits-1)): extended=truncated-(1<<bits)
+                for register in ('$r0','$r2'):
+                    body=f'copy.ldi.l {register},{value}\ncopy.{kind}.{width} $r0,{register}\n'.encode()
+                    cases.append((body,extended&0xffffffff,suffix))
+        cases.append((f'copy.ldi.{width} $r0,-1\ncopy.sex.{width} $r0,$r0\n'.encode(),0xffffffff,suffix))
+        body=f'copy.ldi.l $r2,16\ncopy.ldi.{width} $r0,{1<<(bits-1)}\n'.encode()
+        body+=f'copy.st.{width} ($r2),$r0\ncopy.ld.{width} $r0,($r2)\ncopy.sex.{width} $r0,$r0\n'.encode()
+        cases.append((body,(1<<(bits-1))- (1<<bits) &0xffffffff,suffix))
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()

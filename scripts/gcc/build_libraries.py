@@ -1,5 +1,6 @@
 """Cross-build actual GCC host libraries for the RV32I guest environment."""
 import argparse
+import hashlib
 import json
 import os
 import shlex
@@ -19,7 +20,8 @@ def run(folder, label, command, environment):
             attempt+=1
         label=label+"-"+str(attempt)
     record = {"args": command, "cwd": str(folder), "environment": {k: environment[k]
-              for k in ("CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS", "LIBS", "PATH")}}
+              for k in ("CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS", "LIBS", "PATH",
+                        "HOST_LIBS", "CC_FOR_BUILD", "CXX_FOR_BUILD") if k in environment}}
     (folder/(label+".json")).write_text(json.dumps(record, indent=2)+"\n")
     with (folder/(label+".stdout")).open("wb") as out, (folder/(label+".stderr")).open("wb") as err:
         p = subprocess.run(command, cwd=folder, env=environment, stdout=out, stderr=err)
@@ -99,7 +101,12 @@ def main():
         run(folder, "make", ["make", "-j1"], environment)
         run(folder, "install", ["make", "-j1", "install"], environment)
         print("Prepared", name, "for RV32I/ILP32", flush=True)
-    (work/"libraries.json").write_text(json.dumps({"architecture": "RV32I/ILP32",
+    archives={}
+    for path in [install/"lib"/name for name in
+                 ("libgmp.a","libmpfr.a","libmpc.a","libstdc++.a","libsupc++.a")]+[support/"libspace.a"]:
+        with path.open("rb") as stream:
+            archives[str(path.relative_to(work))]=hashlib.file_digest(stream,"sha256").hexdigest()
+    (work/"libraries.json").write_text(json.dumps({"architecture": "RV32I/ILP32", "archives_sha256":archives,
         "prefix": str(install), "compiler": tools.compiler,
         "scope": "host image preparation only; GCC guest execution still required"}, indent=2)+"\n")
 

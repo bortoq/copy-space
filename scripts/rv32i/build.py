@@ -14,7 +14,7 @@ from rv32i_toolchain import Toolchain
 
 def build(sources, output, optimization="-O2", compiler=None, stack=None, stream=False,
           memory_bytes=MEMORY_BYTES, *, extra_cflags=(), extra_libraries=(), report_status=False,
-          space_bytes=SPACE_BYTES):
+          space_bytes=SPACE_BYTES, startup=None, linker_script=None):
     generator = Image(io=True, memory_bytes=memory_bytes, report_status=report_status,
                       layout=Layout(space_bytes)).build()
     if stack is None:
@@ -29,11 +29,13 @@ def build(sources, output, optimization="-O2", compiler=None, stack=None, stream
     artifacts = output.with_name(output.name+".build")
     artifacts.mkdir(parents=True, exist_ok=True)
     runtime = ROOT / "runtime/rv32i"
+    startup = Path(startup).resolve() if startup else runtime/"start.S"
+    linker_script = Path(linker_script).resolve() if linker_script else runtime/"link.ld"
     elf, binary = artifacts / "program.elf", artifacts / "program.bin"
     command = tools.command(optimization) + [
-        "-I", str(runtime), "-T", str(runtime / "link.ld"),
+        "-I", str(runtime), "-T", str(linker_script),
         "-Wl,--defsym=CS_STACK_TOP="+str(stack), "-Wl,-Map="+str(artifacts / "program.map"),
-        str(runtime / "start.S"), str(runtime / "runtime.c"),
+        str(startup), str(runtime / "runtime.c"),
     ] + list(extra_cflags) + [str(path) for path in sources] + list(extra_libraries) + ["-lgcc", "-o", str(elf)]
     (artifacts / "compile.json").write_text(json.dumps(command, indent=2)+"\n")
     result = subprocess.run(command, capture_output=True)

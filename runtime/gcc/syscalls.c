@@ -120,6 +120,9 @@ int _open(const char *path, int flags, int mode)
 #ifdef O_CLOEXEC
     allowed|=O_CLOEXEC;
 #endif
+#ifdef O_NOCTTY
+    allowed|=O_NOCTTY;
+#endif
 #ifdef O_BINARY
     allowed|=O_BINARY;
 #endif

@@ -1,10 +1,14 @@
 #include "files.h"
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/time.h>
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
 int main(void)
 {
 #ifdef __riscv
@@ -17,6 +21,9 @@ int main(void)
     assert(access("missing",R_OK)==-1 && errno==ENOENT);
     assert(access("x",8)==-1 && errno==EINVAL);
     assert(access("/",W_OK|X_OK|R_OK)==0);
+    int input=open("x",O_RDONLY|O_NOCTTY|O_BINARY);
+    assert(input>=3 && close(input)==0);
+    assert(open("x",O_RDONLY|0x40000000)==-1 && errno==EINVAL);
     int fd=cs_gcc_fs_open("out",CS_FS_CREATE|CS_FS_WRITE); assert(fd>=3);
     assert(cs_gcc_fs_close(fd)==0 && access("out",W_OK|R_OK)==0);
     assert(sysconf(_SC_PAGESIZE)==4096);

@@ -1,6 +1,10 @@
 /* Guest newlib operations. No operation here is executed by the host. */
 #include "copy_space.h"
 #include "files.h"
+#ifdef CS_GCC_FRAMED_OUTPUT
+#include "response.h"
+extern int cs_gcc_finish(int status);
+#endif
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
@@ -68,9 +72,13 @@ _READ_WRITE_RETURN_TYPE _write(int fd, const void *buffer, size_t count)
     if (fd>=3) return cs_gcc_fs_write(fd,buffer,count);
     if ((fd != 1 && fd != 2) || !valid_stream(fd)) { errno = EBADF; return -1; }
     if (count > INT_MAX) { errno = EINVAL; return -1; }
+#ifdef CS_GCC_FRAMED_OUTPUT
+    return cs_gcc_capture_write(fd,buffer,count);
+#else
     int result = cs_write(buffer, (unsigned)count);
     if (result < 0) errno = EIO;
     return result;
+#endif
 }
 
 int _close(int fd)
@@ -165,7 +173,13 @@ int _kill(pid_t pid, int signal)
     (void)pid; (void)signal; errno = ENOSYS; return -1;
 }
 
-void _exit(int code) { cs_exit(code); }
+void _exit(int code)
+{
+#ifdef CS_GCC_FRAMED_OUTPUT
+    code=cs_gcc_finish(code);
+#endif
+    cs_exit(code);
+}
 
 int access(const char *path, int mode)
 {

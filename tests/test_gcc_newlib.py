@@ -23,14 +23,15 @@ def main():
     parser.add_argument("--newlib", type=Path, required=True, help="newlib install prefix")
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--compiler")
-    parser.add_argument("--fixture", choices=["stdlib", "files", "job", "initializers", "main", "directories", "platform"], default="stdlib")
+    parser.add_argument("--fixture", choices=["stdlib", "files", "job", "initializers", "main", "directories", "platform", "response"], default="stdlib")
     args = parser.parse_args()
     root = args.artifacts.resolve()
     root.mkdir(parents=True, exist_ok=False)
     source = ROOT/("tests/fixtures/gcc/"+args.fixture+".c")
     (root/"source.c").write_bytes(source.read_bytes())
     native_command = ["gcc", "-O2", "-Wall", "-Wextra", "-Werror", "-I"+str(ROOT/"runtime/gcc"), str(source)]
-    if args.fixture in ("files","job","main","directories"): native_command.append(str(ROOT/"runtime/gcc/files.c"))
+    if args.fixture in ("files","job","main","directories","response"): native_command.append(str(ROOT/"runtime/gcc/files.c"))
+    if args.fixture=="response": native_command.append(str(ROOT/"runtime/gcc/response.c"))
     if args.fixture=="directories": native_command.append(str(ROOT/"runtime/gcc/directories.c"))
     if args.fixture in ("job","main"): native_command.append(str(ROOT/"runtime/gcc/job.c"))
     if args.fixture=="main":
@@ -52,7 +53,7 @@ def main():
             "stdlib":b"gcc-libc:7:15:4294967303\n",
             "initializers":b"gcc-init:7\ngcc-exit:7\ngcc-fini:7\n",
             "main":b"gcc-main:7\n", "directories":b"gcc-directories:7\n",
-            "platform":b"gcc-platform:7\n"}[args.fixture]
+            "platform":b"gcc-platform:7\n", "response":b"gcc-response:7\n"}[args.fixture]
     assert expected.returncode == 0 and expected.stdout == golden, expected
     prefix = args.newlib.resolve()/"riscv64-unknown-elf"
     libc, libm = prefix/"lib/libc.a", prefix/"lib/libm.a"
@@ -61,6 +62,7 @@ def main():
              "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections"]
     libraries = ["-Wl,--start-group", str(libc), str(libm), "-lgcc", "-Wl,--end-group"]
     sources=[source, ROOT/"runtime/gcc/syscalls.c", ROOT/"runtime/gcc/files.c"]
+    if args.fixture=="response": sources.append(ROOT/"runtime/gcc/response.c")
     if args.fixture=="directories": sources.append(ROOT/"runtime/gcc/directories.c")
     if args.fixture in ("job","main"): sources.append(ROOT/"runtime/gcc/job.c")
     if args.fixture=="main":
@@ -79,6 +81,7 @@ def main():
     if args.fixture in ("job","main"): paths.extend([ROOT/"runtime/gcc/job.c", ROOT/"runtime/gcc/job.h"])
     if args.fixture=="main": paths.append(ROOT/"runtime/gcc/main.c")
     if args.fixture=="directories": paths.extend([ROOT/"runtime/gcc/directories.c", ROOT/"runtime/gcc/include/dirent.h"])
+    if args.fixture=="response": paths.extend([ROOT/"runtime/gcc/response.c", ROOT/"runtime/gcc/response.h"])
     for path in paths:
         destination = root/"sources"/path.relative_to(ROOT)
         destination.parent.mkdir(parents=True, exist_ok=True)

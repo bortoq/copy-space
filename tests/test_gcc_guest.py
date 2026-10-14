@@ -48,6 +48,9 @@ def main():
     if args.mode=="compile":
         argv=[b"cc1",b"-quiet",b"-O2",b"-nostdinc",b"-Iinclude",b"-march=rv32i",b"-mabi=ilp32",
               b"-mno-relax",b"-o",b"-",b"main.c"]
+        if manifest.get("framed_output"):
+            argv.insert(1,b"--space-result=result.s")
+            argv[argv.index(b"-o")+1]=b"result.s"
     job=b"GCCJOB1\0"+struct.pack("<II",len(argv),len(packet))
     for arg in argv: job+=struct.pack("<I",len(arg))+arg
     job+=packet
@@ -73,6 +76,16 @@ def main():
     (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     assert status==10 and code==0,(status,code,output)
     assert raw[:manifest["layer_bits"]//8]==bytes(manifest["layer_bits"]//8)
+    if manifest.get("framed_output"):
+        assert len(output)>=24 and output[:8]==b"GCCOUT1\0",output
+        result,outsize,errsize,filesize=struct.unpack_from("<IIII",output,8)
+        assert result==code and len(output)==24+outsize+errsize+filesize
+        stdout=output[24:24+outsize]
+        stderr=output[24+outsize:24+outsize+errsize]
+        file=output[24+outsize+errsize:]
+        assert not stderr,stderr
+        output=file if args.mode=="compile" else stdout
+        (root/"result.bin").write_bytes(output)
     if args.mode=="preprocess":
         assert output==expected.stdout,output
         print("OK actual cc1 in Space: full preprocessed output matches GCC; guest exit 0",flush=True)

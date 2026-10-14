@@ -65,6 +65,13 @@ def main():
                 cases.append((body+b'copy.'+operation+b' $r0,$r1\n',result,suffix))
         cases.append((b'copy.ldi.l $r0,31\ncopy.'+operation+b' $r0,$r0\n',
                       0x80000000 if operation==b'ashl' else 0,suffix))
+    for operation in (b'neg',b'not'):
+        for value in (0,1,0x80000000,0xffffffff):
+            expected_value=(-value if operation==b'neg' else ~value)&0xffffffff
+            for register in (b'$r0',b'$r2'):
+                body=b'copy.ldi.l '+register+b','+str(value).encode()+b'\n'
+                body+=b'copy.'+operation+b' $r0,'+register+b'\n'
+                cases.append((body,expected_value,suffix))
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()
@@ -122,7 +129,7 @@ def main():
     (direct/"command.json").write_text(json.dumps(command)+"\n")
     checked=subprocess.run(command,capture_output=True,check=True,timeout=10)
     (direct/"out.bin").write_bytes(checked.stdout);assert checked.stdout==struct.pack("<I",expected_value)
-    (root/"evidence.json").write_text(json.dumps({"scope":"guest leaf assembler prototype; actual GCC integration still required",
+    (root/"evidence.json").write_text(json.dumps({"scope":"guest leaf assembler; compiler execution must be verified separately",
         "source_sha256":hashes,"native_direct_cases":results,"rejected_cases":len(invalid),
         "guest_case":args.guest_case,"assembly_sha256":hashlib.sha256(incoming).hexdigest(),
         "guest_link_execution":execution,"guest_exit":word(132160),

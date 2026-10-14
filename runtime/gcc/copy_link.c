@@ -167,6 +167,13 @@ static const char *instruction(struct context *ctx, char *s)
     } else {
         if (reg(argument,&source)) return "invalid source register";
         if (!strcmp(s,"copy.mov")) rc=cs_copy_program_emit(&ctx->program,32,destination,source);
+        else if (!strcmp(s,"copy.neg") || !strcmp(s,"copy.not")) {
+            uint32_t immutable;
+            int invert=!strcmp(s,"copy.not");
+            if (constant(ctx,invert ? UINT32_MAX : 0,&immutable)) return "constant capacity exceeded";
+            if (invert) rc=cs_copy_program_bits32(&ctx->program,CS_COPY_XOR,destination,source,immutable,XOR_TABLE);
+            else rc=cs_copy_program_sub32(&ctx->program,destination,immutable,source,SUB_TABLE,TEMPORARY,CARRY);
+        }
         else if (!strcmp(s,"copy.add")) rc=cs_copy_program_add32(&ctx->program,destination,destination,source,ADD_TABLE,TEMPORARY,CARRY);
         else if (!strcmp(s,"copy.sub")) rc=cs_copy_program_sub32(&ctx->program,destination,destination,source,SUB_TABLE,TEMPORARY,CARRY);
         else if (!strcmp(s,"copy.and")) rc=cs_copy_program_bits32(&ctx->program,CS_COPY_AND,destination,destination,source,AND_TABLE);

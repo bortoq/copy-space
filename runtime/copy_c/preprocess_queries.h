@@ -1,9 +1,10 @@
-/* Header availability queries share the guest include lookup, but never push
- * a reader or preprocess the referenced file. */
+/* Capability queries execute in the guest. Header queries share include lookup
+ * without pushing a reader; attributes describe implemented frontend support. */
 static int cc_pp_query_symbol(cc_pp_token token)
 {
     if (token.kind!=CC_PP_IDENT) return 0;
-    return cc_pp_is(token,"__has_include") ? 1 : cc_pp_is(token,"__has_include_next") ? 2 : 0;
+    return cc_pp_is(token,"__has_include") ? 1 : cc_pp_is(token,"__has_include_next") ? 2
+         : cc_pp_is(token,"__has_attribute") ? 3 : 0;
 }
 static int cc_pp_query_kind(cc_pp_token token)
 {
@@ -53,7 +54,8 @@ static cc_pp_token cc_pp_condition_token(cc_pp_reader *reader, unsigned *state)
     }
     cc_pp_token token=cc_pp_next(reader);
     if (*state==1) *state=cc_pp_is(token,"(") ? 2 : 0;
-    if (cc_pp_query_lex_kind(token)) *state=1;
+    int query=cc_pp_query_lex_kind(token);
+    if (query && query<=2) *state=1;
     return token;
 }
 static int cc_pp_query_expand(unsigned *cursor, int kind, unsigned depth)
@@ -75,10 +77,31 @@ static int cc_pp_query_expand(unsigned *cursor, int kind, unsigned depth)
     if (success && cc_pp_nodes[head].token.kind!=CC_PP_HEADER
         && !cc_pp_is(cc_pp_nodes[head].token,"<")) success=cc_pp_rescan_depth(&head,depth+1);
     unsigned char name[4096]; unsigned size=0; int quote=0, root=-1, found=-1;
-    if (success) success=cc_pp_header_tokens(head,name,&size,&quote);
-    if (success && kind==2 && (cc_pp_current_root>=0 ? (unsigned)cc_pp_current_root+1 : 0)>=cc_file_root_count)
-        success=0;
-    if (success) found=cc_pp_include_find((cc_file_name){name,size},quote,kind==2,&root);
+    if (success && kind==3) {
+        cc_pp_token attribute=cc_pp_nodes[head].token;
+        unsigned next=cc_pp_nodes[head].next;
+        if (attribute.kind!=CC_PP_IDENT) success=0;
+        if (success && next) {
+            int scope=cc_pp_is(attribute,"gnu") || cc_pp_is(attribute,"__gnu__");
+            if (cc_pp_is(cc_pp_nodes[next].token,"::")) next=cc_pp_nodes[next].next;
+            else if (cc_pp_is(cc_pp_nodes[next].token,":")) {
+                next=cc_pp_nodes[next].next;
+                if (!next || !cc_pp_is(cc_pp_nodes[next].token,":")) success=0;
+                else next=cc_pp_nodes[next].next;
+            } else success=0;
+            if (success && next && !cc_pp_nodes[next].next && cc_pp_nodes[next].token.kind==CC_PP_IDENT) {
+                attribute=cc_pp_nodes[next].token;
+                if (!scope) attribute=(cc_pp_token){(const unsigned char *)"",0,CC_PP_IDENT,0,0};
+            } else success=0;
+        }
+        if (success && (cc_pp_is(attribute,"packed") || cc_pp_is(attribute,"__packed__")
+                     || cc_pp_is(attribute,"aligned") || cc_pp_is(attribute,"__aligned__"))) found=0;
+    } else if (success) {
+        success=cc_pp_header_tokens(head,name,&size,&quote);
+        if (success && kind==2 && (cc_pp_current_root>=0 ? (unsigned)cc_pp_current_root+1 : 0)>=cc_file_root_count)
+            success=0;
+        if (success) found=cc_pp_include_find((cc_file_name){name,size},quote,kind==2,&root);
+    }
     cc_pp_list_release(head);
     if (!success) return 0;
     unsigned after=cc_pp_nodes[closing].next;

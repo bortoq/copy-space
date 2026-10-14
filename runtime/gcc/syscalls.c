@@ -8,10 +8,14 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #ifndef CS_GCC_HEAP_BYTES
 #define CS_GCC_HEAP_BYTES (256u * 1024u)
+#endif
+#ifndef CS_GCC_MEMORY_BYTES
+#define CS_GCC_MEMORY_BYTES (64u * 1024u * 1024u)
 #endif
 
 static union {
@@ -159,3 +163,38 @@ int _kill(pid_t pid, int signal)
 }
 
 void _exit(int code) { cs_exit(code); }
+
+int access(const char *path, int mode)
+{
+    if (mode & ~(R_OK|W_OK|X_OK)) { errno=EINVAL; return -1; }
+    return cs_gcc_fs_access(path,mode & W_OK,mode & X_OK);
+}
+
+long sysconf(int name)
+{
+    switch (name) {
+    case _SC_PAGESIZE: return 4096;
+    case _SC_PHYS_PAGES: return CS_GCC_MEMORY_BYTES/4096;
+    case _SC_AVPHYS_PAGES: return (sizeof(heap.bytes)-heap_used)/4096;
+    case _SC_OPEN_MAX: return 64;
+    case _SC_CLK_TCK: return 100;
+#ifdef _SC_NPROCESSORS_ONLN
+    case _SC_NPROCESSORS_ONLN: return 1;
+#endif
+#ifdef _SC_NPROCESSORS_CONF
+    case _SC_NPROCESSORS_CONF: return 1;
+#endif
+    default: errno=EINVAL; return -1;
+    }
+}
+
+int _gettimeofday(struct timeval *value, void *zone)
+{
+    static uint64_t logical_microseconds;
+    if (!value) { errno=EFAULT; return -1; }
+    if (zone) { errno=EINVAL; return -1; }
+    if (logical_microseconds==UINT64_MAX) { errno=EOVERFLOW; return -1; }
+    value->tv_sec=(time_t)(logical_microseconds/1000000);
+    value->tv_usec=(suseconds_t)(logical_microseconds%1000000);
+    ++logical_microseconds; return 0;
+}

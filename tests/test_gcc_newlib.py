@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/"scripts/rv32i"))
-from build import build
+from build import build, MEMORY_BYTES
 from space_segments import execute_segments
 
 
@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--newlib", type=Path, required=True, help="newlib install prefix")
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--compiler")
-    parser.add_argument("--fixture", choices=["stdlib", "files", "job", "initializers", "main", "directories"], default="stdlib")
+    parser.add_argument("--fixture", choices=["stdlib", "files", "job", "initializers", "main", "directories", "platform"], default="stdlib")
     args = parser.parse_args()
     root = args.artifacts.resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -51,11 +51,13 @@ def main():
     golden={"files":b"gcc-files:7\n", "job":b"gcc-job:7\n",
             "stdlib":b"gcc-libc:7:15:4294967303\n",
             "initializers":b"gcc-init:7\ngcc-exit:7\ngcc-fini:7\n",
-            "main":b"gcc-main:7\n", "directories":b"gcc-directories:7\n"}[args.fixture]
+            "main":b"gcc-main:7\n", "directories":b"gcc-directories:7\n",
+            "platform":b"gcc-platform:7\n"}[args.fixture]
     assert expected.returncode == 0 and expected.stdout == golden, expected
     prefix = args.newlib.resolve()/"riscv64-unknown-elf"
     libc, libm = prefix/"lib/libc.a", prefix/"lib/libm.a"
     flags = ["-isystem", str(prefix/"include"), "-I"+str(ROOT/"runtime/gcc"), "-DCS_RUNTIME_EXTERNAL_MEMORY",
+             "-DCS_GCC_MEMORY_BYTES="+str(MEMORY_BYTES),
              "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections"]
     libraries = ["-Wl,--start-group", str(libc), str(libm), "-lgcc", "-Wl,--end-group"]
     sources=[source, ROOT/"runtime/gcc/syscalls.c", ROOT/"runtime/gcc/files.c"]

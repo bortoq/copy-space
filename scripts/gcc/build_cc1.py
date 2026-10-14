@@ -59,10 +59,11 @@ def main():
         [str(libraries/"support/libspace.a"),str(newlib/"lib/libc.a"),str(newlib/"lib/libm.a"),
          "-lgcc","-Wl,--end-group"])
     objects=[]
-    for name in ("cxx", "files", "directories"):
+    for name in ("cxx", "files", "directories", "syscalls"):
         obj=work/(name+"-runtime.o")
         run(work,name+"-runtime-compile",[tools.compiler]+tools.flags+shlex.split(flags)+[
-            "-isystem",str(newlib/"include"),"-c",str(ROOT/"runtime/gcc"/(name+".c")),"-o",str(obj)],env)
+            "-isystem",str(newlib/"include"),"-I"+str(ROOT/"runtime/rv32i"),
+            "-c",str(ROOT/"runtime/gcc"/(name+".c")),"-o",str(obj)],env)
         objects.append(str(obj))
     env["LIBS"]=shlex.join(objects)+" "+env["LIBS"]
     # LIBS is inherited by GCC's recursive native configure. Keep it empty

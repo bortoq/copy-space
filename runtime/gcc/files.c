@@ -239,6 +239,16 @@ int cs_gcc_fs_directory_open(const char *path)
     if (open_directories==UINT_MAX) return failure(EMFILE);
     ++open_directories; return 0;
 }
+int cs_gcc_fs_access(const char *path, int write, int execute)
+{
+    unsigned size,inode; int directory;
+    if (cs_gcc_fs_stat(path,&size,&directory,&inode)) return -1;
+    if (directory) return 0;
+    char name[PATH_BYTES]; if (normalize(path,name)) return -1;
+    file *object=lookup(name);
+    if (execute || (write && object->readonly)) return failure(EACCES);
+    return 0;
+}
 void cs_gcc_fs_directory_close(void) { if (open_directories) --open_directories; }
 
 static const char *child(const file *object, const char *base, unsigned length)

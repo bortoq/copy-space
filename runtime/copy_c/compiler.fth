@@ -1961,10 +1961,23 @@ defer cc-conditional
     cc-truth dup >r cc-branch 13 cc-typed-cell 0 0 0 r> L{ table result yes no skip condition }
     table 32 + cc-current cc-patch cc-next
     cc-nest cc-full-expression cc-unnest 3 (local!)
-    yes cc-type cc-kind 2 <> if 64 result yes 13 cc-convert cc-op then cc-forward 5 (local!)
+    yes cc-type cc-record? if
+      yes cc-type cc-unqualified cc-abi-result 2 (local!)
+      result cc-type cc-width result yes cc-value cc-op
+    else yes cc-type cc-kind 2 <> if 64 result yes 13 cc-convert cc-op then then cc-forward 5 (local!)
     58 cc-expect table cc-current cc-patch
-    cc-nest cc-conditional cc-unnest 4 (local!) no cc-type cc-kind 2 <> if 64 result no 13 cc-convert cc-op then
+    cc-nest cc-conditional cc-unnest 4 (local!)
+    no cc-type cc-record? if
+      yes cc-type cc-kind 2 = if no cc-discard-value else
+        yes cc-type cc-record? 0= if s" incompatible conditional aggregate" cc-fail then
+        yes cc-type cc-unqualified no cc-type cc-unqualified cc-types-compatible? 0= if
+          s" incompatible conditional aggregate types" cc-fail then
+        result cc-type cc-width result no cc-value cc-op then
+    else no cc-type cc-kind 2 <> if
+      yes cc-type cc-record? if s" incompatible conditional aggregate" cc-fail then
+      64 result no 13 cc-convert cc-op then then
     yes cc-type cc-kind 2 = no cc-type cc-kind 2 = or if result 3 cc-type! else
+    yes cc-type cc-record? if result yes cc-type cc-unqualified cc-type! else
     yes cc-pointer? no cc-pointer? <> if
       yes cc-pointer? if no else yes then cc-null-constant? 0=
       if s" incompatible conditional operands" cc-fail then
@@ -1972,7 +1985,7 @@ defer cc-conditional
     else yes cc-pointer? if
       yes cc-effective-type no cc-effective-type cc-pointer-compatible 0= if s" incompatible conditional pointers" cc-fail then
       result yes cc-effective-type no cc-effective-type cc-composite-pointer cc-type!
-    else result yes no cc-common-type cc-type! then then then
+    else result yes no cc-common-type cc-type! then then then then
     skip cc-boundary cc-link!
     condition cc-known? if
       condition cc-fold@ if yes else no then dup cc-known? if

@@ -26,8 +26,10 @@ def main():
         target=root/"sources"/source.relative_to(ROOT)
         target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(source.read_bytes())
         hashes[str(source.relative_to(ROOT))]=hashlib.sha256(target.read_bytes()).hexdigest()
+    sources=[root/"sources"/source.relative_to(ROOT) for source in sources]
+    include="-I"+str(root/"sources/runtime/gcc")
     native=root/"native"
-    command=["gcc","-O2","-Wall","-Wextra","-Werror","-I"+str(ROOT/"runtime/gcc")]+[str(s) for s in sources]+["-o",str(native)]
+    command=["gcc","-O2","-Wall","-Wextra","-Werror",include]+[str(s) for s in sources]+["-o",str(native)]
     (root/"native-command.json").write_text(json.dumps(command)+"\n")
     subprocess.run(command,check=True,capture_output=True)
     pairs=[(3,4),(0,0),(0xffffffff,1),(0x7fffffff,1),(0xaaaaaaaa,0x55555555),(0xffffffff,0xffffffff)]
@@ -60,7 +62,7 @@ def main():
         results.append(direct(result.stdout,root/(name+"-execution"),0xffffffff,1))
     headers=args.newlib.resolve()/"riscv64-unknown-elf/include"
     manifest=build(sources,root/"generator.stream",compiler=args.compiler,stream=True,optimization="-O2",
-        extra_cflags=["-I"+str(ROOT/"runtime/gcc"),"-isystem",str(headers)])
+        extra_cflags=[include,"-isystem",str(headers)])
     (root/"in.bin").write_bytes((root/"generator.stream").read_bytes()+struct.pack("<II",3,4))
     execution=execute_segments(ROOT/"build/bin/space",root/"generator",root/"in.bin",
         space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,

@@ -39,13 +39,20 @@ int cs_copy_constant(struct cs_copy_image *image, uint32_t at, unsigned width, u
     return 0;
 }
 
-int cs_copy_row(struct cs_copy_image *image, unsigned slot, uint32_t count,
-                uint32_t destination, uint32_t source)
+static int row_valid(const struct cs_copy_image *image, unsigned slot, uint32_t count,
+                     uint32_t destination, uint32_t source)
 {
     if (!image || slot>=256 || count>=(UINT32_C(1)<<image->count_bits) ||
         !fits(destination,count,image->space_bits) ||
         !fits(source,count,image->space_bits) || destination>=image->space_bits ||
-        source>=image->space_bits) return -1;
+        source>=image->space_bits) return 0;
+    return 1;
+}
+
+int cs_copy_row(struct cs_copy_image *image, unsigned slot, uint32_t count,
+                uint32_t destination, uint32_t source)
+{
+    if (!row_valid(image,slot,count,destination,source)) return -1;
     uint32_t at=image->layer+slot*image->instruction_bits;
     field(image,at,image->count_bits,count);
     field(image,at+image->count_bits,image->address_bits,destination);
@@ -65,7 +72,7 @@ static int overlaps(uint32_t a, unsigned an, uint32_t b, unsigned bn)
     return a<b+bn && b<a+an;
 }
 
-int cs_copy_add32(struct cs_copy_image *image, uint32_t destination,
+static int add_valid(const struct cs_copy_image *image, uint32_t destination,
                   uint32_t left, uint32_t right, uint32_t table,
                   uint32_t temporary, uint32_t carry)
 {
@@ -83,6 +90,14 @@ int cs_copy_add32(struct cs_copy_image *image, uint32_t destination,
         if (destination!=addresses[i] && overlaps(destination,32,addresses[i],32)) return -1;
     if (!fits(table,16,(uint32_t)(image->bytes*8)) ||
         !fits(carry,1,(uint32_t)(image->bytes*8))) return -1;
+    return 0;
+}
+
+int cs_copy_add32(struct cs_copy_image *image, uint32_t destination,
+                  uint32_t left, uint32_t right, uint32_t table,
+                  uint32_t temporary, uint32_t carry)
+{
+    if (add_valid(image,destination,left,right,table,temporary,carry)) return -1;
     for (unsigned i=0;i<8;++i) {
         unsigned sum=(i&1)+((i>>1)&1)+((i>>2)&1);
         field(image,table+2*i,2,sum);
@@ -102,4 +117,73 @@ int cs_copy_add32(struct cs_copy_image *image, uint32_t destination,
         cs_copy_emit(image,1,carry,temporary+1);
     }
     return 0;
+}
+
+int cs_copy_program_init(struct cs_copy_program *program, unsigned char *data, size_t bytes,
+                         unsigned address_bits, uint32_t code_begin, uint32_t code_limit)
+{
+    if (!program || address_bits<2 || address_bits>31 || bytes>UINT32_MAX/8) return -1;
+    uint32_t layer_bits=256*(3*address_bits-1);
+    if (code_begin<layer_bits || code_limit>bytes*8 || code_begin>code_limit ||
+        !fits(code_begin,layer_bits,code_limit) || layer_bits>=(UINT32_C(1)<<(address_bits-1))) return -1;
+    struct cs_copy_image image;
+    if (cs_copy_image_init(&image,data,bytes,address_bits,code_begin)) return -1;
+    *program=(struct cs_copy_program){image,code_begin,code_begin+layer_bits,code_limit};
+    return 0;
+}
+
+int cs_copy_program_next(struct cs_copy_program *program)
+{
+    if (!program || !fits(program->code_end,program->image.layer_bits,program->code_limit) ||
+        !row_valid(&program->image,255,program->image.layer_bits,0,program->code_end)) return -1;
+    struct cs_copy_image next;
+    if (cs_copy_image_init(&next,program->image.data,program->image.bytes,
+                          program->image.address_bits,program->code_end)) return -1;
+    cs_copy_row(&program->image,255,program->image.layer_bits,0,program->code_end);
+    program->image=next;
+    program->code_end+=next.layer_bits;
+    return 0;
+}
+
+static int room(struct cs_copy_program *program, unsigned count)
+{
+    if (!program || count>252) return -1;
+    if (program->image.slot<=255-count) return 0;
+    return cs_copy_program_next(program);
+}
+
+int cs_copy_program_emit(struct cs_copy_program *program, uint32_t count,
+                         uint32_t destination, uint32_t source)
+{
+    if (!program || !row_valid(&program->image,3,count,destination,source) || room(program,1)) return -1;
+    return cs_copy_emit(&program->image,count,destination,source);
+}
+
+int cs_copy_program_add32(struct cs_copy_program *program, uint32_t destination,
+                          uint32_t left, uint32_t right, uint32_t table,
+                          uint32_t temporary, uint32_t carry)
+{
+    if (!program) return -1;
+    uint32_t addresses[]={destination,left,right,table,temporary,carry};
+    unsigned widths[]={32,32,32,16,2,1};
+    for (unsigned i=0;i<6;++i)
+        if (overlaps(addresses[i],widths[i],program->code_begin,program->code_limit-program->code_begin)) return -1;
+    struct cs_copy_image probe=program->image;
+    probe.slot=3;
+    if (add_valid(&probe,destination,left,right,table,temporary,carry) || room(program,193)) return -1;
+    return cs_copy_add32(&program->image,destination,left,right,table,temporary,carry);
+}
+
+int cs_copy_program_finish(struct cs_copy_program *program, uint32_t zero_layer)
+{
+    if (!program || (zero_layer&7) ||
+        !fits(zero_layer,program->image.layer_bits,(uint32_t)(program->image.bytes*8)) ||
+        overlaps(zero_layer,program->image.layer_bits,0,program->image.layer_bits) ||
+        overlaps(zero_layer,program->image.layer_bits,program->code_begin,program->code_limit-program->code_begin)) return -1;
+    for (unsigned i=0;i<program->image.layer_bits/8;++i)
+        if (program->image.data[zero_layer/8+i]) return -1;
+    struct cs_copy_image boot;
+    if (cs_copy_image_init(&boot,program->image.data,program->image.bytes,program->image.address_bits,0)) return -1;
+    cs_copy_row(&program->image,255,program->image.layer_bits,0,zero_layer);
+    return cs_copy_row(&boot,255,boot.layer_bits,0,program->code_begin);
 }

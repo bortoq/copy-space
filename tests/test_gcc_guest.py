@@ -20,8 +20,12 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image",type=Path,required=True,help="directory prepared by prepare_image.py")
     parser.add_argument("--artifacts",type=Path,required=True)
+    parser.add_argument("--emulator",type=Path)
     args=parser.parse_args()
     image=args.image.resolve(); manifest=json.loads((image/"image.json").read_text())
+    profiles={2*1024*1024:"space",64*1024*1024:"space-64m",256*1024*1024:"space-256m"}
+    emulator=args.emulator.resolve() if args.emulator else ROOT/"build/bin"/profiles[manifest["space_bytes"]]
+    if not emulator.is_file(): raise ValueError("build matching emulator: "+str(emulator))
     if digest(image/"gcc.stream")!=manifest["stream_sha256"]: raise ValueError("image changed")
     root=args.artifacts.resolve(); root.mkdir(parents=True,exist_ok=False)
     files=[(b"main.c",b'#include "value.h"\n#define BASE 3\nunsigned value(void) { return BASE + VALUE; }\n'),
@@ -48,7 +52,7 @@ def main():
         while block:=source.read(1024*1024): target.write(block)
         target.write(job)
     print("Executing actual cc1 through primitive Space; preprocessing supplied C",flush=True)
-    execution=execute_segments(ROOT/"build/bin/space",root/"space",root/"in.bin",
+    execution=execute_segments(emulator,root/"space",root/"in.bin",
         space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,
         ticks=100000,timeout=300,compression="zstd")
     output=(root/"space/program.in").read_bytes()

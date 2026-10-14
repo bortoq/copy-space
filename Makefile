@@ -50,6 +50,10 @@ $(BINDIR)/space-64m: $(SPACE_SRCS) src/space.h src/core.h src/support.h src/spac
 	@mkdir -p "$(dir $@)"
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -UVM_SPACE_BYTES -DVM_SPACE_BYTES=67108864 $(SPACE_SRCS) $(LDFLAGS) -o "$@" $(LDLIBS)
 
+$(BINDIR)/space-256m: $(SPACE_SRCS) src/space.h src/core.h src/support.h src/space_run.h src/space_trace.h
+	@mkdir -p "$(dir $@)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -UVM_SPACE_BYTES -DVM_SPACE_BYTES=268435456 $(SPACE_SRCS) $(LDFLAGS) -o "$@" $(LDLIBS)
+
 $(OBJDIR)/%.o: %.c
 	@mkdir -p "$(dir $@)"
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -MMD -MP -c "$<" -o "$@"

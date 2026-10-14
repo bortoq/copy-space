@@ -1,0 +1,37 @@
+From: Copy-space project
+Subject: [PATCH] compiler_types: identify the copy-space compiler explicitly
+
+Select the copy-space backend through its own predefined macro.  Keep
+the GCC and Clang branches intact.  The initial backend header only
+checks inclusion and compiler identity; it provides no feature stubs.
+
+--- a/include/linux/compiler_types.h
++++ b/include/linux/compiler_types.h
+@@ -167,7 +167,9 @@
+ #endif
+ 
+ /* Compiler specific macros. */
+-#ifdef __clang__
++#if defined(__COPYSPACE__)
++#include <linux/compiler-copyspace.h>
++#elif defined(__clang__)
+ #include <linux/compiler-clang.h>
+ #elif defined(__GNUC__)
+ /* The above compilers also define __GNUC__, so order is important here. */
+--- /dev/null
++++ b/include/linux/compiler-copyspace.h
+@@ -0,0 +1,14 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _LINUX_COMPILER_COPYSPACE_H
++#define _LINUX_COMPILER_COPYSPACE_H
++
++#ifndef __LINUX_COMPILER_TYPES_H
++#error "Include linux/compiler_types.h before compiler-copyspace.h"
++#endif
++#ifndef __COPYSPACE__
++#error "compiler-copyspace.h requires the copy-space compiler"
++#endif
++#if __COPYSPACE__ != 1
++#error "Unsupported copy-space compiler identity"
++#endif
++#endif

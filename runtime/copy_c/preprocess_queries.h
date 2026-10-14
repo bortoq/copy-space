@@ -1,10 +1,11 @@
-/* Capability queries execute in the guest. Header queries share include lookup
- * without pushing a reader; attributes describe implemented frontend support. */
+/* Builtin preprocessing executes in the guest. Header queries share lookup
+ * without pushing a reader; capabilities describe implemented frontend support. */
 static int cc_pp_query_symbol(cc_pp_token token)
 {
     if (token.kind!=CC_PP_IDENT) return 0;
     return cc_pp_is(token,"__has_include") ? 1 : cc_pp_is(token,"__has_include_next") ? 2
-         : cc_pp_is(token,"__has_attribute") ? 3 : cc_pp_is(token,"__has_builtin") ? 4 : 0;
+         : cc_pp_is(token,"__has_attribute") ? 3 : cc_pp_is(token,"__has_builtin") ? 4
+         : cc_pp_is(token,"__COPYSPACE__") ? 5 : 0;
 }
 static int cc_pp_query_kind(cc_pp_token token)
 {
@@ -61,6 +62,10 @@ static cc_pp_token cc_pp_condition_token(cc_pp_reader *reader, unsigned *state)
 static int cc_pp_query_expand(unsigned *cursor, int kind, unsigned depth)
 {
     if (depth>=64) return 0;
+    if (kind==5) {
+        cc_pp_nodes[*cursor].token=(cc_pp_token){(const unsigned char *)"1",1,CC_PP_NUMBER,0,0};
+        return 1;
+    }
     unsigned current=*cursor, opening=cc_pp_nodes[current].next;
     if (!opening || !cc_pp_is(cc_pp_nodes[opening].token,"(")) return 0;
     unsigned head=0, tail=0, closing=cc_pp_nodes[opening].next, nesting=0;

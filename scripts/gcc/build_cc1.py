@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from build_libraries import run, Toolchain, ROOT
 
@@ -43,8 +44,13 @@ def main():
         "-isystem",str(cpp),"-isystem",str(cpp/"riscv32-unknown-elf"),"-isystem",str(cpp/"backward")])
     env["AR"],env["RANLIB"]=tools.compiler[:-3]+"ar",tools.compiler[:-3]+"ranlib"
     flags="-O2 -march=rv32i -mabi=ilp32 -mno-relax -msmall-data-limit=0 -ffunction-sections -fdata-sections"
-    env["CFLAGS"]=flags
-    env["CXXFLAGS"]=flags+" -fno-exceptions -fno-rtti -fno-threadsafe-statics"
+    # Top-level GCC also forwards CXXFLAGS to native build-libcpp. Put the
+    # architecture switches into guest drivers, keeping shared flags native-safe.
+    architecture=["-march=rv32i","-mabi=ilp32","-mno-relax","-msmall-data-limit=0"]
+    env["CC"]+=" "+shlex.join(architecture)
+    env["CXX"]+=" "+shlex.join(architecture)
+    env["CFLAGS"]="-O2 -ffunction-sections -fdata-sections"
+    env["CXXFLAGS"]=env["CFLAGS"]+" -fno-exceptions -fno-rtti -fno-threadsafe-statics"
     env["CPPFLAGS"]=shlex.join(["-isystem",str(newlib/"include")])
     env["LDFLAGS"]="-nostdlib -Wl,-e,main"
     env["LIBS"]=shlex.join(["-Wl,--start-group"]+
@@ -54,9 +60,18 @@ def main():
     run(work,"cxx-runtime-compile",[tools.compiler]+tools.flags+shlex.split(flags)+[
         "-c",str(ROOT/"runtime/gcc/cxx.c"),"-o",str(work/"cxx-runtime.o")],env)
     env["LIBS"]=shlex.quote(str(work/"cxx-runtime.o"))+" "+env["LIBS"]
-    # GCC appends HOST_LIBS after its own archives; configure also needs LIBS.
-    env["HOST_LIBS"]=env["LIBS"]
+    # LIBS is inherited by GCC's recursive native configure. Keep it empty
+    # and add guest archives only through the guest preparation drivers.
+    drivers=work/"guest-drivers.json"
+    drivers.write_text(json.dumps({"c":shlex.split(env["CC"]),"c++":shlex.split(env["CXX"]),
+                                  "libraries":shlex.split(env["LIBS"])},indent=2)+"\n")
+    wrapper=ROOT/"scripts/gcc/guest_compiler.py"
+    env["CC"]=shlex.join([sys.executable,str(wrapper),str(drivers),"c"])
+    env["CXX"]=shlex.join([sys.executable,str(wrapper),str(drivers),"c++"])
+    env["LIBS"],env["HOST_LIBS"]="",""
     env["CC_FOR_BUILD"],env["CXX_FOR_BUILD"]="gcc","g++"
+    env["CFLAGS_FOR_BUILD"],env["CXXFLAGS_FOR_BUILD"]="-O2","-O2"
+    env["CPPFLAGS_FOR_BUILD"],env["LDFLAGS_FOR_BUILD"]="",""
     build=subprocess.run([str(source/"config.guess")],capture_output=True,check=True).stdout.decode().strip()
     configure=[str(source/"configure"),"--build="+build,"--host=riscv32-unknown-elf",
         "--target=riscv32-unknown-elf","--prefix="+str(work/"install"),"--enable-languages=c",

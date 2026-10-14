@@ -97,6 +97,7 @@ variable cc-number
 variable cc-number-hi
 variable cc-number-type
 variable cc-unevaluated
+create cc-aggregate-extents 2048 cells allot
 : cc-fail ( addr len -- )
   ." copy-c error at byte " cc-token-start @ . type cr 2 cs-exit ;
 : cc-limit ( flag -- ) if s" capacity exceeded" cc-fail then ;
@@ -171,6 +172,7 @@ create cc-literal-values 512 cells allot
   0 cc-fold-flags cc-data @ cc-data-base - 8 / + c!
   0 cc-pointer-origins cc-data @ cc-data-base - 8 / cells + !
   0 cc-pointer-unaligned cc-data @ cc-data-base - 8 / + c!
+  0 cc-aggregate-extents cc-data @ cc-data-base - 8 / cells + !
   cc-data @ 32 cc-data +! ;
 : cc-const ( value -- target )
   cc-constants @ 32 cc-constants +!
@@ -986,6 +988,7 @@ variable cc-prototype-count
 : cc-init-types
   cc-type-sizes 128 cells 0 fill
   cc-type-array-counts 128 cells 0 fill
+  cc-aggregate-extents 2048 cells 0 fill
   cc-type-kinds 128 0 fill cc-type-signs 128 0 fill
   cc-type-bases 128 0 fill
   cc-type-complete 128 1 fill
@@ -1070,13 +1073,21 @@ defer cc-qualify-array
   dup cc-incomplete-array? if s" incomplete array object" cc-fail then
   dup cc-width 8 max
   swap cc-alignment 8 * dup 1- cc-data @ + swap negate and cc-data !
-  cc-data @ swap cc-data +! cc-data @ 147456 > cc-limit ;
+  cc-data @ swap cc-data +! cc-data @ 147456 > cc-limit
+  cc-data @ over - 8 / cells over cc-data-base - 8 / cells cc-aggregate-extents + swap 0 fill ;
 : cc-type ( target -- type )
   dup cc-static-base >= over cc-data-base < and if
     cc-static-base - 8 / cc-static-types + c@ exit then
   dup cc-frame? if cc-data-base - 8 / cc-types + c@ exit then
   dup cc-constant-base >= over 180224 < and if
     cc-constant-base - 32 / cc-constant-types + c@ else drop 0 then ;
+: cc-aggregate-width ( source -- bits ) L{ source }
+  source cc-static-base >= source cc-data-base < and if
+    source cc-type cc-unqualified cc-type-flexible + c@ if
+      source cc-layout-find cells cc-layout-sizes + @ exit then then
+  source cc-frame? if source cc-data-base - 8 / cells cc-aggregate-extents + @
+    dup if exit then drop then
+  source cc-type cc-width ;
 : cc-type! ( target type -- ) swap
   dup cc-static-base >= over cc-data-base < and if
     cc-static-base - 8 / cc-static-types + c! exit then
@@ -1255,8 +1266,10 @@ create cc-wide-fold-output 2 cells allot
 defer cc-decay
 ' cc-raw-value is cc-decay
 defer cc-indirect-value
+defer cc-aggregate-value
+defer cc-aggregate-metadata
 : cc-value ( source -- value ) cc-decay dup cc-type cc-record?
-  if s" aggregate value unsupported" cc-fail then
+  if cc-aggregate-value exit then
   dup cc-type cc-kind 7 = if s" function value requires call ABI" cc-fail then
   dup cc-type cc-kind 2 = if dup cc-type cc-load-value exit then
   dup cc-lvalue 2 = if cc-indirect-value else dup cc-type cc-load-value then ;
@@ -1316,6 +1329,10 @@ defer cc-function-compatible?
   dup cc-known? if dup cc-type cc-kind dup 0= swap 6 = or
     swap dup cc-fold@ swap cc-fold-hi@ or 0= and else drop 0 then ;
 : cc-assignment-check ( destination source -- ) L{ destination source }
+  destination cc-type cc-record? if
+    source cc-type cc-record? 0= if s" incompatible aggregate value" cc-fail then
+    destination cc-type cc-unqualified source cc-type cc-unqualified cc-types-compatible? if exit then
+    s" incompatible aggregate types" cc-fail then
   destination cc-value-check source cc-value-check
   destination cc-pointer? source cc-pointer? and if
     destination cc-type source cc-effective-type cc-pointer-assignment? if exit then
@@ -1560,11 +1577,17 @@ create cc-switch-cases 32 128 * 5 * cells allot
   10 result 11 + cc-sp 14 + cc-op
   target result cc-pointer-origin!
   result target cc-type cc-pointer-to cc-type! result ;
+: cc-object-address ( target -- pointer )
+  dup cc-lvalue 0= if
+    dup cc-type dup cc-record? swap cc-kind 3 = or 0= if
+      s" address requires lvalue" cc-fail then
+    dup 1 cc-lvalue! dup cc-address swap 0 cc-lvalue!
+  else cc-address then ;
 : cc-decay-body ( source -- pointer )
   dup cc-type cc-kind 7 = if cc-lvalue-pointer @ cc-value exit then
   dup cc-type cc-kind 3 = if
     dup cc-type cc-pointee cc-pointer-to >r
-    dup cc-lvalue 2 = if cc-lvalue-pointer @ cc-value else cc-address then
+    dup cc-lvalue 2 = if cc-lvalue-pointer @ cc-value else cc-object-address then
     dup r> cc-type!
   then ;
 ' cc-decay-body is cc-decay
@@ -1622,10 +1645,12 @@ create cc-switch-cases 32 128 * 5 * cells allot
   cc-initializing @ 0= if s" side effect in static initializer" cc-fail then
   source cc-known? 0= if s" expected static constant initializer" cc-fail then
   source destination cc-type destination cc-static-location cc-static-value! source ;
+defer cc-aggregate-store
 : cc-lvalue-write ( destination source -- value ) 0 L{ destination source result }
   destination cc-lvalue 0= if s" assignment requires lvalue" cc-fail then
   destination cc-type cc-quals 1 and cc-initializing @ 0= and if
     s" assignment to const object" cc-fail then
+  destination cc-type cc-record? if destination source cc-aggregate-store exit then
   destination cc-type cc-kind 3 = if s" array assignment unsupported" cc-fail then
   destination source cc-assignment-check
   source destination cc-type cc-convert 3 (local!)
@@ -2003,6 +2028,7 @@ variable cc-constant-high
   dup cc-data-base - 8 / over cc-data @ swap - 8 / >r
   dup cc-types + r@ 0 fill dup cc-lvalues + r@ 0 fill dup cc-fold-flags + r@ 0 fill
   dup cc-pointer-unaligned + r@ 0 fill
+  dup cells cc-aggregate-extents + r@ cells 0 fill
   cells cc-pointer-origins + r> cells 0 fill cc-data ! ;
 create cc-declarator-contexts 32 101 * cells allot
 variable cc-declarator-depth
@@ -2311,11 +2337,17 @@ defer cc-merge-layout-attributes
     object cc-value 1 (local!)
     object cc-pointer? 0= if s" arrow requires pointer" cc-fail then
     object cc-type cc-pointee 2 (local!) object 4 (local!)
-  else object cc-type 2 (local!) object cc-address 4 (local!) then
+  else object cc-type 2 (local!) object cc-object-address 4 (local!) then
   type cc-record? 0= if s" member requires aggregate" cc-fail then
   type cc-complete 1 <> if s" incomplete aggregate access" cc-fail then
   cc-next type cc-find-member dup 0< if s" unknown member" cc-fail then 3 (local!) cc-next
-  pointer index cc-field-view ;
+  pointer index cc-field-view
+  object cc-type cc-record? object cc-lvalue 0= and if
+    dup cc-type cc-kind 3 = if
+      dup cc-type cc-incomplete-array? if
+        object cc-aggregate-width index cells cc-member-offsets + @ 8 * - 0 max
+        over cc-data-base - 8 / cells cc-aggregate-extents + ! then
+      cc-aggregate-value else cc-value then then ;
 ' cc-member-body is cc-member
 : cc-offset-member ( type offset -- type offset ) 0 L{ type offset member }
   type cc-record? 0= if s" offsetof requires aggregate member" cc-fail then
@@ -2645,6 +2677,11 @@ variable cc-union-count
       cc-union-members i cells + @ 6 (local!)
       member cc-union-members origin source - destination + type cc-union-key cells + ! then
   loop ;
+: cc-aggregate-metadata-body ( source destination -- ) L{ source destination }
+  cc-infer-depth @ if exit then
+  source cc-object-origin destination cc-object-origin
+  source cc-aggregate-width 8 / cc-clone-unions ;
+' cc-aggregate-metadata-body is cc-aggregate-metadata
 : cc-select-union ( target member -- ) 0 L{ target member slot }
   cc-infer-depth @ if exit then
   target cc-union-slot 3 (local!)
@@ -2693,7 +2730,12 @@ variable cc-static-flex-length
 : cc-initialize-view ( view designated -- ) L{ view designated }
   designated if cc-designator? if view cc-initialize-chain exit then 61 cc-expect then
   view cc-type dup cc-kind 3 = swap cc-record? or if
-    view view cc-type cc-size cc-clear-object view cc-initialize-object else
+    view view cc-type cc-size cc-clear-object
+    view cc-type cc-record? cc-token @ 123 <> and cc-token @ 34 <> and if
+      cc-pending-initializer @ if cc-pending-initializer @ 0 cc-pending-initializer ! else cc-expression then
+      dup cc-type cc-record? if view swap cc-initialize-write drop exit then
+      cc-pending-initializer ! then
+    view cc-initialize-object else
     view cc-scalar-initializer cc-initialize-write drop then ;
 : cc-initializer-comma ( braces -- continue )
   if cc-next -1 exit then
@@ -2725,12 +2767,58 @@ variable cc-static-flex-length
     cc-cell dup 4 cc-type! dup 32 swap cc-zero @ cc-op
     dup 8 swap start i 8 * + cc-op pointer swap cc-initialize-write drop
   loop ;
-: cc-copy-to-direct ( destination source -- ) 0 0 L{ destination source pointer slot }
-  source cc-lvalue 1 = if destination cc-type cc-width destination source cc-op exit then
-  source cc-lvalue-pointer @ 3 (local!) pointer cc-pointer-check
+: cc-copy-sized-to-direct ( destination source width -- ) 0 0 L{ destination source width pointer slot }
+  source cc-lvalue 2 <> if width destination source cc-op exit then
+  source cc-lvalue-pointer @ 4 (local!) pointer cc-pointer-check
+  width source cc-type cc-width > if
+    pointer width 8 / 1- cc-const cc-add-entry @ cc-invoke
+    cc-zero @ cc-pointer-check-entry @ cc-invoke drop then
   2 pointer cc-frame-extra + destination cc-frame-extra + cc-room
-  cc-slot @ 1+ pointer cc-frame-extra + destination cc-frame-extra + 4 (local!)
-  21 slot 71 * 50 + pointer cc-op destination cc-type cc-width destination 0 cc-op ;
+  cc-slot @ 1+ pointer cc-frame-extra + destination cc-frame-extra + 5 (local!)
+  21 slot 71 * 50 + pointer cc-op width destination 0 cc-op ;
+: cc-copy-to-direct ( destination source -- ) over cc-type cc-width cc-copy-sized-to-direct ;
+: cc-aggregate-copy ( destination source -- ) 0 0 0 L{ destination source width pointer slot }
+  source cc-aggregate-width 3 (local!)
+  destination cc-lvalue 2 = if
+    destination cc-lvalue-pointer @ 4 (local!) pointer cc-pointer-check
+    width destination cc-type cc-width > if
+      pointer width 8 / 1- cc-const cc-add-entry @ cc-invoke
+      cc-zero @ cc-pointer-check-entry @ cc-invoke drop then
+    2 pointer cc-frame-extra + source cc-frame-extra + cc-room
+    cc-slot @ 1+ pointer cc-frame-extra + source cc-frame-extra + 5 (local!)
+    21 slot 71 * 26 + pointer cc-op width 0 source cc-op
+  else destination source width cc-copy-sized-to-direct then
+  source destination cc-aggregate-metadata ;
+: cc-aggregate-value-body ( source -- result ) 0 0 0 L{ source result width type }
+  source cc-lvalue 0= if source exit then
+  source cc-aggregate-width 3 (local!)
+  source cc-type cc-unqualified 4 (local!)
+  type cc-incomplete-array? if type cc-pointee width 8 / type cc-pointee cc-size 1 max / cc-array-to 4 (local!) then
+  type cc-object 2 (local!)
+  width type cc-width 8 max - 0 max cc-data +!
+  cc-data @ 147456 > cc-limit
+  width cc-aggregate-extents result cc-data-base - 8 / cells + !
+  result source cc-type cc-unqualified cc-type! result 0 cc-lvalue!
+  result source width cc-copy-sized-to-direct source result cc-aggregate-metadata result ;
+' cc-aggregate-value-body is cc-aggregate-value
+: cc-aggregate-modifiable? ( type -- flag ) L{ type }
+  type cc-quals 1 and if 0 exit then
+  type cc-kind 3 = if type cc-pointee recurse exit then
+  type cc-unqualified 1 (local!)
+  type cc-record? if
+    cc-member-count @ 0 ?do
+      cc-member-owners i + c@ type = if
+        cc-member-types i + c@ recurse 0= if 0 unloop exit then then
+    loop then -1 ;
+: cc-aggregate-store-body ( destination source -- result ) L{ destination source }
+  destination source cc-assignment-check
+  cc-initializing @ 0= if destination cc-type cc-aggregate-modifiable? 0= if
+    s" assignment to const aggregate member" cc-fail then then
+  cc-static-initializing @ cc-infer-depth @ 0= and if
+    s" nonconstant aggregate initializer" cc-fail then
+  source cc-aggregate-value 2 (local!)
+  destination source cc-aggregate-copy source ;
+' cc-aggregate-store-body is cc-aggregate-store
 : cc-range-view ( target index -- view ) cc-const 43 cc-additive-op cc-pointer-read ;
 : cc-initialize-range ( target low high -- ) 0 0 0 0
   L{ target low high type seed source data }
@@ -3022,10 +3110,12 @@ defer cc-local-static-initialize
     is-for 2 and if target original symbol cc-local-static-initialize else
     type cc-kind 3 = type cc-record? or if
       target type cc-size cc-clear-object
-      cc-token @ 61 = if cc-next cc-token @ 123 <>
-        cc-token @ 34 = type cc-kind 3 = and 0= and if
-          s" expected aggregate initializer braces" cc-fail then
-        target cc-initialize-object then
+      cc-token @ 61 = if cc-next
+        type cc-record? cc-token @ 123 <> and if
+          target cc-expression cc-initialize-write drop
+        else cc-token @ 123 <> cc-token @ 34 = type cc-kind 3 = and 0= and if
+            s" expected aggregate initializer braces" cc-fail then
+          target cc-initialize-object then then
     else
       cc-token @ 61 = if cc-next cc-scalar-initializer else cc-zero @ then
       target swap cc-initialize-write drop

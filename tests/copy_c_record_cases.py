@@ -60,8 +60,6 @@ invalid = [
     ("struct-arrow-scalar", b"int main(){int x;return x->y;}"),
     ("struct-dot-scalar", b"int main(){int x;return x.y;}"),
     ("struct-incomplete-access", b"int main(){struct S*p=0;return p->x;}"),
-    ("struct-assign", b"int main(){struct S{int x;}a,b;a=b;return 0;}"),
-    ("struct-init-value", b"int main(){struct S{int x;}a,b=a;return 0;}"),
     ("struct-many-initializers", b"int main(){struct S{int x;}s={1,2};return 0;}"),
     ("union-many-initializers", b"int main(){union U{int x,y;}u={1,2};return 0;}"),
     ("struct-return", b"struct S{int x;};struct S f(){struct S s;return s;}int main(){return 0;}"),

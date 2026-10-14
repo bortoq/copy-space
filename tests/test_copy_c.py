@@ -17,6 +17,7 @@ from copy_c_gnu_cases import valid as gnu_valid, invalid as gnu_invalid, faults 
 from copy_c_types_cases import valid as types_valid, invalid as types_invalid
 from copy_c_array_cases import valid as array_valid, invalid as array_invalid
 from copy_c_record_cases import valid as record_valid, invalid as record_invalid
+from copy_c_aggregate_value_cases import valid as aggregate_value_valid, invalid as aggregate_value_invalid
 from copy_c_layout_attribute_cases import valid as layout_valid, invalid as layout_invalid
 from copy_c_member_attribute_cases import valid as member_layout_valid, invalid as member_layout_invalid
 from copy_c_flexible_cases import valid as flexible_valid, invalid as flexible_invalid
@@ -283,6 +284,7 @@ valid += gnu_valid
 valid += types_valid
 valid += array_valid
 valid += record_valid
+valid += aggregate_value_valid
 valid += layout_valid
 valid += member_layout_valid
 valid += flexible_valid
@@ -401,6 +403,7 @@ invalid += gnu_invalid
 invalid += types_invalid
 invalid += array_invalid
 invalid += record_invalid
+invalid += aggregate_value_invalid
 invalid += layout_invalid
 invalid += member_layout_invalid
 invalid += flexible_invalid

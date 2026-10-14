@@ -922,6 +922,7 @@ create cc-lvalues 2048 allot
 create cc-lvalue-pointers 2048 cells allot
 create cc-constant-types 512 allot
 create cc-static-types 4096 allot
+create cc-compound-constants 4096 allot
 cc-constant-types 512 0 fill
 variable cc-declared-type
 variable cc-base-type
@@ -1014,6 +1015,7 @@ cc-type-sizes here over - cc-state-span
 : cc-init-types
   cc-type-sizes 128 cells 0 fill
   cc-type-array-counts 128 cells 0 fill
+  cc-compound-constants 4096 0 fill
   cc-aggregate-extents 2048 cells 0 fill
   cc-type-kinds 128 0 fill cc-type-signs 128 0 fill
   cc-type-bases 128 0 fill
@@ -1205,6 +1207,10 @@ cc-wide-bool-entry @ ,
 : cc-pointer-origin! ( origin pointer -- ) cc-data-base - 8 / cells cc-pointer-origins + ! ;
 : cc-object-origin ( target -- origin )
   dup cc-lvalue 2 = if cc-lvalue-pointer @ cc-pointer-origin then ;
+: cc-static-compound? ( source -- flag )
+  dup cc-static-base >= over cc-data-base < and if
+    cc-static-base - 8 / cc-compound-constants + c@ else drop 0 then ;
+defer cc-static-compound-value
 : cc-fold! ( bits target -- )
   cc-data-base - 8 / dup cc-fold-flags + 1 swap c!
   cells cc-fold-values + ! ;
@@ -1276,7 +1282,10 @@ cc-wide-fold-input here over - cc-state-span
   entry cc-wide-entry cc-library-call
   type cc-typed-cell dup type cc-width swap cc-wide-r cc-op
   lhs rhs entry 3 pick cc-wide-fold-invoke ;
-: cc-load-value ( source type -- value ) dup cc-typed-cell 0 L{ source type value width }
+: cc-load-value ( source type -- value )
+  over cc-static-compound? cc-global-evaluation-level @ 0> and cc-static-initializing @ 0= and if
+    swap cc-static-compound-value swap then
+  dup cc-typed-cell 0 L{ source type value width }
   type cc-width 4 (local!)
   width 64 = if
     source cc-type cc-width 64 = if 64 value source cc-op else
@@ -1297,6 +1306,8 @@ defer cc-aggregate-value
 defer cc-aggregate-metadata
 : cc-value ( source -- value ) cc-decay dup cc-type cc-record?
   if cc-aggregate-value exit then
+  dup cc-static-compound? cc-global-evaluation-level @ 0> and cc-static-initializing @ 0= and if
+    cc-static-compound-value exit then
   dup cc-type cc-kind 7 = if s" function value requires call ABI" cc-fail then
   dup cc-type cc-kind 2 = if dup cc-type cc-load-value exit then
   dup cc-lvalue 2 = if cc-indirect-value else dup cc-type cc-load-value then ;
@@ -1511,6 +1522,8 @@ defer cc-statement
 defer cc-increment
 defer cc-subscript
 defer cc-member
+defer cc-compound-literal
+defer cc-query-compound
 defer cc-block
 defer cc-sizeof
 defer cc-alignof
@@ -1790,8 +1803,8 @@ defer cc-aggregate-store
       r> r> dup 0< if drop dup 0< if drop s" unknown variable" cc-fail then
         cc-function-designator else swap drop cells cc-symbol-address + @ then then exit
   then s" expected expression" cc-fail ;
-: cc-postfix ( -- value )
-  cc-primary begin
+: cc-postfix-tail ( value -- value )
+  begin
     cc-token @ 40 = if cc-indirect-call else
     cc-token @ dup 46 = swap 266 = or if cc-member else
     cc-token @ 91 = if cc-subscript else
@@ -1799,12 +1812,14 @@ defer cc-aggregate-store
         cc-token @ cc-next -1 cc-increment else exit then
     then then then
   again ;
+: cc-postfix ( -- value ) cc-primary cc-postfix-tail ;
 : cc-unary-body ( -- target )
   s" sizeof" cc-is if cc-next cc-sizeof exit then
   s" _Alignof" cc-is s" __alignof" cc-is or s" __alignof__" cc-is or
   if cc-next cc-alignof exit then
   cc-token @ 40 = if cc-token-start @ >r cc-next cc-type-start if
       cc-read-abstract-type cc-declared-type @ r> drop >r 41 cc-expect
+      cc-token @ 123 = if r> cc-compound-literal cc-postfix-tail exit then
       cc-nest recurse cc-unnest r> cc-convert exit
     then r> cc-pos ! cc-next then
   cc-token @ dup 264 = swap 265 = or if cc-token @ >r cc-next
@@ -2575,6 +2590,7 @@ cc-generic-state here over - cc-state-span
   cc-token @ 40 = if
     cc-token-start @ >r cc-next cc-type-start if
       cc-read-abstract-type cc-declared-type @ r> drop 41 cc-expect
+      cc-token @ 123 = if cc-query-compound then
     else r> cc-pos ! cc-next 1 cc-inspect then
   else 1 cc-inspect then ;
 : cc-sizeof-body cc-query-type dup cc-incomplete-array?
@@ -2902,7 +2918,9 @@ cc-initializer-start here over - cc-state-span
   cc-initializing @ 0= if destination cc-type cc-aggregate-modifiable? 0= if
     s" assignment to const aggregate member" cc-fail then then
   cc-static-initializing @ cc-infer-depth @ 0= and if
-    s" nonconstant aggregate initializer" cc-fail then
+    source cc-static-compound? 0= if s" nonconstant aggregate initializer" cc-fail then
+    source cc-image-base - 8 / cc-image + destination cc-static-location cc-image-base - 8 / cc-image +
+    destination cc-type cc-size cmove source destination cc-aggregate-metadata source exit then
   source cc-aggregate-value 2 (local!)
   destination source cc-aggregate-copy source ;
 ' cc-aggregate-store-body is cc-aggregate-store
@@ -3161,8 +3179,12 @@ cc-state-bytes @ constant cc-infer-snapshot-bytes
   1 cc-infer-depth +! 1 cc-unevaluated +!
   name cc-pos ! cc-next cc-cell dup type cc-type! dup cc-infer-target ! cc-symbol-at drop
   0 cc-infer-length ! start cc-pos ! cc-next 61 cc-expect
-  cc-token @ 123 <> cc-token @ 34 <> and if s" expected array initializer" cc-fail then
-  cc-nest cc-infer-target @ cc-initialize-object cc-unnest
+  cc-token @ 40 = if
+    cc-expression dup cc-type cc-kind 3 <> if s" expected array initializer" cc-fail then
+    cc-type dup cc-pointee type cc-pointee cc-types-compatible? 0= if s" incompatible array initializer" cc-fail then
+    cc-array-count cc-infer-length !
+  else cc-token @ 123 <> cc-token @ 34 <> and if s" expected array initializer" cc-fail then
+    cc-nest cc-infer-target @ cc-initialize-object cc-unnest then
   cc-infer-length @
   -1 cc-infer-depth +! -1 cc-unevaluated +!
   data cc-data-base - 8 / cc-data @ data - 8 / dup >r
@@ -3501,11 +3523,22 @@ create cc-reflow-types 8 cells allot
   cc-end-function-scope -1 ;
 
 variable cc-static-high
+: cc-static-compound-value-body ( source -- value ) 0 0 0 L{ source low high byte }
+  source cc-type cc-size 0 ?do
+    source cc-image-base - 8 / cc-image + i + c@ cc-reversed + c@ 4 (local!)
+    i 4 < if low byte i 8 * lshift or 2 (local!) else
+      high byte i 4 - 8 * lshift or 3 (local!) then
+  loop
+  source cc-type cc-width 64 = if low high cc-const64 else low source cc-type cc-fold-convert cc-const then
+  dup source cc-type cc-unqualified cc-type! ;
+' cc-static-compound-value-body is cc-static-compound-value
 : cc-static-expression ( target -- bits )
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ 0 cc-global-evaluation-level @
   L{ target data constants calls symbols result level }
   1 cc-unevaluated +! cc-unevaluated @ cc-global-evaluation-level ! cc-nest
-  cc-conditional cc-value dup target swap cc-assignment-check
+  cc-conditional dup cc-static-compound? over cc-type cc-record? 0= and
+  over cc-type cc-kind 3 <> and if cc-static-compound-value else cc-value then
+  dup target swap cc-assignment-check
   target cc-type cc-convert
   dup cc-known? 0= if s" expected static constant initializer" cc-fail then
   dup cc-fold-hi@ cc-static-high ! cc-fold@ 6 (local!) cc-unnest -1 cc-unevaluated +! level cc-global-evaluation-level !
@@ -3566,8 +3599,12 @@ variable cc-static-high
   original if target original cc-array-self-view alias cc-static-binding! then
   1 cc-static-initializing ! target target cc-type cc-size cc-clear-object
   cc-token @ 123 <> cc-token @ 34 = target cc-type cc-kind 3 = and 0= and if
-    s" expected aggregate initializer braces" cc-fail then
-  cc-nest target cc-initialize-object cc-unnest 0 cc-static-initializing !
+    target cc-type cc-record? if target cc-expression cc-initialize-write drop else
+      cc-expression dup cc-static-compound? 0= if s" expected aggregate initializer braces" cc-fail then
+      dup cc-type cc-kind 3 <> if s" expected array initializer" cc-fail then
+      dup cc-type target cc-type cc-types-compatible? 0= if s" incompatible array initializer" cc-fail then
+      cc-image-base - 8 / cc-image + target cc-image-base - 8 / cc-image + target cc-type cc-size cmove then
+  else cc-nest target cc-initialize-object cc-unnest then 0 cc-static-initializing !
   0 cc-static-flex-target ! 0 cc-static-flex-length !
   target alias cc-static-binding!
   -1 cc-unevaluated +! level cc-global-evaluation-level !
@@ -3575,6 +3612,49 @@ variable cc-static-high
   dup cc-types + r@ 0 fill dup cc-fold-flags + r@ 0 fill cc-lvalues + r> 0 fill
   constants cc-constant-base - 32 / cc-constant-types + cc-constants @ constants - 32 / 0 fill
   data cc-data ! constants cc-constants ! symbols cc-symbol-count ! ;
+: cc-measure-compound-array ( type -- complete-type ) 0 0 0 L{ type snapshot start length }
+  cc-token-start @ 3 (local!)
+  cc-infer-snapshot-bytes 5 cells + allocate throw 2 (local!)
+  cc-data @ snapshot ! cc-constants @ snapshot cell+ ! cc-static-data @ snapshot 2 cells + !
+  cc-infer-target @ snapshot 3 cells + ! cc-infer-length @ snapshot 4 cells + !
+  snapshot 5 cells + cc-state-save
+  1 cc-infer-depth +! 1 cc-unevaluated +!
+  cc-cell dup type cc-type! dup 1 cc-lvalue! dup cc-infer-target !
+  0 cc-infer-length ! cc-nest cc-initialize-object cc-unnest cc-infer-length @ 4 (local!)
+  -1 cc-unevaluated +! -1 cc-infer-depth +!
+  snapshot 2 cells + @ cc-image-base - 8 / cc-image +
+  cc-static-data @ snapshot 2 cells + @ - 8 / 0 fill
+  snapshot @ cc-rewind-temps snapshot 5 cells + cc-state-restore
+  snapshot @ cc-data ! snapshot cell+ @ cc-constants ! snapshot 2 cells + @ cc-static-data !
+  snapshot 3 cells + @ cc-infer-target ! snapshot 4 cells + @ cc-infer-length !
+  snapshot free throw start cc-pos ! cc-next type cc-pointee length cc-array-to ;
+: cc-compound-literal-body ( type -- object ) 0 cc-static-initializing @ 0 0
+  L{ type target initializing static level }
+  type cc-kind 7 = type cc-kind 2 = or if s" compound literal requires object type" cc-fail then
+  type cc-incomplete-array? if type cc-measure-compound-array 1 (local!) then
+  cc-in-function @ 0= cc-global-evaluation-level @ 0> cc-address-only @ 0= and
+  type cc-kind 3 <> and or cc-infer-depth @ 0= and
+  cc-unevaluated @ cc-global-evaluation-level @ <= and 4 (local!)
+  static if type cc-static-object else type cc-object dup type cc-type! dup 1 cc-lvalue! then 2 (local!)
+  static cc-static-initializing !
+  target type cc-size cc-clear-object
+  type cc-record? type cc-kind 3 = or if
+    cc-nest target cc-initialize-object cc-unnest
+  else static if target cc-static-scalar type cc-width 32 min target cc-value!
+      type cc-width 64 = if cc-static-high @ 32 target 32 + cc-value! then
+    else target cc-scalar-initializer cc-initialize-write drop then then
+  initializing cc-static-initializing !
+  static if 1 cc-compound-constants target cc-static-base - 8 / + c! then target ;
+' cc-compound-literal-body is cc-compound-literal
+: cc-query-compound-body ( type -- type )
+  cc-data @ cc-constants @ cc-static-data @ cc-call-count @ cc-symbol-count @ 0
+  L{ type data constants static calls symbols result }
+  1 cc-unevaluated +! type cc-compound-literal cc-postfix-tail cc-type 7 (local!)
+  -1 cc-unevaluated +! data cc-rewind-temps
+  constants cc-constant-base - 32 / cc-constant-types + cc-constants @ constants - 32 / 0 fill
+  static cc-image-base - 8 / cc-image + cc-static-data @ static - 8 / 0 fill
+  constants cc-constants ! static cc-static-data ! calls cc-call-count ! symbols cc-symbol-count ! result ;
+' cc-query-compound-body is cc-query-compound
 : cc-local-static-initialize-body ( target original symbol -- ) L{ target original symbol }
   cc-token @ 61 = if cc-next
     target cc-type cc-kind 3 = target cc-type cc-record? or if

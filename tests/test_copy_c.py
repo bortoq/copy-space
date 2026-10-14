@@ -22,6 +22,7 @@ from copy_c_aggregate_abi_cases import valid as aggregate_abi_valid, invalid as 
 from copy_c_aggregate_conditional_cases import valid as aggregate_conditional_valid, invalid as aggregate_conditional_invalid
 from copy_c_omitted_conditional_cases import valid as omitted_conditional_valid, invalid as omitted_conditional_invalid
 from copy_c_omitted_conditional_cases import volatile_reads as omitted_conditional_reads
+from copy_c_compound_literal_cases import valid as compound_literal_valid, invalid as compound_literal_invalid
 from copy_c_layout_attribute_cases import valid as layout_valid, invalid as layout_invalid
 from copy_c_member_attribute_cases import valid as member_layout_valid, invalid as member_layout_invalid
 from copy_c_flexible_cases import valid as flexible_valid, invalid as flexible_invalid
@@ -293,6 +294,7 @@ valid += aggregate_value_valid
 valid += aggregate_abi_valid
 valid += aggregate_conditional_valid
 valid += omitted_conditional_valid
+valid += compound_literal_valid
 valid += layout_valid
 valid += member_layout_valid
 valid += flexible_valid
@@ -415,6 +417,7 @@ invalid += aggregate_value_invalid
 invalid += aggregate_abi_invalid
 invalid += aggregate_conditional_invalid
 invalid += omitted_conditional_invalid
+invalid += compound_literal_invalid
 invalid += layout_invalid
 invalid += member_layout_invalid
 invalid += flexible_invalid

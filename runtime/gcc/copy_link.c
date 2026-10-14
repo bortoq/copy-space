@@ -4,7 +4,9 @@
 
 enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
        SUB_TABLE=33808, AND_TABLE=33824, OR_TABLE=33828, XOR_TABLE=33832,
-       TEMPORARY=33840, CARRY=33842, OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
+       TEMPORARY=33840, CARRY=33842, SHIFT_WORD=33856, SHIFT_COUNT=33888,
+       SHIFT_PAIR=33894, SHIFT_ZERO=33896,
+       OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
     uint32_t constants[12];
@@ -115,6 +117,32 @@ static int metadata(const char *s)
     }
     return 0;
 }
+static int shift32(struct context *ctx, int right, int arithmetic,
+                   uint32_t destination, uint32_t count)
+{
+    struct cs_copy_program *p=&ctx->program;
+    if (cs_copy_program_emit(p,5,SHIFT_COUNT,count)) return -1;
+    for (unsigned stage=0;stage<5;++stage) {
+        unsigned step=1u<<stage;
+        if (cs_copy_program_emit(p,32,SHIFT_WORD,destination)) return -1;
+        for (unsigned bit=0;bit<32;++bit) {
+            uint32_t selected=SHIFT_ZERO;
+            if (right) {
+                if (bit+step<32) selected=SHIFT_WORD+bit+step;
+                else if (arithmetic) selected=SHIFT_WORD+31;
+            } else if (bit>=step) selected=SHIFT_WORD+bit-step;
+            /* The selector and its read must remain in the same layer. */
+            if (p->image.slot>251 && cs_copy_program_next(p)) return -1;
+            uint32_t source_field=(p->image.slot+3)*p->image.instruction_bits+
+                                  p->image.count_bits+p->image.address_bits;
+            if (cs_copy_program_emit(p,1,SHIFT_PAIR,SHIFT_WORD+bit) ||
+                cs_copy_program_emit(p,1,SHIFT_PAIR+1,selected) ||
+                cs_copy_program_emit(p,1,source_field,SHIFT_COUNT+stage) ||
+                cs_copy_program_emit(p,1,destination+bit,SHIFT_PAIR)) return -1;
+        }
+    }
+    return 0;
+}
 static const char *instruction(struct context *ctx, char *s)
 {
     char *operands=s;
@@ -144,6 +172,9 @@ static const char *instruction(struct context *ctx, char *s)
         else if (!strcmp(s,"copy.and")) rc=cs_copy_program_bits32(&ctx->program,CS_COPY_AND,destination,destination,source,AND_TABLE);
         else if (!strcmp(s,"copy.or")) rc=cs_copy_program_bits32(&ctx->program,CS_COPY_OR,destination,destination,source,OR_TABLE);
         else if (!strcmp(s,"copy.xor")) rc=cs_copy_program_bits32(&ctx->program,CS_COPY_XOR,destination,destination,source,XOR_TABLE);
+        else if (!strcmp(s,"copy.ashl")) rc=shift32(ctx,0,0,destination,source);
+        else if (!strcmp(s,"copy.lshr")) rc=shift32(ctx,1,0,destination,source);
+        else if (!strcmp(s,"copy.ashr")) rc=shift32(ctx,1,1,destination,source);
         else return "unsupported operation";
     }
     return rc ? "copy image capacity exceeded" : NULL;

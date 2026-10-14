@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts/rv32i"))
 from space_segments import execute_segments
+from build import build
 
 
 def digest(path):
@@ -21,6 +22,7 @@ def main():
     parser.add_argument("--image",type=Path,required=True,help="directory prepared by prepare_image.py")
     parser.add_argument("--artifacts",type=Path,required=True)
     parser.add_argument("--emulator",type=Path)
+    parser.add_argument("--mode",choices=["preprocess","compile"],default="preprocess")
     args=parser.parse_args()
     image=args.image.resolve(); manifest=json.loads((image/"image.json").read_text())
     profiles={2*1024*1024:"space",64*1024*1024:"space-64m",256*1024*1024:"space-256m"}
@@ -43,6 +45,9 @@ def main():
     for name,data in files:
         packet+=struct.pack("<II",len(name),len(data))+name+data
     argv=[b"cc1",b"-E",b"-P",b"-quiet",b"-nostdinc",b"-Iinclude",b"main.c"]
+    if args.mode=="compile":
+        argv=[b"cc1",b"-quiet",b"-O2",b"-nostdinc",b"-Iinclude",b"-march=rv32i",b"-mabi=ilp32",
+              b"-mno-relax",b"-o",b"-",b"main.c"]
     job=b"GCCJOB1\0"+struct.pack("<II",len(argv),len(packet))
     for arg in argv: job+=struct.pack("<I",len(arg))+arg
     job+=packet
@@ -51,16 +56,16 @@ def main():
     with (root/"in.bin").open("wb") as target, (image/"gcc.stream").open("rb") as source:
         while block:=source.read(1024*1024): target.write(block)
         target.write(job)
-    print("Executing actual cc1 through primitive Space; preprocessing supplied C",flush=True)
+    print("Executing actual cc1 through primitive Space:",args.mode,flush=True)
     execution=execute_segments(emulator,root/"space",root/"in.bin",
         space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,
         ticks=100000,timeout=300,compression="zstd")
     output=(root/"space/program.in").read_bytes()
     raw=(root/"space/space.bin").read_bytes()
-    def word(at):
-        return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
+    def word(at,buffer=raw):
+        return sum(((buffer[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
     status,code=word(132128),word(132160)
-    evidence={"scope":"actual guest cc1 preprocessing only; copy backend still required",
+    evidence={"scope":"actual guest cc1 "+args.mode+"; copy backend still required",
         "image_sha256":manifest["stream_sha256"],"elf_sha256":manifest["elf_sha256"],
         "job_sha256":digest(root/"job.bin"),"in_sha256":digest(root/"in.bin"),
         "guest_status":status,"guest_exit":code,"output_hex":output.hex(),
@@ -68,8 +73,50 @@ def main():
     (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     assert status==10 and code==0,(status,code,output)
     assert raw[:manifest["layer_bits"]//8]==bytes(manifest["layer_bits"]//8)
-    assert output==expected.stdout,output
-    print("OK actual cc1 in Space: full preprocessed output matches GCC; guest exit 0",flush=True)
+    if args.mode=="preprocess":
+        assert output==expected.stdout,output
+        print("OK actual cc1 in Space: full preprocessed output matches GCC; guest exit 0",flush=True)
+    else:
+        assembly=root/"guest-result.s"; assembly.write_bytes(output)
+        driver=root/"control-driver.S"
+        driver.write_text(""".option norvc
+.option norelax
+.text
+.global main
+main:
+    addi sp, sp, -16
+    sw ra, 12(sp)
+    call value
+    li t0, 7
+    bne a0, t0, 1f
+    addi a0, a0, 48
+    sb a0, 0(sp)
+    li t0, 10
+    sb t0, 1(sp)
+    mv a0, sp
+    li a1, 2
+    call cs_write
+    li a0, 0
+    lw ra, 12(sp)
+    addi sp, sp, 16
+    ret
+1:
+    li a0, 88
+    call cs_exit
+""")
+        control=build([assembly,driver],root/"control.stream",compiler=manifest["compiler"],stream=True)
+        checked=execute_segments(ROOT/"build/bin/space",root/"control",root/"control.stream",
+            space_bytes=control["space_bytes"],layer_bytes=control["layer_bits"]//8,
+            ticks=100000,timeout=300,compression="zstd")
+        control_raw=(root/"control/space.bin").read_bytes()
+        control_output=(root/"control/program.in").read_bytes()
+        assert word(132128,control_raw)==10 and word(132160,control_raw)==0
+        assert control_output==b"7\n",control_output
+        evidence.update({"assembly_sha256":digest(assembly),"control_execution":checked,
+            "control_output_hex":control_output.hex(),"control_guest_exit":word(132160,control_raw),
+            "control_link_scope":"host preparation assembles guest-generated assembly; not guest linker"})
+        (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
+        print("OK actual cc1 compiled C in Space; generated RV32I code ran in Space and returned 7",flush=True)
 
 
 if __name__=="__main__": main()

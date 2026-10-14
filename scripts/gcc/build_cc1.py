@@ -18,6 +18,8 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--compiler", required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--optimization",choices=["O0","O1","O2","O3","Os"],
+                        help="explicit cc1 compilation optimization; requires a fresh object build")
     args = parser.parse_args()
     work=args.work.resolve()
     work.mkdir(parents=True, exist_ok=args.resume)
@@ -37,6 +39,14 @@ def main():
                  install/"lib/libstdc++.a",libraries/"support/libspace.a"):
         if not path.is_file(): raise ValueError("missing dependency "+str(path))
     tools=Toolchain(args.compiler)
+    profile={"compiler":tools.compiler,"optimization":args.optimization}
+    profile_file=work/"build-profile.json"
+    if profile_file.is_file():
+        if json.loads(profile_file.read_text())!=profile:
+            raise ValueError("build profile changed; use a fresh work directory")
+    elif args.optimization and (work/"gcc").is_dir() and any((work/"gcc").rglob("*.o")):
+        raise ValueError("cannot optimize existing untracked objects; use a fresh work directory")
+    profile_file.write_text(json.dumps(profile,indent=2)+"\n")
     env=os.environ.copy()
     env["PATH"]=str(Path(tools.compiler).parent)+os.pathsep+env["PATH"]
     env["CC"]=shlex.join([tools.compiler]+tools.flags+["-nostdlib"])
@@ -92,14 +102,19 @@ def main():
     run(work,"make-libraries",["make","-j1","all-build-libiberty","all-build-libcpp",
         "all-libiberty","all-libcpp","all-libdecnumber","all-libbacktrace","all-zlib",
         "all-intl","configure-gcc"],env)
-    run(work,"make-cc1",["make","-C","gcc","-j1","cc1","CC_FOR_BUILD=gcc","CXX_FOR_BUILD=g++",
-        "CFLAGS_FOR_BUILD=-O2","CXXFLAGS_FOR_BUILD=-O2","LDFLAGS_FOR_BUILD=","CPPFLAGS="],env)
+    cc1_make=["make","-C","gcc","-j1","cc1","CC_FOR_BUILD=gcc","CXX_FOR_BUILD=g++",
+        "CFLAGS_FOR_BUILD=-O2","CXXFLAGS_FOR_BUILD=-O2","LDFLAGS_FOR_BUILD=","CPPFLAGS="]
+    if args.optimization:
+        for key in ("CFLAGS","CXXFLAGS"):
+            shared=[flag for flag in shlex.split(env[key]) if not flag.startswith("-O")]
+            cc1_make.append(key+"="+shlex.join(["-"+args.optimization]+shared))
+    run(work,"make-cc1",cc1_make,env)
     cc1=work/"gcc/cc1"
     with cc1.open("rb") as stream:
         checksum=hashlib.file_digest(stream,"sha256").hexdigest()
     (work/"cc1.json").write_text(json.dumps({"compiler":tools.compiler,"build":build,
         "host":"RV32I/ILP32","target":"RV32I/ILP32 (control only)","cc1":str(cc1),
-        "bytes":cc1.stat().st_size,"sha256":checksum,
+        "bytes":cc1.stat().st_size,"sha256":checksum,"build_profile":profile,
         "scope":"image preparation only; execution in Space not yet proven"},indent=2)+"\n")
     print("Prepared actual RV32I cc1:",cc1,flush=True)
 

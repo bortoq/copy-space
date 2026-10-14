@@ -877,6 +877,25 @@ variable cc-long-suffix-char
   then then cc-pos @ cc-token-start @ - cc-token-size ! ;
 : cc-expect ( token -- ) cc-token @ <> if s" unexpected token" cc-fail then cc-next ;
 
+create cc-state-addresses 64 cells allot
+create cc-state-lengths 64 cells allot
+create cc-state-offsets 64 cells allot
+variable cc-state-count
+variable cc-state-bytes
+: cc-state-span ( address bytes -- )
+  cc-state-count @ 64 >= cc-limit
+  dup cc-state-lengths cc-state-count @ cells + !
+  cc-state-bytes @ cc-state-offsets cc-state-count @ cells + !
+  cc-state-bytes +! cc-state-addresses - cc-state-addresses cc-state-count @ cells + !
+  1 cc-state-count +! ;
+: cc-state-save ( snapshot -- ) L{ snapshot }
+  cc-state-count @ 0 ?do
+    cc-state-addresses i cells + @ cc-state-addresses + snapshot cc-state-offsets i cells + @ +
+    cc-state-lengths i cells + @ cmove loop ;
+: cc-state-restore ( snapshot -- ) L{ snapshot }
+  cc-state-count @ 0 ?do
+    snapshot cc-state-offsets i cells + @ + cc-state-addresses i cells + @ cc-state-addresses +
+    cc-state-lengths i cells + @ cmove loop ;
 create cc-function-names 16 32 * allot
 create cc-function-linkage 16 allot
 create cc-function-entry 16 cells allot
@@ -918,6 +937,7 @@ variable cc-statement-result
 variable cc-in-function
 variable cc-address-only
 variable cc-in-for-declaration
+cc-function-names here over - cc-state-span
 : cc-find ( names count -- index ) L{ names entries }
   entries 0 ?do cc-text names entries 1- i - 32 * + count compare 0= if
     entries 1- i - unloop exit then
@@ -944,6 +964,7 @@ variable cc-layout-cursor
 variable cc-layout-count
 variable cc-layout-mode
 variable cc-layout-replay
+cc-alias-names here over - cc-state-span
 : cc-global-reference ( alias -- )
   cc-unevaluated @ cc-global-evaluation-level @ > if drop exit then
   cc-global-ref-count @ 4096 >= cc-limit
@@ -989,6 +1010,7 @@ variable cc-type-count
 create cc-type-function-shapes 128 cells allot
 create cc-prototype-shapes 128 18 * cells allot
 variable cc-prototype-count
+cc-type-sizes here over - cc-state-span
 : cc-init-types
   cc-type-sizes 128 cells 0 fill
   cc-type-array-counts 128 cells 0 fill
@@ -1238,6 +1260,7 @@ cc-wide-bool-entry @ ,
 ' cc-fold-invert-body is cc-fold-invert
 create cc-wide-fold-input 4 cells allot
 create cc-wide-fold-output 2 cells allot
+cc-wide-fold-input here over - cc-state-span
 : cc-wide-fold-invoke ( lhs rhs entry result -- ) L{ lhs rhs entry result }
   lhs cc-known? rhs cc-known? and if
     lhs cc-fold@ cc-wide-fold-input ! lhs cc-fold-hi@ cc-wide-fold-input cell+ !
@@ -1378,6 +1401,7 @@ defer cc-function-type-to
 : cc-read-stars ( base -- type )
   begin cc-token @ 42 = while cc-next cc-pointer-to 0 cc-read-qualifiers cc-qualify repeat ;
 variable cc-prefix-quals
+cc-prefix-quals cell cc-state-span
 : cc-read-basic-type 0 0 0 cc-prefix-quals @ L{ saw-int sign base quals }
   cc-basic-type-start cc-qualifier? or 0= if s" expected scalar type" cc-fail then
   begin cc-basic-type-start cc-qualifier? or while
@@ -1497,6 +1521,7 @@ defer cc-indirect-call
 create cc-indirect-types 32 8 * cells allot
 create cc-indirect-values 32 8 * cells allot
 variable cc-indirect-depth
+cc-indirect-types here over - cc-state-span
 defer cc-abi-value
 defer cc-abi-convert
 : cc-abi-result ( type -- value ) L{ type }
@@ -1537,6 +1562,7 @@ create cc-goto-fields 256 cells allot
 create cc-goto-regions 256 cells allot
 create cc-switch-contexts 32 8 * cells allot
 create cc-switch-cases 32 128 * 5 * cells allot
+cc-break-fields here over - cc-state-span
 : cc-statement-expression-enter
   cc-statement-expression-count @ 512 >= cc-limit
   1 cc-statement-expression-count +!
@@ -1990,6 +2016,7 @@ defer cc-conditional
 ' cc-inspect-body is cc-inspect
 variable cc-constant-type
 variable cc-constant-high
+cc-constant-type here over - cc-state-span
  : cc-read-constant-body ( -- bits )
   cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @ 0
   L{ data constants calls symbols result }
@@ -2065,6 +2092,7 @@ variable cc-external-declarator
 variable cc-keep-prototype
 variable cc-external-prototype-shape
 create cc-external-parameter-addresses 8 cells allot
+cc-declarator-contexts here over - cc-state-span
 : cc-declarator-node ( context index -- node ) 2 * 5 + cells + ;
 : cc-declarator-add ( context kind argument -- ) L{ context kind argument }
   0 context cc-fget dup 32 >= cc-limit
@@ -2439,6 +2467,7 @@ defer cc-merge-layout-attributes
 create cc-generic-state 32 14 * cells allot
 create cc-generic-types 32 16 * cells allot
 variable cc-generic-depth
+cc-generic-state here over - cc-state-span
 \ State: default seen/value/start/end/calls-before/calls-after,
 \ selected value/start/end/seen, entry jump, association count.
 : cc-generic-type ( type context types -- ) L{ type context types }
@@ -2561,6 +2590,7 @@ variable cc-generic-depth
   cc-current cc-layer-bits + cc-const 24 cc-lret rot cc-op
   cc-add-entry @ cc-jump 32 cc-sp cc-r cc-op ;
 variable cc-vararg-offset
+cc-vararg-offset cell cc-state-span
 : cc-indirect-call-body ( callee -- value ) 0 0 0 0 0 0 0
   L{ callee type shape nargs pointer newsp resultptr types }
   cc-nest
@@ -2680,6 +2710,7 @@ create cc-union-origins 4096 cells allot
 create cc-union-members 4096 cells allot
 create cc-union-types 4096 cells allot
 variable cc-union-count
+cc-union-origins here over - cc-state-span
 : cc-union-wipe ( target bytes -- ) 0 L{ target bytes origin }
   cc-union-count @ 0= if exit then target cc-object-origin 3 (local!)
   origin 0= if s" unknown initializer destination" cc-fail then
@@ -2725,6 +2756,7 @@ variable cc-union-count
   cc-union-members slot cells + @ member = if exit then
   target target cc-type cc-size cc-clear-object member cc-union-members slot cells + ! ;
 variable cc-pending-initializer
+cc-pending-initializer cell cc-state-span
 : cc-scalar-initializer ( -- value )
   cc-pending-initializer @ if cc-pending-initializer @ 0 cc-pending-initializer ! exit then
   cc-token @ 123 = if cc-next cc-nest recurse cc-unnest
@@ -2758,6 +2790,7 @@ defer cc-initialize-range-chain
 variable cc-initializer-start
 variable cc-static-flex-target
 variable cc-static-flex-length
+cc-initializer-start here over - cc-state-span
 : cc-designator? cc-token @ dup 46 = swap 91 = or ;
 : cc-initialize-chain ( target -- )
   dup cc-type cc-kind 3 = if cc-token @ 91 <> if s" expected array designator" cc-fail then else
@@ -3009,6 +3042,7 @@ variable cc-static-flex-length
 ' cc-initialize-tail-body is cc-initialize-tail
 create cc-range-paths 32 168 * cells allot
 variable cc-range-path-depth
+cc-range-paths here over - cc-state-span
 : cc-range-node ( context level -- node ) 5 * 8 + cells + ;
 : cc-range-child ( context level parent index -- view ) 0 L{ context level parent index node }
   context level cc-range-node 5 (local!)
@@ -3100,12 +3134,13 @@ variable cc-range-path-depth
     context over cc-range-node dup 3 swap cc-fget swap 4 swap cc-fget cc-initialize-tail 1-
   repeat drop -1 cc-range-path-depth +! ;
 ' cc-initialize-range-chain-body is cc-initialize-range-chain
-here cc-function-names - constant cc-infer-snapshot-bytes
+here cc-function-names - constant cc-infer-previous-bytes
+cc-state-bytes @ constant cc-infer-snapshot-bytes
 : cc-infer-array ( type name start -- complete-type )
   cc-data @ cc-constants @ cc-static-data @ cc-infer-target @ cc-infer-length @
   L{ type name start data constants static target length }
   cc-infer-snapshot-bytes allocate dup if s" inference memory exhausted" cc-fail then drop >r
-  cc-function-names r@ cc-infer-snapshot-bytes cmove
+  r@ cc-state-save
   1 cc-infer-depth +! 1 cc-unevaluated +!
   name cc-pos ! cc-next cc-cell dup type cc-type! dup cc-infer-target ! cc-symbol-at drop
   0 cc-infer-length ! start cc-pos ! cc-next 61 cc-expect
@@ -3116,7 +3151,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   data cc-data-base - 8 / cc-data @ data - 8 / dup >r
   over cc-fold-flags + swap 0 fill cells cc-pointer-origins + r> cells 0 fill
   static cc-image-base - 8 / cc-image + cc-static-data @ static - 8 / 0 fill
-  r@ cc-function-names cc-infer-snapshot-bytes cmove r> free if s" inference memory error" cc-fail then
+  r@ cc-state-restore r> free if s" inference memory error" cc-fail then
   data cc-data ! constants cc-constants ! static cc-static-data !
   target cc-infer-target ! length cc-infer-length !
   type cc-pointee swap cc-array-to start cc-pos ! cc-next ;
@@ -3486,14 +3521,14 @@ variable cc-static-high
   cc-infer-snapshot-bytes 5 cells + allocate dup if s" inference memory exhausted" cc-fail then drop 2 (local!)
   cc-data @ snapshot ! cc-constants @ snapshot cell+ ! static snapshot 2 cells + !
   cc-infer-target @ snapshot 3 cells + ! cc-infer-length @ snapshot 4 cells + !
-  cc-function-names snapshot 5 cells + cc-infer-snapshot-bytes cmove
+  snapshot 5 cells + cc-state-save
   target cc-static-flex-target ! 0 cc-infer-length ! 0 cc-infer-target !
   1 cc-infer-depth +! 1 cc-unevaluated +!
   cc-nest target cc-initialize-object cc-unnest cc-infer-length @ 3 (local!)
   -1 cc-infer-depth +! -1 cc-unevaluated +!
   static cc-image-base - 8 / cc-image + cc-static-data @ static - 8 / 0 fill
   snapshot @ cc-rewind-temps
-  snapshot 5 cells + cc-function-names cc-infer-snapshot-bytes cmove
+  snapshot 5 cells + cc-state-restore
   snapshot @ cc-data ! snapshot cell+ @ cc-constants ! snapshot 2 cells + @ cc-static-data !
   snapshot 3 cells + @ cc-infer-target ! snapshot 4 cells + @ cc-infer-length !
   snapshot free if s" inference memory error" cc-fail then

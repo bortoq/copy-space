@@ -22,11 +22,15 @@ def main():
     parser.add_argument("--image",type=Path,required=True,help="directory prepared by prepare_image.py")
     parser.add_argument("--artifacts",type=Path,required=True)
     parser.add_argument("--emulator",type=Path)
-    parser.add_argument("--mode",choices=["preprocess","compile"],default="preprocess")
+    parser.add_argument("--mode",choices=["preprocess","compile","copy-compile"],default="preprocess")
+    parser.add_argument("--newlib",type=Path,help="guest assembler C runtime for copy-compile")
     parser.add_argument("--resume",action="store_true")
     parser.add_argument("--timeout",type=float,default=300)
     args=parser.parse_args()
     image=args.image.resolve(); manifest=json.loads((image/"image.json").read_text())
+    if args.mode=="copy-compile":
+        if not args.newlib or manifest.get("target")!="copyspace-unknown-elf" or not manifest.get("framed_output"):
+            raise ValueError("copy-compile requires copyspace framed image and --newlib")
     profiles={2*1024*1024:"space",64*1024*1024:"space-64m",256*1024*1024:"space-256m"}
     emulator=args.emulator.resolve() if args.emulator else ROOT/"build/bin"/profiles[manifest["space_bytes"]]
     if not emulator.is_file(): raise ValueError("build matching emulator: "+str(emulator))
@@ -40,6 +44,11 @@ def main():
     if not args.resume:
         files=[(b"main.c",b'#include "value.h"\n#define BASE 3\nunsigned value(void) { return BASE + VALUE; }\n'),
                (b"include/value.h",b"#define VALUE 4\n")]
+        oracle=b"unsigned value(void) { return 3 + 4; }\n"
+        if args.mode=="copy-compile":
+            files=[(b"main.c",b'#include "value.h"\nunsigned value(unsigned a, unsigned b) { return (a + b) ^ VALUE; }\n'),
+                   (b"include/value.h",b"#define VALUE 5\n")]
+            oracle=b"unsigned value(unsigned a, unsigned b) { return (a + b) ^ 5; }\n"
         for name,data in files:
             path=root/"native-inputs"/name.decode()
             path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
@@ -47,7 +56,7 @@ def main():
         (root/"native-command.json").write_text(json.dumps(native)+"\n")
         expected=subprocess.run(native,cwd=root/"native-inputs",capture_output=True)
         (root/"native.out").write_bytes(expected.stdout); (root/"native.err").write_bytes(expected.stderr)
-        if expected.returncode or expected.stdout!=b"unsigned value(void) { return 3 + 4; }\n":
+        if expected.returncode or expected.stdout!=oracle:
             raise RuntimeError("native oracle differs from independent expected output")
         packet=b"\0CCFILES1"+struct.pack("<III",len(files),0,1)+struct.pack("<I",7)+b"include"
         for name,data in files:
@@ -59,6 +68,9 @@ def main():
             if manifest.get("framed_output"):
                 argv.insert(1,b"--space-result=result.s")
                 argv[argv.index(b"-o")+1]=b"result.s"
+        elif args.mode=="copy-compile":
+            argv=[b"cc1",b"--space-result=result.s",b"-quiet",b"-O2",b"-nostdinc",b"-Iinclude",
+                  b"-o",b"result.s",b"main.c"]
         job=b"GCCJOB1\0"+struct.pack("<II",len(argv),len(packet))
         for arg in argv: job+=struct.pack("<I",len(arg))+arg
         job+=packet
@@ -92,11 +104,23 @@ def main():
         stderr=output[24+outsize:24+outsize+errsize]
         file=output[24+outsize+errsize:]
         assert not stderr,stderr
-        output=file if args.mode=="compile" else stdout
+        output=file if args.mode!="preprocess" else stdout
         (root/"result.bin").write_bytes(output)
     if args.mode=="preprocess":
         assert output==(root/"native.out").read_bytes(),output
         print("OK actual cc1 in Space: full preprocessed output matches GCC; guest exit 0",flush=True)
+    elif args.mode=="copy-compile":
+        assembly=root/"guest-result.s"; assembly.write_bytes(output)
+        command=[sys.executable,str(ROOT/"tests/test_gcc_copy_link.py"),"--artifacts",str(root/"copy-link"),
+                 "--compiler",manifest["compiler"],"--newlib",str(args.newlib.resolve()),"--assembly",str(assembly)]
+        (root/"copy-link-command.json").write_text(json.dumps(command)+"\n")
+        subprocess.run(command,check=True)
+        linked=json.loads((root/"copy-link/evidence.json").read_text())
+        assert linked["guest_exit"]==0 and linked["direct_output_hex"]=="02000000"
+        evidence.update({"scope":"GNU C compiled and lowered in Space; direct copy result without RV32I",
+            "assembly_sha256":digest(assembly),"copy_link_evidence":linked})
+        (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
+        print("OK actual cc1 and assembler in Space; direct copies returned 2",flush=True)
     else:
         assembly=root/"guest-result.s"; assembly.write_bytes(output)
         driver=root/"control-driver.S"

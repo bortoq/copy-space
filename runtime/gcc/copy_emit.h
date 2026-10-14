@@ -30,6 +30,7 @@ int cs_copy_bits32(struct cs_copy_image *, enum cs_copy_bit_operation,
 int cs_copy_program_init(struct cs_copy_program *, unsigned char *, size_t,
                         unsigned, uint32_t, uint32_t);
 int cs_copy_program_next(struct cs_copy_program *);
+int cs_copy_program_patch_jump(struct cs_copy_program *, uint32_t, uint32_t);
 int cs_copy_program_emit(struct cs_copy_program *, uint32_t, uint32_t, uint32_t);
 int cs_copy_program_add32(struct cs_copy_program *, uint32_t, uint32_t, uint32_t,
                           uint32_t, uint32_t, uint32_t);

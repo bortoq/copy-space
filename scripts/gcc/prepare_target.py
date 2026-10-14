@@ -27,6 +27,8 @@ def derive(name, text):
         text = re.sub(r"(?<![\w.])([a-z]+(?:\.[a-z]+)?)(?=\\\\t)", r"copy.\1", text)
         text = text.replace('"<mul>.x', '"copy.<mul>.x')
     if name == "moxie.cc":
+        text=replace_once(text, '"%ld(%s)"', 'HOST_WIDE_INT_PRINT_DEC "(%s)"')
+        text=replace_once(text, '"+%ld(%s)"', '"+" HOST_WIDE_INT_PRINT_DEC "(%s)"')
         for function, body in [
             ("copyspace_asm_trampoline_template", '(void)f; sorry ("copyspace nested-function trampolines are not implemented");'),
             ("copyspace_trampoline_init", '(void)m_tramp; (void)fndecl; (void)chain_value; sorry ("copyspace nested-function trampolines are not implemented");'),
@@ -35,7 +37,7 @@ def derive(name, text):
             end = text.index("\n}", start)
             text = text[:start] + "\n{\n  " + body + text[end:]
         start = text.index("\n{", text.index("\ncopyspace_option_override (")) + 2
-        text = text[:start] + '\n  if (!TARGET_LITTLE_ENDIAN) sorry ("copyspace requires little-endian data");' + text[start:]
+        text = text[:start] + '\n  if (!(target_flags_explicit & MASK_LITTLE_ENDIAN)) target_flags |= MASK_LITTLE_ENDIAN;\n  if (!TARGET_LITTLE_ENDIAN) sorry ("copyspace requires little-endian data");' + text[start:]
     return text
 
 
@@ -89,7 +91,7 @@ def main():
     for name in target_names:
         (target / name.replace("moxie", "copyspace")).write_text(derive(name, source["gcc/config/moxie/" + name].decode()))
     config = source["gcc/config.gcc"].decode()
-    config = replace_once(config, "moxie*)\tcpu_type=moxie", "copyspace*)\tcpu_type=copyspace\n\t;;\nmoxie*)\tcpu_type=moxie")
+    config = replace_once(config, "moxie*)\tcpu_type=moxie", "copyspace*)\tcpu_type=copyspace\n\ttarget_has_targetm_common=no\n\t;;\nmoxie*)\tcpu_type=moxie")
     config = replace_once(config, "moxie-*-elf)", 'copyspace-*-elf)\n\tgas=yes\n\tgnu_ld=yes\n\ttm_file="dbxelf.h elfos.h newlib-stdint.h ${tm_file}"\n\ttmake_file="${tmake_file} copyspace/t-copyspace"\n\t;;\nmoxie-*-elf)')
     (tree / "gcc/config.gcc").write_text(config)
     (tree / "config.sub").write_text(replace_once(source["config.sub"].decode(), "| moxie \\", "| copyspace | moxie \\"))

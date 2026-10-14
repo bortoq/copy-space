@@ -9,7 +9,38 @@ struct context {
     struct cs_copy_program program;
     uint32_t constants[12];
     unsigned constant_count;
+    struct { char name[64]; uint32_t address; int defined; } labels[32];
+    struct { uint32_t layer; int label; size_t line; } jumps[64];
+    unsigned label_count, jump_count;
 };
+
+static int label(struct context *ctx, const char *name)
+{
+    size_t length=strlen(name);
+    if (!length || length>=sizeof(ctx->labels[0].name)) return -1;
+    for (size_t i=0;i<length;++i) {
+        unsigned char c=(unsigned char)name[i];
+        if (!(c=='_' || c=='.' || c=='$' || (c>='a' && c<='z') ||
+              (c>='A' && c<='Z') || (i && c>='0' && c<='9'))) return -1;
+    }
+    for (unsigned i=0;i<ctx->label_count;++i)
+        if (!strcmp(ctx->labels[i].name,name)) return (int)i;
+    if (ctx->label_count==32) return -1;
+    unsigned i=ctx->label_count++;
+    memcpy(ctx->labels[i].name,name,length+1);
+    return (int)i;
+}
+
+static int jump(struct context *ctx, int target, size_t line)
+{
+    if (ctx->jump_count==64) return -1;
+    unsigned i=ctx->jump_count;
+    uint32_t layer=ctx->program.image.layer;
+    if (cs_copy_program_next(&ctx->program)) return -1;
+    ctx->jumps[i].layer=layer; ctx->jumps[i].label=target; ctx->jumps[i].line=line;
+    ++ctx->jump_count;
+    return 0;
+}
 
 static int whitespace(unsigned char c) { return c==' ' || c=='\t' || c=='\r'; }
 static char *trim(char *s)
@@ -126,7 +157,7 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
     struct context ctx;
     const char *message="invalid link input";
     size_t line=0, offset=0;
-    int entered=0, returned=0;
+    int entered=0, returned=0, terminated=0;
     if (!data || bytes<32768 || bytes>UINT32_MAX/8 || !assembly || !entry || !*entry ||
         argc>6 || (argc && !arguments) || memchr(assembly,0,size)) goto fail;
     memset(data,0,bytes);
@@ -146,26 +177,60 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
         char *s=trim(buffer), *comment=strchr(s,'#');
         if (comment) { *comment=0; s=trim(s); }
         if (!*s) continue;
+        size_t length=strlen(s);
+        if (s[length-1]==':') {
+            s[length-1]=0;
+            s=trim(s);
+            message="only one function and local labels are supported";
+            if ((!entered && strcmp(s,entry)) || (entered && strncmp(s,".L",2))) goto fail;
+            int index=label(&ctx,s);
+            message="invalid or duplicate copy label";
+            if (index<0 || ctx.labels[index].defined) goto fail;
+            if (ctx.program.image.slot!=3 && cs_copy_program_next(&ctx.program)) {
+                message="copy image capacity exceeded"; goto fail;
+            }
+            ctx.labels[index].address=ctx.program.image.layer;
+            ctx.labels[index].defined=1;
+            entered=1; terminated=0; continue;
+        }
         if (*s=='.') {
             message="unsupported section or directive";
             if (!metadata(s)) goto fail;
             continue;
         }
-        size_t length=strlen(s);
-        if (s[length-1]==':') {
-            s[length-1]=0;
-            message="only one leaf entry is supported";
-            if (entered || strcmp(trim(s),entry)) goto fail;
-            entered=1; continue;
-        }
         message="operation outside leaf body";
-        if (!entered || returned) goto fail;
-        if (!strcmp(s,"copy.ret")) { returned=1; continue; }
+        if (!entered || terminated) goto fail;
+        if (!strcmp(s,"copy.ret")) {
+            message="copy image capacity exceeded";
+            if (jump(&ctx,-2,line)) goto fail;
+            returned=1; terminated=1; continue;
+        }
+        if (!strncmp(s,"copy.jmpa",9) && whitespace((unsigned char)s[9])) {
+            int index=label(&ctx,trim(s+9));
+            message="invalid copy jump label";
+            if (index<0) goto fail;
+            message="copy image capacity exceeded";
+            if (jump(&ctx,index,line)) goto fail;
+            terminated=1; continue;
+        }
         message=instruction(&ctx,s);
         if (message) goto fail;
     }
     message="missing leaf entry or return";
     if (!entered || !returned) goto fail;
+    message="copy image capacity exceeded";
+    if (cs_copy_program_next(&ctx.program)) goto fail;
+    uint32_t report=ctx.program.image.layer;
+    for (unsigned i=0;i<ctx.jump_count;++i) {
+        int index=ctx.jumps[i].label;
+        if (index>=0 && !ctx.labels[index].defined) {
+            line=ctx.jumps[i].line; message="undefined copy label"; goto fail;
+        }
+        uint32_t target=index==-2 ? report : ctx.labels[index].address;
+        if (cs_copy_program_patch_jump(&ctx.program,ctx.jumps[i].layer,target)) {
+            message="invalid copy jump target"; goto fail;
+        }
+    }
     message="copy image capacity exceeded";
     for (unsigned i=0;i<32;++i)
         if (cs_copy_program_emit(&ctx.program,1,OUTPUT+(i/8)*8+7-(i%8),REG_BASE+64+i)) goto fail;

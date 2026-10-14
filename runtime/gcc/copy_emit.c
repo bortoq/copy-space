@@ -200,6 +200,17 @@ static int room(struct cs_copy_program *program, unsigned count)
     return cs_copy_program_next(program);
 }
 
+int cs_copy_program_patch_jump(struct cs_copy_program *program, uint32_t layer, uint32_t target)
+{
+    if (!program || layer<program->code_begin || target<program->code_begin ||
+        layer>=program->code_end || target>=program->code_end ||
+        (layer-program->code_begin)%program->image.layer_bits ||
+        (target-program->code_begin)%program->image.layer_bits) return -1;
+    struct cs_copy_image from=program->image;
+    from.layer=layer;
+    return cs_copy_row(&from,255,from.layer_bits,0,target);
+}
+
 int cs_copy_program_emit(struct cs_copy_program *program, uint32_t count,
                          uint32_t destination, uint32_t source)
 {

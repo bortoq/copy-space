@@ -17,6 +17,8 @@ def main():
     parser.add_argument("--artifacts",type=Path,required=True)
     parser.add_argument("--compiler",required=True)
     parser.add_argument("--newlib",type=Path,required=True)
+    parser.add_argument("--assembly",type=Path,help="use an existing GCC-produced assembler file for guest lowering")
+    parser.add_argument("--native-only",action="store_true",help="check direct images without building the guest assembler")
     args=parser.parse_args()
     root=args.artifacts.resolve();root.mkdir(parents=True,exist_ok=False)
     paths=[ROOT/"tests/fixtures/gcc/copy_link.c"]+[ROOT/"runtime/gcc"/name for name in
@@ -40,10 +42,15 @@ def main():
            (b'copy.or $r0,$r1\ncopy.and $r0,$r1\n',4),
            (b'copy.ldi.l $r0,0xffffffff\ncopy.inc $r0,1\ncopy.dec $r0,--5\n',0xfffffffb),
            (b'copy.ldi.l $r2,010\ncopy.mov $r0,$r2\n',8)]
+    cases.extend([(b'copy.jmpa .Ldone\n.Lskip:\ncopy.ldi.l $r0,99\ncopy.ret\n.Ldone:\ncopy.add $r0,$r1\n',7),
+                  (b'copy.jmpa .Llast\n.Lfirst:\ncopy.add $r0,$r1\ncopy.ret\n.Llast:\ncopy.jmpa .Lfirst\n.Lunused:\n',7),
+                  (b'copy.add $r0,$r1\n.Lalias:\ncopy.xor $r0,$r1\n',3)])
+    cases.append((b'copy.ret\n.Lunreachable:\ncopy.ldi.l $r0,99\n',3))
     results=[]
     for index,(body,value) in enumerate(cases):
         folder=root/str(index);folder.mkdir()
-        assembly=prefix+body+suffix;(folder/"input.s").write_bytes(assembly)
+        assembly=prefix+body+(suffix if index<8 else b'.size value,.-value\n')
+        (folder/"input.s").write_bytes(assembly)
         result=subprocess.run([str(native)],input=assembly,capture_output=True,check=True)
         assert len(result.stdout)==32768
         (folder/"image.bin").write_bytes(result.stdout)
@@ -59,10 +66,23 @@ def main():
     invalid=[prefix+s+suffix for s in bad_bodies]+[b'.data\nvalue:\ncopy.ret\n',
         prefix+b'copy.add $r0,$r1\n',prefix+b'other:\ncopy.ret\n',
         prefix+b'copy.ret\ncopy.add $r0,$r1\n',prefix+b'copy.ret\x00\n']
+    invalid.extend([prefix+b'copy.jmpa .Lmissing\n'+suffix,
+                    prefix+b'.Ldup:\n.Ldup:\n'+suffix])
     for index,assembly in enumerate(invalid):
         (root/f"invalid-{index}.s").write_bytes(assembly)
         result=subprocess.run([str(native)],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout,(index,result.returncode)
+    if args.native_only:
+        (root/"evidence.json").write_text(json.dumps({"source_sha256":hashes,
+            "native_direct_cases":results,"rejected_cases":len(invalid)},indent=2)+"\n")
+        print(f"OK {len(results)} direct images and {len(invalid)} rejected inputs")
+        return
+    if args.assembly:
+        incoming=args.assembly.read_bytes()
+        (root/"gcc-input.s").write_bytes(incoming)
+        result=subprocess.run([str(native)],input=incoming,capture_output=True,check=True)
+        expected=result.stdout
+        assert len(expected)==32768
     prefix=args.newlib.resolve()/"riscv64-unknown-elf"
     manifest=build(sources,root/"linker.stream",compiler=args.compiler,stream=True,optimization="-O2",
         extra_cflags=[include,"-isystem",str(prefix/"include"),"-DCS_RUNTIME_EXTERNAL_MEMORY"],

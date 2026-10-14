@@ -39,11 +39,14 @@ def main():
     parser.add_argument("--memory-bytes",type=lambda s:int(s,0),default=64*1024*1024)
     parser.add_argument("--space-bytes",type=lambda s:int(s,0),default=256*1024*1024)
     parser.add_argument("--framed-output",action="store_true",help="emit GCCOUT1 with separate result/diagnostics")
+    parser.add_argument("--copy-output",action="store_true",help="lower cc1 output with the guest copy assembler")
     args=parser.parse_args()
     if not 0<args.heap_bytes<args.memory_bytes-4*1024*1024:
         raise ValueError("heap must leave room for code and stack")
     work=args.cc1_work.resolve(); gcc=work/"gcc"
     receipt=json.loads((work/"cc1.json").read_text())
+    if args.copy_output and (not args.framed_output or receipt["target"]!="copyspace-unknown-elf"):
+        raise ValueError("--copy-output requires --framed-output and copyspace cc1")
     if digest(gcc/"cc1")!=receipt["sha256"]: raise ValueError("original cc1 changed")
     root=args.artifacts.resolve(); root.mkdir(parents=True,exist_ok=False)
     tools=Toolchain(args.compiler)
@@ -59,6 +62,7 @@ def main():
         "files.c","files.h","directories.c","include/dirent.h","syscalls.c","cxx.c")]
     names += ["runtime/rv32i/runtime.c","runtime/rv32i/copy_space.h","runtime/copy_c/input_files.h"]
     if args.framed_output: names.extend(["runtime/gcc/response.c","runtime/gcc/response.h"])
+    if args.copy_output: names.extend(["runtime/gcc/"+name for name in ("copy_link.c","copy_link.h","copy_emit.c","copy_emit.h")])
     for name in names:
         path=sources/name; path.parent.mkdir(parents=True,exist_ok=True)
         path.write_bytes((ROOT/name).read_bytes()); frozen[name]=digest(path)
@@ -73,6 +77,8 @@ def main():
             "-isystem",str(newlib/"include"),"-I"+str(sources/"runtime/gcc"),
             "-I"+str(sources/"runtime/rv32i"),"-c",str(path),"-o",str(obj)]
         if args.framed_output: command.insert(1,"-DCS_GCC_FRAMED_OUTPUT")
+        if args.copy_output: command[1:1]=["-DCS_GCC_COPY_OUTPUT",
+            "-DCS_GCC_COPY_ADDRESS_BITS="+str((args.space_bytes*8).bit_length()-1)]
         run(root,path.stem+"-compile",command,root); objects.append(str(obj))
     dry=run(root,"link-recipe",["make","-n","-C",str(gcc),"-W","cc1-checksum.o","cc1",
         "CC_FOR_BUILD=gcc","CXX_FOR_BUILD=g++","CPPFLAGS="],work)
@@ -116,6 +122,7 @@ def main():
     manifest.update({"original_cc1_sha256":receipt["sha256"],"elf_sha256":digest(elf),
         "target":receipt["target"],"target_sources_sha256":receipt["build_profile"].get("target_sources_sha256"),
         "compiler":tools.compiler,"framed_output":args.framed_output,
+        "copy_output":args.copy_output,"copy_image_bytes":65536 if args.copy_output else None,
         "libraries_sha256":library_receipt["archives_sha256"],
         "newlib_libc_sha256":digest(newlib/"lib/libc.a"),"newlib_libm_sha256":digest(newlib/"lib/libm.a"),
         "runtime_sources":frozen,"heap_bytes":args.heap_bytes,"elf_memory_end":end,

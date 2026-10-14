@@ -77,7 +77,7 @@ def main():
                     options[:2]+["--space-arg=1"]*7):
         result=subprocess.run([str(root/"native")],input=job(assembly,private),capture_output=True)
         assert result.returncode==125 and not result.stdout,result
-    failed=subprocess.run([str(root/"native")],input=job(b"value:\ncopy.div $r0,$r1\ncopy.ret\n",options),capture_output=True)
+    failed=subprocess.run([str(root/"native")],input=job(b"value:\ncopy.mul.x $r0,$r1\ncopy.ret\n",options),capture_output=True)
     status,stdout,stderr,file=decode(failed.stdout)
     assert failed.returncode==status==126 and not stdout and not file and b"unsupported operation" in stderr
     evidence={"scope":"adapter with mock cc1, not actual compilation","sources_sha256":hashes,

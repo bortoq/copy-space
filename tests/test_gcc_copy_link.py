@@ -102,6 +102,24 @@ def main():
     cases.append((b'copy.cmp $r0,$r1\ncopy.mul $r0,$r1\ncopy.branch.ltu .Ldone\n'
                   b'copy.inc $r0,100\n.Ldone:\n',12,suffix))
     cases.append((b'copy.mul $r0,$r1\ncopy.mul $r0,$r1\n',48,suffix))
+    for operation in ("udiv","umod","div","mod"):
+        for left in values:
+            for right in values:
+                if not right: quotient,residue=0xffffffff,left
+                elif operation.startswith("u"): quotient,residue=divmod(left,right)
+                else:
+                    a=left if left<0x80000000 else left-0x100000000
+                    b=right if right<0x80000000 else right-0x100000000
+                    quotient=abs(a)//abs(b)
+                    if (a<0)!=(b<0): quotient=-quotient
+                    residue=a-quotient*b
+                result=residue if operation.endswith("mod") else quotient
+                body=f'copy.ldi.l $r0,{left}\ncopy.ldi.l $r1,{right}\ncopy.{operation} $r0,$r1\n'.encode()
+                cases.append((body,result&0xffffffff,suffix))
+        cases.append((f'copy.ldi.l $r0,3\ncopy.{operation} $r0,$r0\n'.encode(),
+                      0 if operation.endswith("mod") else 1,suffix))
+    cases.append((b'copy.cmp $r0,$r1\ncopy.udiv $r0,$r1\ncopy.branch.ltu .Ldone\n'
+                  b'copy.inc $r0,100\n.Ldone:\n',0,suffix))
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()
@@ -119,7 +137,7 @@ def main():
         if index==args.guest_case: incoming,expected,expected_value=assembly,result.stdout,value
     if not 0<=args.guest_case<len(cases):
         raise ValueError("guest case index outside fixture list")
-    bad_bodies=[b'copy.div $r0,$r1\n',b'copy.mov $r99,$r0\n',b'copy.ldi.l $r0,4294967296\n',
+    bad_bodies=[b'copy.mul.x $r0,$r1\n',b'copy.mov $r99,$r0\n',b'copy.ldi.l $r0,4294967296\n',
                 b'copy.ldi.l $r0,08\n',b'copy.jmpa elsewhere\n']
     invalid=[prefix+s+suffix for s in bad_bodies]+[b'.data\nvalue:\ncopy.ret\n',
         prefix+b'copy.add $r0,$r1\n',prefix+b'other:\ncopy.ret\n',
@@ -128,7 +146,8 @@ def main():
                     prefix+b'.Ldup:\n.Ldup:\n'+suffix])
     invalid.extend([prefix+b'copy.branch.eq .Lyes\n.Lyes:\n'+suffix,
                     prefix+b'copy.cmp $r0,$r1\ncopy.branch.zz .Lyes\n.Lyes:\n'+suffix,
-                    prefix+b'copy.cmp $r0,$r1\ncopy.branch.eq .Lmissing\n'+suffix])
+                    prefix+b'copy.cmp $r0,$r1\ncopy.branch.eq .Lmissing\n'+suffix,
+                    prefix+b'copy.udiv $r0,$r1\ncopy.branch.eq .Lyes\n.Lyes:\n'+suffix])
     for index,assembly in enumerate(invalid):
         (root/f"invalid-{index}.s").write_bytes(assembly)
         result=subprocess.run([str(native)],input=assembly,capture_output=True)

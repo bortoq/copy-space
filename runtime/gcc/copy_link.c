@@ -11,6 +11,10 @@ enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
        BRANCH_TABLE=60032,
        MUL_LEFT=34240, MUL_RIGHT=34272, MUL_ACC=34304,
        MUL_ADDEND=34336, MUL_MARKER=34368, MUL_STOP=34400,
+       DIV_NUM=34528, DIV_DEN=34560, DIV_REM=34592, DIV_QUO=34624,
+       DIV_MARK=34656, DIV_OVERFLOW=34688, DIV_STOP=34689,
+       DIV_FLAGS=34690, DIV_REDUCE=34695, DIV_NUM_SIGN=34696,
+       DIV_DEN_SIGN=34697, DIV_SIGN=34698,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
@@ -212,6 +216,83 @@ static int multiply32(struct context *ctx, uint32_t destination, uint32_t source
         conditional_jump(ctx,(int)loop,MUL_STOP,1,0)) return -1;
     return cs_copy_program_emit(p,32,destination,MUL_ACC);
 }
+static int internal_label(struct context *ctx)
+{
+    if (ctx->label_count==32) return -1;
+    return (int)ctx->label_count++;
+}
+static int bind_internal(struct context *ctx, int index)
+{
+    if (index<0 || cs_copy_program_next(&ctx->program)) return -1;
+    ctx->labels[index].defined=1;
+    ctx->labels[index].address=ctx->program.image.layer;
+    return 0;
+}
+static int absolute32(struct context *ctx, uint32_t value, uint32_t sign, uint32_t zero)
+{
+    int skip=internal_label(ctx);
+    return skip<0 || conditional_jump(ctx,skip,sign,1,0) ||
+        cs_copy_program_sub32(&ctx->program,value,zero,value,SUB_TABLE,TEMPORARY,CARRY) ||
+        bind_internal(ctx,skip) ? -1 : 0;
+}
+static int divide32(struct context *ctx, uint32_t destination, uint32_t source,
+                    int signed_operation, int remainder)
+{
+    struct cs_copy_program *p=&ctx->program;
+    uint32_t zero,one;
+    int compared=ctx->compared;
+    if (constant(ctx,0,&zero) || constant(ctx,1,&one) ||
+        cs_copy_program_emit(p,5,DIV_FLAGS,CMP_EQ) ||
+        cs_copy_program_emit(p,32,DIV_NUM,destination) ||
+        cs_copy_program_emit(p,32,DIV_DEN,source) ||
+        cs_copy_program_emit(p,1,DIV_NUM_SIGN,DIV_NUM+31) ||
+        cs_copy_program_emit(p,1,DIV_DEN_SIGN,DIV_DEN+31)) return -1;
+    if (signed_operation &&
+        (absolute32(ctx,DIV_NUM,DIV_NUM_SIGN,zero) ||
+         absolute32(ctx,DIV_DEN,DIV_DEN_SIGN,zero))) return -1;
+    if (cs_copy_program_emit(p,32,DIV_REM,zero) ||
+        cs_copy_program_emit(p,32,DIV_QUO,zero) ||
+        cs_copy_program_emit(p,32,DIV_MARK,one) || cs_copy_program_next(p)) return -1;
+    int loop=internal_label(ctx),skip=internal_label(ctx);
+    if (loop<0 || skip<0) return -1;
+    ctx->labels[loop].defined=1;ctx->labels[loop].address=p->image.layer;
+    if (cs_copy_program_emit(p,1,DIV_OVERFLOW,DIV_REM+31) ||
+        cs_copy_program_emit(p,31,DIV_REM+1,DIV_REM) ||
+        cs_copy_program_emit(p,1,DIV_REM,DIV_NUM+31) ||
+        cs_copy_program_emit(p,31,DIV_NUM+1,DIV_NUM) ||
+        cs_copy_program_emit(p,1,DIV_NUM,zero) ||
+        cs_copy_program_emit(p,31,DIV_QUO+1,DIV_QUO) ||
+        cs_copy_program_emit(p,1,DIV_QUO,zero) ||
+        compare32(ctx,DIV_REM,DIV_DEN) ||
+        lookup(ctx,DIV_REDUCE,XOR_TABLE,CMP_LTU,one,0,2) ||
+        lookup(ctx,DIV_REDUCE,OR_TABLE,DIV_REDUCE,DIV_OVERFLOW,0,2) ||
+        conditional_jump(ctx,skip,DIV_REDUCE,1,0) ||
+        cs_copy_program_sub32(p,DIV_REM,DIV_REM,DIV_DEN,SUB_TABLE,TEMPORARY,CARRY) ||
+        cs_copy_program_emit(p,1,DIV_QUO,one) || bind_internal(ctx,skip) ||
+        cs_copy_program_emit(p,1,DIV_STOP,DIV_MARK+31) ||
+        cs_copy_program_emit(p,31,DIV_MARK+1,DIV_MARK) ||
+        cs_copy_program_emit(p,1,DIV_MARK,zero) ||
+        conditional_jump(ctx,loop,DIV_STOP,1,0)) return -1;
+    uint32_t result=remainder ? DIV_REM : DIV_QUO;
+    if (signed_operation) {
+        if (remainder) {
+            if (cs_copy_program_emit(p,1,DIV_SIGN,DIV_NUM_SIGN)) return -1;
+        } else if (lookup(ctx,DIV_SIGN,XOR_TABLE,DIV_NUM_SIGN,DIV_DEN_SIGN,0,2)) return -1;
+        /* Preserve the division-by-zero sentinel for signed quotient too. */
+        if (!remainder) {
+            if (compare32(ctx,DIV_DEN,zero) ||
+                lookup(ctx,DIV_DEN_SIGN,XOR_TABLE,CMP_EQ,one,0,2) ||
+                lookup(ctx,DIV_SIGN,AND_TABLE,DIV_SIGN,DIV_DEN_SIGN,0,2)) {
+                return -1;
+            }
+        }
+        if (absolute32(ctx,result,DIV_SIGN,zero)) return -1;
+    }
+    if (cs_copy_program_emit(p,32,destination,result) ||
+        cs_copy_program_emit(p,5,CMP_EQ,DIV_FLAGS)) return -1;
+    ctx->compared=compared;
+    return 0;
+}
 static int shift32(struct context *ctx, int right, int arithmetic,
                    uint32_t destination, uint32_t count)
 {
@@ -264,6 +345,10 @@ static const char *instruction(struct context *ctx, char *s)
         if (!strcmp(s,"copy.mov")) rc=cs_copy_program_emit(&ctx->program,32,destination,source);
         else if (!strcmp(s,"copy.cmp")) rc=compare32(ctx,destination,source);
         else if (!strcmp(s,"copy.mul")) rc=multiply32(ctx,destination,source);
+        else if (!strcmp(s,"copy.udiv") || !strcmp(s,"copy.umod") ||
+                 !strcmp(s,"copy.div") || !strcmp(s,"copy.mod"))
+            rc=divide32(ctx,destination,source,!strcmp(s,"copy.div") || !strcmp(s,"copy.mod"),
+                        !strcmp(s,"copy.mod") || !strcmp(s,"copy.umod"));
         else if (!strcmp(s,"copy.neg") || !strcmp(s,"copy.not")) {
             uint32_t immutable;
             int invert=!strcmp(s,"copy.not");

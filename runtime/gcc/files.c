@@ -17,6 +17,7 @@ typedef struct { file *object; unsigned position, flags; } descriptor;
 static file objects[CC_FILES_MAX];
 static descriptor handles[FD_COUNT];
 static char *directories[CC_FILES_MAX];
+static unsigned open_directories;
 static int failure(int code) { errno=code; return -1; }
 
 static int normalize(const char *path, char *out)
@@ -61,6 +62,7 @@ static void release(file *object)
 
 int cs_gcc_fs_mount(unsigned char *blob, unsigned size)
 {
+    if (open_directories) return failure(EBUSY);
     for (unsigned i=3;i<FD_COUNT;++i) if (handles[i].object) return failure(EBUSY);
     if (!cc_files_decode(blob,size)) return failure(EINVAL);
     for (unsigned i=0;i<cc_input_file_count;++i)
@@ -227,4 +229,54 @@ int cs_gcc_fs_output(const char *path, const unsigned char **data, unsigned *siz
     char name[PATH_BYTES]; if (normalize(path,name)) return -1;
     file *object=lookup(name); if (!object) return failure(ENOENT);
     *data=object->data; *size=object->size; return 0;
+}
+
+int cs_gcc_fs_directory_open(const char *path)
+{
+    unsigned size,inode; int directory;
+    if (cs_gcc_fs_stat(path,&size,&directory,&inode)) return -1;
+    if (!directory) return failure(ENOTDIR);
+    if (open_directories==UINT_MAX) return failure(EMFILE);
+    ++open_directories; return 0;
+}
+void cs_gcc_fs_directory_close(void) { if (open_directories) --open_directories; }
+
+static const char *child(const file *object, const char *base, unsigned length)
+{
+    if (!object->name || !object->linked) return NULL;
+    if (!length) return object->name;
+    if (strncmp(object->name,base,length) || object->name[length]!='/') return NULL;
+    return object->name+length+1;
+}
+
+int cs_gcc_fs_directory_next(const char *path, unsigned *cursor, char *name,
+                            unsigned capacity, unsigned *inode, int *directory)
+{
+    if (!cursor || !name || !inode || !directory || *cursor>CC_FILES_MAX) return failure(EINVAL);
+    char base[PATH_BYTES]; if (normalize(path,base)) return -1;
+    unsigned length=(unsigned)strlen(base);
+    for (unsigned i=*cursor;i<CC_FILES_MAX;++i) {
+        const char *part=child(objects+i,base,length);
+        if (!part || !*part) continue;
+        unsigned bytes=0; while (part[bytes] && part[bytes]!='/') ++bytes;
+        int duplicate=0;
+        for (unsigned j=0;j<i;++j) {
+            const char *previous=child(objects+j,base,length);
+            if (previous && !strncmp(previous,part,bytes)
+                && (!previous[bytes] || previous[bytes]=='/')) { duplicate=1; break; }
+        }
+        if (duplicate) continue;
+        if (bytes>=capacity) return failure(ERANGE);
+        memcpy(name,part,bytes); name[bytes]=0;
+        *directory=part[bytes]=='/';
+        if (*directory) {
+            char full[PATH_BYTES];
+            memcpy(full,base,length);
+            unsigned at=length; if (at) full[at++]='/';
+            memcpy(full+at,name,bytes+1);
+            if (directory_inode(full,inode)) return -1;
+        } else *inode=i+1;
+        *cursor=i+1; return 1;
+    }
+    *cursor=CC_FILES_MAX; return 0;
 }

@@ -47,8 +47,9 @@ def main():
     # Top-level GCC also forwards CXXFLAGS to native build-libcpp. Put the
     # architecture switches into guest drivers, keeping shared flags native-safe.
     architecture=["-march=rv32i","-mabi=ilp32","-mno-relax","-msmall-data-limit=0"]
-    env["CC"]+=" "+shlex.join(architecture)
-    env["CXX"]+=" "+shlex.join(architecture)
+    guest_includes=["-I"+str(ROOT/"runtime/gcc/include")]
+    env["CC"]+=" "+shlex.join(architecture+guest_includes)
+    env["CXX"]+=" "+shlex.join(architecture+guest_includes)
     env["CFLAGS"]="-O2 -ffunction-sections -fdata-sections"
     env["CXXFLAGS"]=env["CFLAGS"]+" -fno-exceptions -fno-rtti -fno-threadsafe-statics"
     env["CPPFLAGS"]=shlex.join(["-isystem",str(newlib/"include")])
@@ -57,9 +58,13 @@ def main():
         [str(install/"lib"/name) for name in ("libstdc++.a","libsupc++.a","libmpc.a","libmpfr.a","libgmp.a")]+
         [str(libraries/"support/libspace.a"),str(newlib/"lib/libc.a"),str(newlib/"lib/libm.a"),
          "-lgcc","-Wl,--end-group"])
-    run(work,"cxx-runtime-compile",[tools.compiler]+tools.flags+shlex.split(flags)+[
-        "-c",str(ROOT/"runtime/gcc/cxx.c"),"-o",str(work/"cxx-runtime.o")],env)
-    env["LIBS"]=shlex.quote(str(work/"cxx-runtime.o"))+" "+env["LIBS"]
+    objects=[]
+    for name in ("cxx", "files", "directories"):
+        obj=work/(name+"-runtime.o")
+        run(work,name+"-runtime-compile",[tools.compiler]+tools.flags+shlex.split(flags)+[
+            "-isystem",str(newlib/"include"),"-c",str(ROOT/"runtime/gcc"/(name+".c")),"-o",str(obj)],env)
+        objects.append(str(obj))
+    env["LIBS"]=shlex.join(objects)+" "+env["LIBS"]
     # LIBS is inherited by GCC's recursive native configure. Keep it empty
     # and add guest archives only through the guest preparation drivers.
     drivers=work/"guest-drivers.json"

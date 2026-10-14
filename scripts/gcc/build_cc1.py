@@ -18,12 +18,33 @@ def main():
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--compiler", required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--copy-target", type=Path, help="directory prepared by prepare_target.py")
+    parser.add_argument("--configure-only", action="store_true")
     parser.add_argument("--optimization",choices=["O0","O1","O2","O3","Os"],
                         help="explicit cc1 compilation optimization; requires a fresh object build")
     args = parser.parse_args()
     work=args.work.resolve()
     work.mkdir(parents=True, exist_ok=args.resume)
     source=args.store.resolve()/"gcc-12.5.0"
+    target="riscv32-unknown-elf"
+    target_sources=None
+    if args.copy_target:
+        from fetch import SHA512
+        prepared=args.copy_target.resolve()
+        target_receipt=json.loads((prepared/"target.json").read_text())
+        if target_receipt["target"]!="copyspace-unknown-elf" or target_receipt["gcc_archive_sha512"]!=SHA512:
+            raise ValueError("wrong copyspace target receipt")
+        for name,expected in target_receipt["original_source_sha256"].items():
+            with (source/name).open("rb") as stream:
+                if hashlib.file_digest(stream,"sha256").hexdigest()!=expected:
+                    raise ValueError("original target source changed: "+name)
+        source=prepared/"source"
+        target_sources=target_receipt["generated_source_sha256"]
+        for name,expected in target_sources.items():
+            with (source/name).open("rb") as stream:
+                if hashlib.file_digest(stream,"sha256").hexdigest()!=expected:
+                    raise ValueError("generated target source changed: "+name)
+        target=target_receipt["target"]
     newlib=args.newlib.resolve()/"riscv64-unknown-elf"
     libraries=args.libraries.resolve()
     receipt=json.loads((libraries/"libraries.json").read_text())
@@ -40,6 +61,8 @@ def main():
         if not path.is_file(): raise ValueError("missing dependency "+str(path))
     tools=Toolchain(args.compiler)
     profile={"compiler":tools.compiler,"optimization":args.optimization}
+    if target_sources is not None:
+        profile.update(target=target,target_sources_sha256=target_sources)
     profile_file=work/"build-profile.json"
     if profile_file.is_file():
         if json.loads(profile_file.read_text())!=profile:
@@ -92,13 +115,18 @@ def main():
     env["RANLIB_FOR_BUILD"]="ranlib"
     build=subprocess.run([str(source/"config.guess")],capture_output=True,check=True).stdout.decode().strip()
     configure=[str(source/"configure"),"--build="+build,"--host=riscv32-unknown-elf",
-        "--target=riscv32-unknown-elf","--prefix="+str(work/"install"),"--enable-languages=c",
+        "--target="+target,"--prefix="+str(work/"install"),"--enable-languages=c",
         "--disable-bootstrap","--disable-multilib","--disable-nls","--disable-werror",
         "--disable-checking","--disable-lto","--disable-libcc1","--disable-libsanitizer",
         "--disable-libssp","--disable-libquadmath","--disable-libgomp","--without-isl",
-        "--without-headers","--with-newlib","--with-arch=rv32i","--with-abi=ilp32",
+        "--without-headers","--with-newlib",
         "--with-gmp="+str(install),"--with-mpfr="+str(install),"--with-mpc="+str(install)]
+    if target=="riscv32-unknown-elf":
+        configure.extend(["--with-arch=rv32i","--with-abi=ilp32"])
     run(work,"configure",configure,env)
+    if args.configure_only:
+        print("Configured guest cc1 target:",target,"; cc1 compilation not performed",flush=True)
+        return
     run(work,"make-libraries",["make","-j1","all-build-libiberty","all-build-libcpp",
         "all-libiberty","all-libcpp","all-libdecnumber","all-libbacktrace","all-zlib",
         "all-intl","configure-gcc"],env)
@@ -113,7 +141,7 @@ def main():
     with cc1.open("rb") as stream:
         checksum=hashlib.file_digest(stream,"sha256").hexdigest()
     (work/"cc1.json").write_text(json.dumps({"compiler":tools.compiler,"build":build,
-        "host":"RV32I/ILP32","target":"RV32I/ILP32 (control only)","cc1":str(cc1),
+        "host":"RV32I/ILP32","target":target if target_sources is not None else "RV32I/ILP32 (control only)","cc1":str(cc1),
         "bytes":cc1.stat().st_size,"sha256":checksum,"build_profile":profile,
         "scope":"image preparation only; execution in Space not yet proven"},indent=2)+"\n")
     print("Prepared actual RV32I cc1:",cc1,flush=True)

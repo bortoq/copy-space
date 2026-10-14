@@ -114,6 +114,7 @@ def main():
     stream,manifest=encode_stream(encoded,manifest,binary.read_bytes())
     destination=root/"gcc.stream"; destination.write_bytes(stream)
     manifest.update({"original_cc1_sha256":receipt["sha256"],"elf_sha256":digest(elf),
+        "target":receipt["target"],"target_sources_sha256":receipt["build_profile"].get("target_sources_sha256"),
         "compiler":tools.compiler,"framed_output":args.framed_output,
         "libraries_sha256":library_receipt["archives_sha256"],
         "newlib_libc_sha256":digest(newlib/"lib/libc.a"),"newlib_libm_sha256":digest(newlib/"lib/libm.a"),

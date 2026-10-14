@@ -47,7 +47,7 @@ def main():
     # Top-level GCC also forwards CXXFLAGS to native build-libcpp. Put the
     # architecture switches into guest drivers, keeping shared flags native-safe.
     architecture=["-march=rv32i","-mabi=ilp32","-mno-relax","-msmall-data-limit=0"]
-    guest_includes=["-I"+str(ROOT/"runtime/gcc/include")]
+    guest_includes=["-I"+str(ROOT/"runtime/gcc/include"),"-isystem",str(newlib/"include")]
     env["CC"]+=" "+shlex.join(architecture+guest_includes)
     env["CXX"]+=" "+shlex.join(architecture+guest_includes)
     env["CFLAGS"]="-O2 -ffunction-sections -fdata-sections"
@@ -77,6 +77,8 @@ def main():
     env["CC_FOR_BUILD"],env["CXX_FOR_BUILD"]="gcc","g++"
     env["CFLAGS_FOR_BUILD"],env["CXXFLAGS_FOR_BUILD"]="-O2","-O2"
     env["CPPFLAGS_FOR_BUILD"],env["LDFLAGS_FOR_BUILD"]="",""
+    env["LD_FOR_BUILD"],env["AS_FOR_BUILD"],env["AR_FOR_BUILD"]="ld","as","ar"
+    env["RANLIB_FOR_BUILD"]="ranlib"
     build=subprocess.run([str(source/"config.guess")],capture_output=True,check=True).stdout.decode().strip()
     configure=[str(source/"configure"),"--build="+build,"--host=riscv32-unknown-elf",
         "--target=riscv32-unknown-elf","--prefix="+str(work/"install"),"--enable-languages=c",
@@ -86,7 +88,11 @@ def main():
         "--without-headers","--with-newlib","--with-arch=rv32i","--with-abi=ilp32",
         "--with-gmp="+str(install),"--with-mpfr="+str(install),"--with-mpc="+str(install)]
     run(work,"configure",configure,env)
-    run(work,"make",["make","-j1","all-gcc"],env)
+    run(work,"make-libraries",["make","-j1","all-build-libiberty","all-build-libcpp",
+        "all-libiberty","all-libcpp","all-libdecnumber","all-libbacktrace","all-zlib",
+        "all-intl","configure-gcc"],env)
+    run(work,"make-cc1",["make","-C","gcc","-j1","cc1","CC_FOR_BUILD=gcc","CXX_FOR_BUILD=g++",
+        "CFLAGS_FOR_BUILD=-O2","CXXFLAGS_FOR_BUILD=-O2","LDFLAGS_FOR_BUILD=","CPPFLAGS="],env)
     cc1=work/"gcc/cc1"
     with cc1.open("rb") as stream:
         checksum=hashlib.file_digest(stream,"sha256").hexdigest()

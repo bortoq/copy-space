@@ -21,7 +21,9 @@ def run(folder, label, command, environment):
         label=label+"-"+str(attempt)
     record = {"args": command, "cwd": str(folder), "environment": {k: environment[k]
               for k in ("CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS", "LIBS", "PATH",
-                        "HOST_LIBS", "CC_FOR_BUILD", "CXX_FOR_BUILD") if k in environment}}
+                        "HOST_LIBS", "CC_FOR_BUILD", "CXX_FOR_BUILD", "CFLAGS_FOR_BUILD", "CXXFLAGS_FOR_BUILD",
+                        "CPPFLAGS_FOR_BUILD", "LDFLAGS_FOR_BUILD", "LD_FOR_BUILD", "AS_FOR_BUILD",
+                        "AR_FOR_BUILD", "RANLIB_FOR_BUILD") if k in environment}}
     (folder/(label+".json")).write_text(json.dumps(record, indent=2)+"\n")
     with (folder/(label+".stdout")).open("wb") as out, (folder/(label+".stderr")).open("wb") as err:
         p = subprocess.run(command, cwd=folder, env=environment, stdout=out, stderr=err)

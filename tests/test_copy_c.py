@@ -20,6 +20,8 @@ from copy_c_record_cases import valid as record_valid, invalid as record_invalid
 from copy_c_aggregate_value_cases import valid as aggregate_value_valid, invalid as aggregate_value_invalid
 from copy_c_aggregate_abi_cases import valid as aggregate_abi_valid, invalid as aggregate_abi_invalid
 from copy_c_aggregate_conditional_cases import valid as aggregate_conditional_valid, invalid as aggregate_conditional_invalid
+from copy_c_omitted_conditional_cases import valid as omitted_conditional_valid, invalid as omitted_conditional_invalid
+from copy_c_omitted_conditional_cases import volatile_reads as omitted_conditional_reads
 from copy_c_layout_attribute_cases import valid as layout_valid, invalid as layout_invalid
 from copy_c_member_attribute_cases import valid as member_layout_valid, invalid as member_layout_invalid
 from copy_c_flexible_cases import valid as flexible_valid, invalid as flexible_invalid
@@ -64,6 +66,7 @@ from copy_c_conditional_cases import valid as conditional_valid, invalid as cond
 from copy_c_zero_object_cases import valid as zero_object_valid
 from copy_c_auto_cases import valid as auto_valid, invalid as auto_invalid
 volatile_reads = dict(volatile_reads, **long_long_volatile_reads, **wide_control_volatile_reads)
+volatile_reads.update(omitted_conditional_reads)
 arithmetic_faults = arithmetic_faults+long_long_faults
 
 ROOT = Path("tmp/space-tests/copy-c")
@@ -289,6 +292,7 @@ valid += record_valid
 valid += aggregate_value_valid
 valid += aggregate_abi_valid
 valid += aggregate_conditional_valid
+valid += omitted_conditional_valid
 valid += layout_valid
 valid += member_layout_valid
 valid += flexible_valid
@@ -410,6 +414,7 @@ invalid += record_invalid
 invalid += aggregate_value_invalid
 invalid += aggregate_abi_invalid
 invalid += aggregate_conditional_invalid
+invalid += omitted_conditional_invalid
 invalid += layout_invalid
 invalid += member_layout_invalid
 invalid += flexible_invalid

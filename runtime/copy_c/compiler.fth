@@ -1957,10 +1957,14 @@ defer cc-conditional
 ' cc-logical-and-body is cc-logical-and
 : cc-logical-or ( -- value )
   cc-logical-and begin cc-token @ 263 = while 263 cc-logical-step repeat ;
+: cc-omitted-conditional? ( -- flag )
+  cc-token-start @ >r cc-next cc-token @ 58 = r> cc-pos ! cc-next ;
 : cc-conditional-step ( condition -- result )
-    cc-truth dup >r cc-branch 13 cc-typed-cell 0 0 0 r> L{ table result yes no skip condition }
+    cc-omitted-conditional? if cc-value dup else 0 then >r
+    cc-truth dup >r cc-branch 13 cc-typed-cell 0 0 0 r> r>
+    L{ table result yes no skip condition omitted }
     table 32 + cc-current cc-patch cc-next
-    cc-nest cc-full-expression cc-unnest 3 (local!)
+    omitted if omitted else cc-nest cc-full-expression cc-unnest then 3 (local!)
     yes cc-type cc-record? if
       yes cc-type cc-unqualified cc-abi-result 2 (local!)
       result cc-type cc-width result yes cc-value cc-op

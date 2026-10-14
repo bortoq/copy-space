@@ -21,6 +21,7 @@ from copy_c_layout_attribute_cases import valid as layout_valid, invalid as layo
 from copy_c_member_attribute_cases import valid as member_layout_valid, invalid as member_layout_invalid
 from copy_c_flexible_cases import valid as flexible_valid, invalid as flexible_invalid
 from copy_c_static_flexible_cases import valid as static_flexible_valid
+from copy_c_zero_array_cases import valid as zero_array_valid, invalid as zero_array_invalid
 from copy_c_builtin_cases import valid as builtin_valid, invalid as builtin_invalid
 from copy_c_generic_cases import valid as generic_valid, invalid as generic_invalid
 from copy_c_qualifier_cases import valid as qualifier_valid, invalid as qualifier_invalid
@@ -70,7 +71,7 @@ parser.add_argument("--native-only", action="store_true")
 parser.add_argument("--archive-targets", action="store_true", help="losslessly compress completed raw traces and dumps")
 parser.add_argument("--target-timeout", type=int, default=60, help="seconds per direct target including raw observer writes")
 parser.add_argument("--native-reference", type=Path, help="compare the complete compiler output with a preserved native compiler")
-parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "inferred-array-guest", "range-guest", "range-chain-guest", "switch-guest", "goto-guest", "declarator-guest", "function-type-guest", "function-address-guest", "indirect-guest", "frame-large-functions", "function-declaration-guest", "variadic-guest", "syntax-error"])
+parser.add_argument("--guest-case", action="append", choices=["sum", "control", "loop", "recursive-sum", "pointer-guest", "gnu-integer", "loop-guest", "gnu-expr-guest", "large-source-guest", "types-guest", "arrays-guest", "record-guest", "builtins-guest", "generic-guest", "qualifier-guest", "qualifier-full-guest", "qualifier-error", "typedef-guest", "enum-guest", "char-guest", "string-guest", "string-init-guest", "global-guest", "extern-guest", "static-pointer-guest", "static-init-full-guest", "global-aggregate-guest", "designator-guest", "global-designator-guest", "nested-designator-guest", "inferred-array-guest", "range-guest", "range-chain-guest", "switch-guest", "goto-guest", "declarator-guest", "function-type-guest", "function-address-guest", "indirect-guest", "frame-large-functions", "function-declaration-guest", "variadic-guest", "zero-flex-guest", "syntax-error"])
 parser.add_argument("--compiler-space", type=Path, help="emulator binary for the compiler image; targets still use ordinary space")
 parser.add_argument("--ticks-per-segment", type=int, default=0, help="save and resume the complete guest state after this many ticks")
 parser.add_argument("--resume-segments", action="store_true", help="continue verified checkpoints in the existing artifact folder")
@@ -286,6 +287,7 @@ valid += layout_valid
 valid += member_layout_valid
 valid += flexible_valid
 valid += static_flexible_valid
+valid += zero_array_valid
 valid += builtin_valid
 valid += generic_valid
 valid += qualifier_valid
@@ -402,6 +404,7 @@ invalid += record_invalid
 invalid += layout_invalid
 invalid += member_layout_invalid
 invalid += flexible_invalid
+invalid += zero_array_invalid
 invalid += builtin_invalid
 invalid += generic_invalid
 invalid += qualifier_invalid

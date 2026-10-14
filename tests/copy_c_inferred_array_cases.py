@@ -32,7 +32,6 @@ invalid = [
     ("inferred-sizeof-self", b'int a[]={sizeof(a)};int main(){return 0;}'),
     ("inferred-local-sizeof-self", b'int main(){int a[]={sizeof(a)};return 0;}'),
     ("inferred-no-initializer", b'int a[];int main(){return 0;}'),
-    ("inferred-empty-pending", b'int a[]={};int main(){return 0;}'),
     ("inferred-negative-index", b'int a[]={[-1]=7};int main(){return 0;}'),
     ("inferred-index-capacity", b'int a[]={[1073741824]=7};int main(){return 0;}'),
     ("inferred-nonconstant-global", b'int x=7;int a[]={x};int main(){return 0;}'),

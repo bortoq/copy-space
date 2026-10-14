@@ -955,6 +955,7 @@ variable cc-layout-replay
 \ uchar=6, short=7, ushort=8, long=9, ulong=10, bool=11.
 create cc-type-sizes 128 cells allot
 create cc-type-aligns 128 cells allot
+create cc-type-array-counts 128 cells allot
 create cc-type-kinds 128 allot
 create cc-type-signs 128 allot
 create cc-type-ranks 128 allot
@@ -984,6 +985,7 @@ create cc-prototype-shapes 128 18 * cells allot
 variable cc-prototype-count
 : cc-init-types
   cc-type-sizes 128 cells 0 fill
+  cc-type-array-counts 128 cells 0 fill
   cc-type-kinds 128 0 fill cc-type-signs 128 0 fill
   cc-type-bases 128 0 fill
   cc-type-complete 128 1 fill
@@ -1014,7 +1016,9 @@ cc-init-types
 : cc-complete ( type -- status ) cc-unqualified cc-type-complete + c@ ;
 : cc-size ( type -- bytes ) cc-unqualified cells cc-type-sizes + @ ;
 : cc-alignment ( type -- bytes ) cc-unqualified cells cc-type-aligns + @ ;
+: cc-array-count ( type -- count ) cc-unqualified cells cc-type-array-counts + @ ;
 : cc-kind ( type -- kind ) cc-unqualified cc-type-kinds + c@ ;
+: cc-incomplete-array? ( type -- flag ) dup cc-kind 3 = swap cc-complete 0= and ;
 : cc-record? ( type -- flag ) cc-kind dup 4 = swap 5 = or ;
 : cc-signed? ( type -- flag ) cc-unqualified cc-type-signs + c@ ;
 : cc-rank ( type -- rank ) cc-unqualified cc-type-ranks + c@ ;
@@ -1040,7 +1044,7 @@ defer cc-qualify-array
   base cc-type-bases result + c! 1 cc-type-count +! result ;
 : cc-width ( type -- bits ) dup cc-kind 2 = if drop 0 else cc-size 8 * then ;
 : cc-layout-object ( target type -- bits ) cc-layout-cursor @ 0 L{ target type index bits }
-  index 1024 >= cc-limit type cc-width 4 (local!)
+  index 1024 >= cc-limit type cc-width 8 max 4 (local!)
   cc-layout-mode @ if
     index cc-layout-count @ >= if s" changed static object order" cc-fail then
     bits cc-layout-sizes index cells + @ > if s" changed static object size" cc-fail then
@@ -1062,7 +1066,9 @@ defer cc-qualify-array
   dup cc-kind 7 = if s" function is not an object" cc-fail then
   dup cc-record? over cc-kind 6 = or if dup cc-complete 1 <> if
     s" incomplete object type" cc-fail then then
-  dup cc-width dup 0= if s" void object unsupported" cc-fail then
+  dup cc-kind 2 = if s" void object unsupported" cc-fail then
+  dup cc-incomplete-array? if s" incomplete array object" cc-fail then
+  dup cc-width 8 max
   swap cc-alignment 8 * dup 1- cc-data @ + swap negate and cc-data !
   cc-data @ swap cc-data +! cc-data @ 147456 > cc-limit ;
 : cc-type ( target -- type )
@@ -1130,7 +1136,7 @@ cc-wide-bool-entry @ ,
 : cc-pointee-size ( target -- bytes ) cc-effective-type cc-pointee
   dup cc-record? over cc-kind 6 = or if dup cc-complete 1 <> if
     s" arithmetic on incomplete pointer" cc-fail then then
-  cc-size dup 0= if s" arithmetic on incomplete pointer" cc-fail then ;
+  dup cc-incomplete-array? if s" arithmetic on incomplete pointer" cc-fail then cc-size ;
 : cc-pointer? ( target -- flag ) cc-effective-type cc-kind 1 = ;
 : cc-lvalue ( target -- kind )
   dup cc-static-base >= over cc-data-base < and if drop 1 exit then
@@ -1304,7 +1310,7 @@ defer cc-function-compatible?
 : cc-composite-pointer ( left right -- type ) 0 L{ left right base }
   left cc-pointee cc-unqualified dup 3 = right cc-pointee cc-unqualified 3 = or
   if drop 3 then 3 (local!)
-  base cc-kind 3 = base cc-size 0= and if right cc-pointee cc-unqualified 3 (local!) then
+  base cc-incomplete-array? if right cc-pointee cc-unqualified 3 (local!) then
   base left cc-pointee cc-outer-quals right cc-pointee cc-outer-quals or cc-qualify cc-pointer-to ;
 : cc-null-constant? ( target -- flag )
   dup cc-known? if dup cc-type cc-kind dup 0= swap 6 = or
@@ -1952,18 +1958,19 @@ variable cc-constant-high
   base cc-kind 7 = if s" array of functions" cc-fail then
   base cc-record? base cc-kind 6 = or if base cc-complete 1 <> if
     s" incomplete array element" cc-fail then then
-  base cc-size 0= if s" incomplete array element" cc-fail then
-  length 0< if s" nonpositive array size" cc-fail then
-  length 2097152 base cc-size / u> if s" array size overflow" cc-fail then
-  length base cc-size * 3 (local!)
+  base cc-incomplete-array? if s" incomplete array element" cc-fail then
+  length -1 < if s" nonpositive array size" cc-fail then
+  base cc-size if length 0 max 2097152 base cc-size / u> if s" array size overflow" cc-fail then then
+  length 0 max base cc-size * 3 (local!)
   size 2097152 u> if s" array size overflow" cc-fail then
   cc-type-count @ 0 do
-    i cc-kind 3 = i cc-pointee base = and i cc-size size = and
+    i cc-kind 3 = i cc-pointee base = and i cc-array-count length = and
     if i unloop exit then
   loop
   cc-type-count @ 128 >= cc-limit cc-type-count @ 4 (local!)
   3 cc-type-kinds result + c! base cc-type-bases result + c!
   size cc-type-sizes result cells + ! base cc-alignment cc-type-aligns result cells + !
+  length cc-type-array-counts result cells + ! length 0< if 0 else 1 then cc-type-complete result + c!
   1 cc-type-count +! result ;
 : cc-string-body ( -- view ) cc-static-data @ 0 0 L{ start bytes byte }
   begin
@@ -1987,7 +1994,7 @@ variable cc-constant-high
   until bytes 1+ ;
 : cc-array-suffix-body ( base -- type ) 0 L{ base length }
   cc-token @ 91 = if
-    cc-next cc-token @ 93 = if 0 else cc-read-small-constant dup 1 <
+    cc-next cc-token @ 93 = if -1 else cc-read-small-constant dup 0<
       if s" nonpositive array size" cc-fail then then 2 (local!) 93 cc-expect
     cc-nest base recurse cc-unnest length cc-array-to
   else base then ;
@@ -2027,7 +2034,7 @@ create cc-external-parameter-addresses 8 cells allot
   then then
   begin cc-token @ 91 = cc-token @ 40 = or while
     cc-token @ 91 = if
-      cc-next cc-token @ 93 = if 0 else cc-read-small-constant dup 1 < if
+      cc-next cc-token @ 93 = if -1 else cc-read-small-constant dup 0< if
         s" nonpositive array size" cc-fail then then 3 (local!) 93 cc-expect
       context 3 mask cc-declarator-add else
         cc-external-declarator @ cc-declarator-depth @ 1 = and
@@ -2120,7 +2127,7 @@ create cc-external-parameter-addresses 8 cells allot
 ' cc-function-type-to-body is cc-function-type-to
 : cc-qualify-array-body ( type mask -- type ) L{ type mask }
   type cc-pointee mask cc-qualify
-  type cc-size type cc-pointee cc-size / cc-array-to ;
+  type cc-array-count cc-array-to ;
 ' cc-qualify-array-body is cc-qualify-array
 : cc-find-member ( owner -- index ) L{ owner }
   owner cc-unqualified 1 (local!)
@@ -2194,11 +2201,11 @@ defer cc-merge-layout-attributes
       type cc-declarator 4 (local!) 3 (local!)
       r@ cc-read-member-attributes 8 (local!) cc-token-start @ 5 (local!)
       type cc-kind 7 = if s" function member unsupported" cc-fail then
-      type cc-kind 3 = type cc-size 0= and if
+      type cc-incomplete-array? if
         owner cc-kind 4 <> owner cc-owner-has-member? 0= or if
           s" flexible array requires nonempty struct" cc-fail then
         1 cc-type-flexible owner + c!
-      else type cc-kind 2 = type cc-size 0= or if s" incomplete member type" cc-fail then then
+      else type cc-kind 2 = type cc-complete 0= or if s" incomplete member type" cc-fail then then
       type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
         s" incomplete member type" cc-fail then then
       cc-member-count @ dup 256 >= cc-limit 7 (local!)
@@ -2339,7 +2346,7 @@ defer cc-merge-layout-attributes
   left cc-kind 7 = if left right cc-function-compatible? exit then
   left cc-kind 1 = if left cc-pointee right cc-pointee recurse exit then
   left cc-kind 3 = if
-    left cc-size right cc-size = left cc-size 0= or right cc-size 0= or
+    left cc-array-count right cc-array-count = left cc-complete 0= or right cc-complete 0= or
     left cc-pointee right cc-pointee recurse and exit then 0 ;
 ' cc-types-compatible-body is cc-types-compatible?
 : cc-function-compatible-body ( left right -- flag ) 0 0 0 L{ left right first second typed }
@@ -2361,7 +2368,7 @@ defer cc-merge-layout-attributes
 : cc-query-compatible-body ( left right -- flag ) L{ left right }
   left cc-unqualified 1 (local!) right cc-unqualified 2 (local!)
   left cc-kind 3 = right cc-kind 3 = and if
-    left cc-size right cc-size = left cc-size 0= or right cc-size 0= or
+    left cc-array-count right cc-array-count = left cc-complete 0= or right cc-complete 0= or
     left cc-pointee right cc-pointee recurse and exit then
   left right cc-types-compatible? ;
 ' cc-query-compatible-body is cc-query-compatible
@@ -2377,7 +2384,7 @@ variable cc-generic-depth
 \ selected value/start/end/seen, entry jump, association count.
 : cc-generic-type ( type context types -- ) L{ type context types }
   type cc-kind 7 = if s" function generic association" cc-fail then
-  type cc-kind 2 = type cc-size 0= or if s" incomplete generic association" cc-fail then
+  type cc-kind 2 = type cc-complete 0= or if s" incomplete generic association" cc-fail then
   type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
     s" incomplete generic association" cc-fail then then
   11 context cc-fget dup 16 >= cc-limit
@@ -2465,7 +2472,7 @@ variable cc-generic-depth
       cc-read-abstract-type cc-declared-type @ r> drop 41 cc-expect
     else r> cc-pos ! cc-next 1 cc-inspect then
   else 1 cc-inspect then ;
-: cc-sizeof-body cc-query-type dup cc-kind 3 = over cc-size 0= and
+: cc-sizeof-body cc-query-type dup cc-incomplete-array?
   if s" sizeof incomplete array" cc-fail then
   dup cc-record? over cc-kind 6 = or if dup cc-complete 1 <> if
     s" sizeof incomplete aggregate" cc-fail then then cc-size cc-const dup 1 cc-type! ;
@@ -2704,6 +2711,7 @@ variable cc-static-flex-length
   cc-string 2 (local!) source cc-type cc-size 3 (local!)
   cc-infer-depth @ target cc-infer-target @ = and if
     count cc-infer-length ! exit then
+  target cc-type dup cc-complete swap cc-array-count 0= and if exit then
   target cc-type cc-size count 1- < if s" string initializer too long" cc-fail then
   count target cc-type cc-size min 3 (local!)
   cc-infer-depth @ if exit then
@@ -2763,6 +2771,35 @@ variable cc-static-flex-length
       data cc-rewind-temps
     loop
   then ;
+: cc-ignore-scalar-initializer ( -- )
+  cc-pending-initializer @ if 0 cc-pending-initializer ! exit then
+  cc-token @ 123 = if
+    cc-next cc-token @ 125 = if s" empty scalar initializer" cc-fail then
+    begin cc-token @ 125 <> while
+      cc-nest recurse cc-unnest
+      cc-token @ 44 = if cc-next else
+        cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
+    repeat cc-next
+  else cc-expression cc-discard-value then ;
+: cc-ignore-zero-element ( type -- )
+  cc-data @ cc-constants @ cc-call-count @ cc-symbol-count @
+  L{ type data constants calls symbols }
+  1 cc-infer-depth +! 1 cc-unevaluated +!
+  type cc-kind 3 = type cc-record? or if
+    type cc-object dup type cc-type! dup 1 cc-lvalue! cc-initialize-object
+  else cc-ignore-scalar-initializer then
+  -1 cc-unevaluated +! -1 cc-infer-depth +!
+  data cc-rewind-temps
+  constants cc-constant-base - 32 / cc-constant-types +
+  cc-constants @ constants - 32 / 0 fill
+  constants cc-constants ! calls cc-call-count ! symbols cc-symbol-count ! ;
+: cc-initialize-zero-array ( type braces -- ) L{ type braces }
+  begin cc-token @ 125 <> cc-pending-initializer @ 0<> or while
+    cc-token @ 91 = if s" too many array initializers" cc-fail then
+    type cc-pointee cc-ignore-zero-element
+    cc-token @ 44 = if braces cc-initializer-comma 0= if exit then else
+      cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
+  repeat braces if cc-next then ;
 : cc-initialize-array ( target -- ) 0 0 0 0 0 0 0 L{ target type index pointer braces designated measuring high }
   target cc-type 2 (local!) cc-token @ 123 = 5 (local!)
   cc-infer-depth @ target cc-infer-target @ = and 7 (local!)
@@ -2770,6 +2807,7 @@ variable cc-static-flex-length
   braces if cc-next then
   cc-token @ 34 = type cc-pointee cc-kind dup 0= swap 6 = or and index 0= and if target cc-initialize-string
     braces if cc-token @ 44 = if cc-next then 125 cc-expect then exit then
+  type cc-complete type cc-array-count 0= and if type braces cc-initialize-zero-array exit then
   begin cc-token @ 125 <> cc-pending-initializer @ 0<> or while
     cc-token @ 91 = 6 (local!)
     designated if cc-next cc-read-small-constant 3 (local!) then
@@ -2778,9 +2816,9 @@ variable cc-static-flex-length
     index 0< if s" negative initializer index" cc-fail then
     high index < if s" reversed initializer range" cc-fail then
     measuring if
-      high 2097152 type cc-pointee cc-size / >= cc-limit
+      high 2097152 type cc-pointee cc-size 1 max / >= cc-limit
       high 1+ cc-infer-length @ max cc-infer-length !
-    else high type cc-size type cc-pointee cc-size / >= if
+    else high type cc-array-count >= if
       braces designated or if s" too many array initializers" cc-fail else exit then then
     then
     designated 2 = if target index high cc-initialize-range else
@@ -2788,7 +2826,7 @@ variable cc-static-flex-length
       pointer cc-pointer-read designated cc-initialize-view then
     high 1+ 3 (local!)
     cc-token @ 44 = if
-      measuring 0= braces 0= and index type cc-size type cc-pointee cc-size / >= and if exit then
+      measuring 0= braces 0= and index type cc-array-count >= and if exit then
       braces cc-initializer-comma 0= if exit then
     else cc-token @ 125 <> if s" expected initializer comma" cc-fail then then
   repeat braces if cc-next then ;
@@ -2813,8 +2851,7 @@ variable cc-static-flex-length
         braces if s" too many aggregate initializers" cc-fail else exit then then then
     type cc-kind 5 = if target member cc-select-union then
     target cc-address member cc-field-view 6 (local!)
-    target cc-static-flex-target @ = cc-member-types member + c@ cc-kind 3 = and
-    cc-member-types member + c@ cc-size 0= and if
+    target cc-static-flex-target @ = cc-member-types member + c@ cc-incomplete-array? and if
       cc-infer-depth @ if view cc-infer-target ! 0 cc-infer-length ! else
         cc-static-flex-length @ if
           view cc-type cc-pointee cc-static-flex-length @ cc-array-to view swap cc-type! then
@@ -2834,7 +2871,7 @@ variable cc-static-flex-length
 : cc-initialize-tail-body ( target start -- ) L{ target start }
   cc-token @ 44 <> if exit then
   target cc-type dup cc-kind 5 = if drop exit then
-  dup cc-kind 3 = if cc-size target cc-type cc-pointee cc-size / start <= else
+  dup cc-kind 3 = if cc-array-count start <= else
     start cc-member-number 0< then if exit then
   0 cc-initializer-comma if start cc-initializer-start ! target cc-initialize-object then ;
 ' cc-initialize-tail-body is cc-initialize-tail
@@ -2848,8 +2885,8 @@ variable cc-range-path-depth
     1 node cc-fget 0< if s" negative initializer index" cc-fail then
     2 node cc-fget 1 node cc-fget < if s" reversed initializer range" cc-fail then
     parent cc-infer-target @ = cc-infer-depth @ and if
-      2 node cc-fget 2097152 parent cc-type cc-pointee cc-size / >= cc-limit else
-      2 node cc-fget parent cc-type cc-size parent cc-type cc-pointee cc-size / >= if
+      2 node cc-fget 2097152 parent cc-type cc-pointee cc-size 1 max / >= cc-limit else
+      2 node cc-fget parent cc-type cc-array-count >= if
         s" too many array initializers" cc-fail then then
     parent cc-decay index cc-range-view
   else
@@ -2942,7 +2979,7 @@ here cc-function-names - constant cc-infer-snapshot-bytes
   0 cc-infer-length ! start cc-pos ! cc-next 61 cc-expect
   cc-token @ 123 <> cc-token @ 34 <> and if s" expected array initializer" cc-fail then
   cc-nest cc-infer-target @ cc-initialize-object cc-unnest
-  cc-infer-length @ dup 0= if s" empty inferred array pending" cc-fail then
+  cc-infer-length @
   -1 cc-infer-depth +! -1 cc-unevaluated +!
   data cc-data-base - 8 / cc-data @ data - 8 / dup >r
   over cc-fold-flags + swap 0 fill cells cc-pointer-origins + r> cells 0 fill
@@ -2973,7 +3010,7 @@ defer cc-local-static-initialize
     type cc-declarator 3 (local!) 2 (local!) cc-token-start @ 4 (local!)
     type cc-kind 2 = if s" void object unsupported" cc-fail then
     type cc-kind 7 = if s" function declaration via declarator pending" cc-fail then
-    type cc-kind 3 = type cc-size 0= and if
+    type cc-incomplete-array? if
       cc-token @ 61 <> if s" incomplete array object" cc-fail then
       type 7 (local!) type name after cc-infer-array 2 (local!) then
     name cc-pos ! cc-next is-for 2 and if type cc-static-object cc-symbol-at else type cc-symbol then
@@ -3282,7 +3319,7 @@ variable cc-static-high
   owner cc-unqualified 1 (local!)
   cc-member-count @ 0 ?do
     cc-member-owners i + c@ owner = if cc-member-types i + c@
-      dup cc-kind 3 = swap cc-size 0= and if i unloop exit then then
+      cc-incomplete-array? if i unloop exit then then
   loop s" missing flexible member" cc-fail ;
 : cc-static-flex-measure ( target -- length ) 0 0 0 0 L{ target snapshot length static start }
   cc-static-data @ 4 (local!) cc-token-start @ 5 (local!)
@@ -3352,9 +3389,9 @@ variable cc-static-high
     type cc-kind 2 = if s" void global object" cc-fail then
     type cc-record? type cc-kind 6 = or if type cc-complete 1 <> if
       s" incomplete global object" cc-fail then then
-    type cc-kind 3 = type cc-size 0= and if
+    type cc-incomplete-array? if
       type name after cc-global-array-type 2 (local!)
-      type cc-size 0= if
+      type cc-incomplete-array? if
         cc-token @ 61 <> if s" incomplete global array pending" cc-fail then
         type 8 (local!) type name after cc-infer-array 2 (local!) then then
     name cc-pos ! cc-next

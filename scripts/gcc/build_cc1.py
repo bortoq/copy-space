@@ -62,7 +62,7 @@ def main():
     tools=Toolchain(args.compiler)
     profile={"compiler":tools.compiler,"optimization":args.optimization}
     if target_sources is not None:
-        profile.update(target=target,target_sources_sha256=target_sources)
+        profile.update(target=target,target_source=str(source),target_sources_sha256=target_sources)
     profile_file=work/"build-profile.json"
     if profile_file.is_file():
         if json.loads(profile_file.read_text())!=profile:

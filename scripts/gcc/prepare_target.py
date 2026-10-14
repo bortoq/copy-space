@@ -78,7 +78,10 @@ def main():
     root = args.artifacts.resolve()
     root.mkdir(parents=True, exist_ok=False)
     tree = root / "source"
-    overlay(tree, original, {"config.sub", "gcc"})
+    libraries={"libiberty", "libcpp", "libdecnumber", "libbacktrace", "zlib", "intl"}
+    overlay(tree, original, {"config.sub", "gcc"} | libraries)
+    for name in sorted(libraries):
+        overlay(tree/name, original/name, set())
     overlay(tree / "gcc", original / "gcc", {"config.gcc", "config"})
     overlay(tree / "gcc/config", original / "gcc/config", {"copyspace"})
     target = tree / "gcc/config/copyspace"

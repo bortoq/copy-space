@@ -25,7 +25,7 @@ def derive(name, text):
         text = text[:start] + '  return "copy.branch.<CC>\\\\t%l0";' + text[end:]
         text = text.replace('"nop")', '"copy.nop")').replace('"ret")', '"copy.ret")')
         text = re.sub(r"(?<![\w.])([a-z]+(?:\.[a-z]+)?)(?=\\\\t)", r"copy.\1", text)
-        text = text.replace('"<mul>', '"copy.<mul>')
+        text = text.replace('"<mul>.x', '"copy.<mul>.x')
     if name == "moxie.cc":
         for function, body in [
             ("copyspace_asm_trampoline_template", '(void)f; sorry ("copyspace nested-function trampolines are not implemented");'),

@@ -33,6 +33,19 @@ int main(void)
     assert(used==36 && !memcmp(output,"GCCOUT1",8));
     assert(word(8)==0 && word(12)==3 && word(16)==5 && word(20)==4);
     assert(!memcmp(output+24,"a\0berrorcopy",12));
+    struct cs_gcc_result result={0};
+    assert(cs_gcc_response_decode(output,used,&result)==0);
+    assert(result.status==0 && result.out_size==3 && result.err_size==5 && result.file_size==4);
+    assert(!memcmp(result.out,"a\0b",3) && !memcmp(result.err,"error",5) && !memcmp(result.file,"copy",4));
+    unsigned char saved[sizeof(result)]; memcpy(saved,&result,sizeof(result));
+    for (unsigned n=0;n<used;++n) {
+        assert(cs_gcc_response_decode(output,n,&result)==-1 && errno==EINVAL);
+        assert(!memcmp(saved,&result,sizeof(result)));
+    }
+    unsigned char old=output[12]; output[12]=255;
+    assert(cs_gcc_response_decode(output,used,&result)==-1); output[12]=old;
+    output[8]=1; assert(cs_gcc_response_decode(output,used,&result)==-1); output[8]=0;
+    output[used]=0; assert(cs_gcc_response_decode(output,used+1,&result)==-1);
     used=0;
     assert(cs_gcc_response(1,"missing",writer)==0);
     assert(word(8)==1 && word(20)==0 && used==32);

@@ -9,6 +9,30 @@
 struct captured { unsigned char *data; unsigned size,capacity; };
 static struct captured streams[2];
 
+static uint32_t read_word(const unsigned char *data)
+{
+    return (uint32_t)data[0]|(uint32_t)data[1]<<8|(uint32_t)data[2]<<16|(uint32_t)data[3]<<24;
+}
+
+int cs_gcc_response_decode(const void *packet, size_t size, struct cs_gcc_result *result)
+{
+    if (!packet || !result || size<24) { errno=EINVAL; return -1; }
+    const unsigned char *data=packet;
+    if (memcmp(data,"GCCOUT1",8)) { errno=EINVAL; return -1; }
+    struct cs_gcc_result next={0};
+    next.status=read_word(data+8); next.out_size=read_word(data+12);
+    next.err_size=read_word(data+16); next.file_size=read_word(data+20);
+    size_t left=size-24;
+    if (next.out_size>left || next.out_size>CAPTURE_LIMIT) { errno=EINVAL; return -1; }
+    left-=next.out_size;
+    if (next.err_size>left || next.err_size>CAPTURE_LIMIT-next.out_size) { errno=EINVAL; return -1; }
+    left-=next.err_size;
+    if (next.file_size!=left || (next.status && next.file_size)) { errno=EINVAL; return -1; }
+    next.out=data+24; next.err=next.out+next.out_size; next.file=next.err+next.err_size;
+    *result=next;
+    return 0;
+}
+
 void cs_gcc_capture_reset(void)
 {
     for (unsigned i=0;i<2;++i) { free(streams[i].data); streams[i]=(struct captured){0}; }

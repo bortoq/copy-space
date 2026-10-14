@@ -120,6 +120,30 @@ def main():
                       0 if operation.endswith("mod") else 1,suffix))
     cases.append((b'copy.cmp $r0,$r1\ncopy.udiv $r0,$r1\ncopy.branch.ltu .Ldone\n'
                   b'copy.inc $r0,100\n.Ldone:\n',0,suffix))
+    for value in (0,0x89abcdef,0xffffffff):
+        setup=f'copy.ldi.l $r2,16\ncopy.ldi.l $r0,{value}\ncopy.st.l ($r2),$r0\n'.encode()
+        for width,bits in ((b'b',8),(b's',16),(b'l',32)):
+            body=setup+b'copy.ldi.l $r0,0xffffffff\ncopy.ld.'+width+b' $r0,($r2)\n'
+            cases.append((body,value&((1<<bits)-1),suffix))
+        for offset in range(4):
+            body=setup+f'copy.ldo.b $r0,{offset}($r2)\n'.encode()
+            cases.append((body,(value>>(offset*8))&255,suffix))
+        cases.append((setup+b'copy.ldo.s $r0,1($r2)\n',(value>>8)&65535,suffix))
+    cases.extend([
+        (b'copy.ldi.l $r0,0x12345678\ncopy.sta.l 16,$r0\ncopy.ldi.l $r1,255\n'
+         b'copy.sta.b 17,$r1\ncopy.lda.l $r0,16\n',0x1234ff78,suffix),
+        (b'copy.sto.l -4($sp),$r0\ncopy.ldo.l $r0,-4($sp)\n',3,suffix),
+        (b'copy.sto.b -1($fp),$r1\ncopy.ldo.b $r0,-1($fp)\n',4,suffix),
+        (b'copy.ldi.l $r2,17\ncopy.ldi.l $r0,0x89abcdef\ncopy.st.l ($r2),$r0\n'
+         b'copy.ld.l $r2,($r2)\ncopy.mov $r0,$r2\n',0x89abcdef,suffix),
+        (b'copy.cmp $r0,$r1\ncopy.ldi.l $r2,16\ncopy.st.l ($r2),$r0\n'
+         b'copy.ld.l $r0,($r2)\ncopy.branch.ltu .Ldone\ncopy.inc $r0,100\n.Ldone:\n',3,suffix)])
+    for operation in (b'ld',b'st'):
+        for width,last in ((b'b',8191),(b's',8190),(b'l',8188)):
+            for address in (last+1,0xffffffff):
+                body=f'copy.ldi.l $r2,{address}\n'.encode()
+                operands=b'$r0,($r2)' if operation==b'ld' else b'($r2),$r0'
+                cases.append((body+b'copy.'+operation+b'.'+width+b' '+operands+b'\n',None,suffix))
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()
@@ -132,7 +156,7 @@ def main():
         (folder/"command.json").write_text(json.dumps(command)+"\n")
         checked=subprocess.run(command,capture_output=True,check=True,timeout=10)
         (folder/"out.bin").write_bytes(checked.stdout)
-        assert checked.stdout==struct.pack("<I",value),checked.stdout
+        assert checked.stdout==(b"" if value is None else struct.pack("<I",value)),checked.stdout
         results.append({"image_sha256":hashlib.sha256(result.stdout).hexdigest(),"output_hex":checked.stdout.hex()})
         if index==args.guest_case: incoming,expected,expected_value=assembly,result.stdout,value
     if not 0<=args.guest_case<len(cases):

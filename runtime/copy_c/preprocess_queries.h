@@ -4,7 +4,7 @@ static int cc_pp_query_symbol(cc_pp_token token)
 {
     if (token.kind!=CC_PP_IDENT) return 0;
     return cc_pp_is(token,"__has_include") ? 1 : cc_pp_is(token,"__has_include_next") ? 2
-         : cc_pp_is(token,"__has_attribute") ? 3 : 0;
+         : cc_pp_is(token,"__has_attribute") ? 3 : cc_pp_is(token,"__has_builtin") ? 4 : 0;
 }
 static int cc_pp_query_kind(cc_pp_token token)
 {
@@ -96,6 +96,15 @@ static int cc_pp_query_expand(unsigned *cursor, int kind, unsigned depth)
         }
         if (success && (cc_pp_is(attribute,"packed") || cc_pp_is(attribute,"__packed__")
                      || cc_pp_is(attribute,"aligned") || cc_pp_is(attribute,"__aligned__"))) found=0;
+    } else if (success && kind==4) {
+        cc_pp_token builtin=cc_pp_nodes[head].token;
+        success=builtin.kind==CC_PP_IDENT && !cc_pp_nodes[head].next;
+        if (success && (cc_pp_is(builtin,"__builtin_offsetof")
+                     || cc_pp_is(builtin,"__builtin_types_compatible_p")
+                     || cc_pp_is(builtin,"__builtin_expect")
+                     || cc_pp_is(builtin,"__builtin_va_start")
+                     || cc_pp_is(builtin,"__builtin_va_copy")
+                     || cc_pp_is(builtin,"__builtin_va_end"))) found=0;
     } else if (success) {
         success=cc_pp_header_tokens(head,name,&size,&quote);
         if (success && kind==2 && (cc_pp_current_root>=0 ? (unsigned)cc_pp_current_root+1 : 0)>=cc_file_root_count)

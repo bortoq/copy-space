@@ -81,7 +81,7 @@ static cc_pp_token cc_pp_tokens[CC_PP_TOKENS];
 static unsigned char cc_pp_text[CC_PP_TEXT], cc_pp_output[CC_PP_OUTPUT];
 static unsigned cc_pp_macro_count, cc_pp_token_count, cc_pp_text_count, cc_pp_output_count;
 static int cc_pp_enabled, cc_pp_skipping;
-static int cc_pp_in_condition, cc_pp_query_enabled[3];
+static int cc_pp_in_condition, cc_pp_query_enabled[4];
 typedef struct { unsigned first, count; int variadic; } cc_pp_parameters;
 static cc_pp_token cc_pp_parameter_names[CC_PP_PARAMETERS];
 static unsigned cc_pp_parameter_count;
@@ -823,7 +823,7 @@ static int cc_preprocess_macros(unsigned char *source, unsigned size)
     cc_pp_hide_reset();
     cc_pp_group_count=cc_pp_group_floor=0; cc_pp_enabled=1; cc_pp_skipping=0;
     cc_pp_in_condition=0;
-    for (unsigned i=0;i<3;++i) cc_pp_query_enabled[i]=1;
+    for (unsigned i=0;i<4;++i) cc_pp_query_enabled[i]=1;
     cc_input_file_count=cc_file_root_count=0;
     cc_pp_include_depth=0; cc_pp_current_file=CC_FILES_MAX;
     cc_pp_current_root=cc_pp_include_file=-1;

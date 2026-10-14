@@ -1463,6 +1463,7 @@ cc-prefix-quals cell cc-state-span
   s" switch" cc-is or s" case" cc-is or s" goto" cc-is or
   s" _Static_assert" cc-is or s" _Generic" cc-is or s" default" cc-is or s" __builtin_offsetof" cc-is or
   s" __builtin_types_compatible_p" cc-is or
+  s" __builtin_expect" cc-is or
   s" __builtin_va_start" cc-is or s" __builtin_va_arg" cc-is or
   s" __builtin_va_copy" cc-is or s" __builtin_va_end" cc-is or
   s" typedef" cc-is or s" static" cc-is or s" __auto_type" cc-is or
@@ -1771,11 +1772,19 @@ defer cc-aggregate-store
 : cc-va-end ( -- value )
   cc-next 40 cc-expect cc-expression dup cc-va-operand cc-value drop
   41 cc-expect cc-va-void ;
+: cc-expect-value ( -- value ) 0 L{ value }
+  cc-next 40 cc-expect cc-expression 9 cc-convert cc-value 1 (local!)
+  44 cc-expect value cc-known? if
+    2 cc-inspect dup cc-record? swap cc-kind 2 = or if
+      s" invalid expectation type" cc-fail then
+  else cc-expression 9 cc-convert cc-discard-value then
+  41 cc-expect value ;
 : cc-primary ( -- target )
   cc-token @ 34 = if cc-string exit then
   s" _Generic" cc-is if cc-next cc-generic exit then
   s" __builtin_offsetof" cc-is if cc-next cc-offsetof exit then
   s" __builtin_types_compatible_p" cc-is if cc-next cc-compatible exit then
+  s" __builtin_expect" cc-is if cc-nest cc-expect-value cc-unnest exit then
   s" __builtin_va_start" cc-is if cc-nest cc-va-start cc-unnest exit then
   s" __builtin_va_arg" cc-is if cc-nest cc-va-arg cc-unnest exit then
   s" __builtin_va_copy" cc-is if cc-nest cc-va-copy cc-unnest exit then

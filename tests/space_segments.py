@@ -54,6 +54,13 @@ def execute_segments(emulator, folder, data_file, *, space_bytes, layer_bytes,
         output.seek(0, os.SEEK_END)
         for index in range(first, first+max_parts):
             part = folder / f"part-{index:04d}"
+            if resume and part.exists():
+                # Preserve the interrupted attempt; only completed checkpoints
+                # are used to restore memory and channel cursors.
+                attempt = 0
+                while part.with_name(part.name+f".interrupted-{attempt}").exists():
+                    attempt += 1
+                part.rename(part.with_name(part.name+f".interrupted-{attempt}"))
             part.mkdir()
             dump, fifo = part / "space.bin", part / "trace.fifo"
             trace = part / ("trace.txt.zst" if compression == "zstd" else "trace.txt.gz")

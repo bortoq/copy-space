@@ -68,9 +68,13 @@ for name, prefix, initial, ticks in (("runtime", b"", core, 10), ("loading", pac
         output.write_bytes(saved+b"changed")
         rejected("changed output length")
         output.write_bytes(saved)
+    interrupted = folder / "resumed/part-0001"
+    interrupted.mkdir()
+    (interrupted / "partial.trace").write_bytes(b"interrupted attempt")
     evidence = execute_segments("build/bin/space", folder / "resumed", incoming,
                                 space_bytes=2097152, layer_bytes=2272, ticks=ticks,
                                 timeout=10, compression="gzip", initial_core=initial, resume=True)
+    assert (folder / "resumed/part-0001.interrupted-0/partial.trace").read_bytes() == b"interrupted attempt"
     assert (folder / "resumed/part-0000/trace.txt.gz").read_bytes() == original
     assert (folder / "resumed/program.in").read_bytes() == result.stdout
     assert (folder / "resumed/space.bin").read_bytes() == (folder / "continuous-space.bin").read_bytes()

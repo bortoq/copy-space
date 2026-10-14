@@ -23,46 +23,54 @@ def main():
     parser.add_argument("--artifacts",type=Path,required=True)
     parser.add_argument("--emulator",type=Path)
     parser.add_argument("--mode",choices=["preprocess","compile"],default="preprocess")
+    parser.add_argument("--resume",action="store_true")
+    parser.add_argument("--timeout",type=float,default=300)
     args=parser.parse_args()
     image=args.image.resolve(); manifest=json.loads((image/"image.json").read_text())
     profiles={2*1024*1024:"space",64*1024*1024:"space-64m",256*1024*1024:"space-256m"}
     emulator=args.emulator.resolve() if args.emulator else ROOT/"build/bin"/profiles[manifest["space_bytes"]]
     if not emulator.is_file(): raise ValueError("build matching emulator: "+str(emulator))
     if digest(image/"gcc.stream")!=manifest["stream_sha256"]: raise ValueError("image changed")
-    root=args.artifacts.resolve(); root.mkdir(parents=True,exist_ok=False)
-    files=[(b"main.c",b'#include "value.h"\n#define BASE 3\nunsigned value(void) { return BASE + VALUE; }\n'),
-           (b"include/value.h",b"#define VALUE 4\n")]
-    for name,data in files:
-        path=root/"native-inputs"/name.decode()
-        path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
-    native=["gcc","-E","-P","-nostdinc","-Iinclude","main.c"]
-    (root/"native-command.json").write_text(json.dumps(native)+"\n")
-    expected=subprocess.run(native,cwd=root/"native-inputs",capture_output=True)
-    (root/"native.out").write_bytes(expected.stdout); (root/"native.err").write_bytes(expected.stderr)
-    if expected.returncode or expected.stdout!=b"unsigned value(void) { return 3 + 4; }\n":
-        raise RuntimeError("native oracle differs from independent expected output")
-    packet=b"\0CCFILES1"+struct.pack("<III",len(files),0,1)+struct.pack("<I",7)+b"include"
-    for name,data in files:
-        packet+=struct.pack("<II",len(name),len(data))+name+data
-    argv=[b"cc1",b"-E",b"-P",b"-quiet",b"-nostdinc",b"-Iinclude",b"main.c"]
-    if args.mode=="compile":
-        argv=[b"cc1",b"-quiet",b"-O2",b"-nostdinc",b"-Iinclude",b"-march=rv32i",b"-mabi=ilp32",
-              b"-mno-relax",b"-o",b"-",b"main.c"]
-        if manifest.get("framed_output"):
-            argv.insert(1,b"--space-result=result.s")
-            argv[argv.index(b"-o")+1]=b"result.s"
-    job=b"GCCJOB1\0"+struct.pack("<II",len(argv),len(packet))
-    for arg in argv: job+=struct.pack("<I",len(arg))+arg
-    job+=packet
-    (root/"job.bin").write_bytes(job)
-    (root/"argv.json").write_text(json.dumps([a.decode() for a in argv])+"\n")
-    with (root/"in.bin").open("wb") as target, (image/"gcc.stream").open("rb") as source:
-        while block:=source.read(1024*1024): target.write(block)
-        target.write(job)
+    root=args.artifacts.resolve(); root.mkdir(parents=True,exist_ok=args.resume)
+    configuration={"image_sha256":manifest["stream_sha256"],"mode":args.mode}
+    if args.resume:
+        assert json.loads((root/"test-configuration.json").read_text())==configuration, "changed test image/mode"
+    else:
+        (root/"test-configuration.json").write_text(json.dumps(configuration)+"\n")
+    if not args.resume:
+        files=[(b"main.c",b'#include "value.h"\n#define BASE 3\nunsigned value(void) { return BASE + VALUE; }\n'),
+               (b"include/value.h",b"#define VALUE 4\n")]
+        for name,data in files:
+            path=root/"native-inputs"/name.decode()
+            path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
+        native=["gcc","-E","-P","-nostdinc","-Iinclude","main.c"]
+        (root/"native-command.json").write_text(json.dumps(native)+"\n")
+        expected=subprocess.run(native,cwd=root/"native-inputs",capture_output=True)
+        (root/"native.out").write_bytes(expected.stdout); (root/"native.err").write_bytes(expected.stderr)
+        if expected.returncode or expected.stdout!=b"unsigned value(void) { return 3 + 4; }\n":
+            raise RuntimeError("native oracle differs from independent expected output")
+        packet=b"\0CCFILES1"+struct.pack("<III",len(files),0,1)+struct.pack("<I",7)+b"include"
+        for name,data in files:
+            packet+=struct.pack("<II",len(name),len(data))+name+data
+        argv=[b"cc1",b"-E",b"-P",b"-quiet",b"-nostdinc",b"-Iinclude",b"main.c"]
+        if args.mode=="compile":
+            argv=[b"cc1",b"-quiet",b"-O2",b"-nostdinc",b"-Iinclude",b"-march=rv32i",b"-mabi=ilp32",
+                  b"-mno-relax",b"-o",b"-",b"main.c"]
+            if manifest.get("framed_output"):
+                argv.insert(1,b"--space-result=result.s")
+                argv[argv.index(b"-o")+1]=b"result.s"
+        job=b"GCCJOB1\0"+struct.pack("<II",len(argv),len(packet))
+        for arg in argv: job+=struct.pack("<I",len(arg))+arg
+        job+=packet
+        (root/"job.bin").write_bytes(job)
+        (root/"argv.json").write_text(json.dumps([a.decode() for a in argv])+"\n")
+        with (root/"in.bin").open("wb") as target, (image/"gcc.stream").open("rb") as source:
+            while block:=source.read(1024*1024): target.write(block)
+            target.write(job)
     print("Executing actual cc1 through primitive Space:",args.mode,flush=True)
     execution=execute_segments(emulator,root/"space",root/"in.bin",
         space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,
-        ticks=100000,timeout=300,compression="zstd")
+        ticks=100000,timeout=args.timeout,compression="zstd",resume=args.resume)
     output=(root/"space/program.in").read_bytes()
     raw=(root/"space/space.bin").read_bytes()
     def word(at,buffer=raw):
@@ -87,7 +95,7 @@ def main():
         output=file if args.mode=="compile" else stdout
         (root/"result.bin").write_bytes(output)
     if args.mode=="preprocess":
-        assert output==expected.stdout,output
+        assert output==(root/"native.out").read_bytes(),output
         print("OK actual cc1 in Space: full preprocessed output matches GCC; guest exit 0",flush=True)
     else:
         assembly=root/"guest-result.s"; assembly.write_bytes(output)

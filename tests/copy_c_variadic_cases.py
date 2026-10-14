@@ -1,5 +1,6 @@
 """Variable argument frames, promotions and GNU va_list operations."""
 valid = [
+    ("variadic-arg-aggregate", b'struct S{int x;};int f(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);return __builtin_va_arg(ap,struct S).x;}int main(){struct S s={7};return f(0,s);}',7),
     ("variadic-guest", b'int sum(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);int v=0;while(n--){v+=__builtin_va_arg(ap,int);}__builtin_va_end(ap);return v;}int main(){return sum(2,3,4);}', 7),
     ("variadic-fixed-only", b'int f(int n,...){return n;}int main(){return f(7);}', 7),
     ("variadic-definition-unused", b'int f(int n,...){return n;}int main(){return 0;}', 0),
@@ -36,7 +37,6 @@ invalid = [
     ("variadic-arg-char", b'int f(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);return __builtin_va_arg(ap,char);}int main(){return f(0,7);}'),
     ("variadic-arg-short", b'int f(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);return __builtin_va_arg(ap,short);}int main(){return f(0,7);}'),
     ("variadic-arg-void", b'int f(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);__builtin_va_arg(ap,void);return 0;}int main(){return f(0);}'),
-    ("variadic-arg-aggregate-pending", b'struct S{int x;};int f(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);return __builtin_va_arg(ap,struct S).x;}int main(){struct S s={7};return f(0,s);}'),
     ("variadic-arg-rvalue-assignment", b'int f(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);__builtin_va_arg(ap,int)=3;return 0;}int main(){return f(0,1);}'),
     ("variadic-copy-wrong-type", b'int f(int n,...){__builtin_va_list ap;__builtin_va_start(ap,n);int bp;__builtin_va_copy(bp,ap);return 0;}int main(){return f(0);}'),
     ("variadic-too-few-fixed", b'int f(int a,int b,...){return a+b;}int main(){return f(1);}'),

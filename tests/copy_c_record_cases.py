@@ -62,7 +62,5 @@ invalid = [
     ("struct-incomplete-access", b"int main(){struct S*p=0;return p->x;}"),
     ("struct-many-initializers", b"int main(){struct S{int x;}s={1,2};return 0;}"),
     ("union-many-initializers", b"int main(){union U{int x,y;}u={1,2};return 0;}"),
-    ("struct-return", b"struct S{int x;};struct S f(){struct S s;return s;}int main(){return 0;}"),
-    ("struct-param-value", b"struct S{int x;};int f(struct S s){return s.x;}int main(){return 0;}"),
     ("struct-block-scope", b"int main(){{struct S{int x;};}struct S s;return 0;}"),
 ]

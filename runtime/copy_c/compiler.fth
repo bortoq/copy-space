@@ -23,6 +23,9 @@ variable cc-static-data
 151808 constant cc-output
 202240 constant cc-call-args
 202752 constant cc-saved-result
+203264 constant cc-aggregate-call-args
+219648 constant cc-aggregate-saved-result
+8192 constant cc-variadic-bits
 152128 constant cc-sp
 152192 constant cc-stack-message
 152384 constant cc-pointer-message
@@ -51,11 +54,12 @@ variable cc-static-data
 154304 constant cc-indirect-entry
 154336 constant cc-indirect-return
 154368 constant cc-indirect-parameters
+154624 constant cc-variadic-cursor
 155648 constant cc-function-description-base
 8388608 constant cc-stack-base
 16384 constant cc-frame-bits
 cc-code-base cc-frame-bits - constant cc-object-zeros
-: cc-check-object-zeros cc-saved-result 64 + cc-object-zeros > if -1 throw then ;
+: cc-check-object-zeros cc-aggregate-saved-result cc-frame-bits + cc-object-zeros > if -1 throw then ;
 cc-check-object-zeros
 16760832 constant cc-stack-last
 
@@ -1491,7 +1495,26 @@ defer cc-compatible
 defer cc-generic
 defer cc-indirect-call
 create cc-indirect-types 32 8 * cells allot
+create cc-indirect-values 32 8 * cells allot
 variable cc-indirect-depth
+defer cc-abi-value
+defer cc-abi-convert
+: cc-abi-result ( type -- value ) L{ type }
+  type cc-record? if type cc-unqualified cc-object dup type cc-unqualified cc-type! dup 0 cc-lvalue!
+  else type cc-typed-cell then ;
+: cc-abi-result-width ( type -- bits ) dup cc-record? if cc-width else cc-width 32 max then ;
+: cc-abi-result-buffer ( type -- address ) cc-abi-result-width 64 > if cc-aggregate-saved-result else cc-saved-result then ;
+: cc-argument-location ( types count index -- address ) 0 cc-call-args 0
+  L{ types count index offset base alignment }
+  count 0 ?do i types cc-fget dup cc-width 64 > swap cc-alignment 8 > or if
+    cc-aggregate-call-args 5 (local!) then loop
+  index 1+ 0 ?do
+    i types cc-fget cc-alignment 8 * 64 max 6 (local!)
+    offset alignment 1- + alignment negate and 4 (local!)
+    i index < if offset i types cc-fget cc-width 64 max + 4 (local!) then
+  loop
+  offset index types cc-fget cc-width 64 max + cc-frame-bits > cc-limit base offset + ;
+: cc-indirect-values-at ( types -- values ) cc-indirect-types - cc-indirect-values + ;
 create cc-break-fields 128 cells allot
 create cc-continue-fields 128 cells allot
 variable cc-break-count
@@ -1525,7 +1548,7 @@ create cc-switch-cases 32 128 * 5 * cells allot
   cc-statement-expression-parents cc-statement-expression-current @ cells + @
   cc-statement-expression-current ! -1 cc-statement-expression-depth +! ;
 
-: cc-call ( fn -- value ) 0 0 0 L{ fn nargs index type }
+: cc-call ( fn -- value ) 0 0 0 0 L{ fn nargs index type types }
   fn 0< fn cc-function-count @ >= or if s" unknown function" cc-fail then
   40 cc-expect
   cc-token @ 41 <> if
@@ -1536,15 +1559,16 @@ create cc-switch-cases 32 128 * 5 * cells allot
   then
   41 cc-expect
   nargs fn cc-function-argc cc-fget <> if s" wrong argument count" cc-fail then
+  fn 8 * cells cc-function-parameter-types + 5 (local!)
   nargs 0 ?do
     nargs 1- i - 3 (local!) fn index cc-param-type 4 (local!)
-    type cc-typed-cell over cc-assignment-check type cc-convert
-    type cc-width cc-call-args index 64 * + rot cc-op
+    type cc-abi-value
+    type cc-width types nargs index cc-argument-location rot cc-op
   loop
   cc-sp cc-stack-last cc-const cc-eq-entry @ cc-invoke cc-branch >r
   r@ 32 + cc-stack-error-entry @ cc-patch r> cc-current cc-patch
   cc-sp cc-frame-bits cc-const cc-add-entry @ cc-invoke 32 cc-sp rot cc-op
-  nargs 0 ?do fn i cc-param-type cc-width fn i cc-param cc-call-args i 64 * + cc-op loop
+  nargs 0 ?do fn i cc-param-type cc-width fn i cc-param types nargs i cc-argument-location cc-op loop
   2 cc-room cc-current cc-layer-bits + cc-const
   24 fn cc-function-return cc-fget rot cc-op
   fn cc-function-entry cc-fget dup if cc-jump else drop
@@ -1555,10 +1579,11 @@ create cc-switch-cases 32 128 * 5 * cells allot
       1 cc-call-count +!
     then 0 cc-jump
   then
-  fn cc-function-result-types cc-fget cc-width 32 max cc-saved-result fn cc-function-value cc-fget cc-op
+  fn cc-function-result-types cc-fget dup cc-abi-result-width swap cc-abi-result-buffer fn cc-function-value cc-fget cc-op
   cc-sp cc-frame-bits negate cc-const cc-add-entry @ cc-invoke 32 cc-sp rot cc-op
-  fn cc-function-result-types cc-fget cc-typed-cell
-  dup fn cc-function-result-types cc-fget cc-width 32 max swap cc-saved-result cc-op ;
+  fn cc-function-result-types cc-fget cc-abi-result
+  dup fn cc-function-result-types cc-fget cc-abi-result-width swap
+  fn cc-function-result-types cc-fget cc-abi-result-buffer cc-op ;
 
 : cc-address ( target -- pointer )
   dup cc-lvalue 0= if s" address requires lvalue" cc-fail then
@@ -1691,10 +1716,13 @@ defer cc-aggregate-store
 : cc-va-arg ( -- value ) 0 0 0 0 L{ ap pointer type result }
   cc-next 40 cc-expect cc-expression 1 (local!) ap cc-va-operand 44 cc-expect
   cc-read-abstract-type cc-declared-type @ cc-unqualified 3 (local!) 41 cc-expect
-  type cc-kind dup 0= over 1 = or swap 6 = or type cc-size dup 4 = swap 8 = or and 0=
+  type cc-kind dup 0= over 1 = or swap 6 = or type cc-size dup 4 = swap 8 = or and type cc-record? or 0=
   if s" va_arg requires promoted scalar or pointer" cc-fail then
   ap cc-value 2 (local!)
-  pointer type cc-pointer-to cc-convert cc-pointer-fetch 4 (local!)
+  type cc-alignment 1 > if
+    pointer type cc-alignment 1- cc-const cc-add-entry @ cc-invoke
+    type cc-alignment negate cc-const cc-and-entry @ cc-invoke 2 (local!) then
+  pointer type cc-pointer-to cc-convert cc-pointer-read cc-value 4 (local!)
   pointer type cc-size cc-const cc-add-entry @ cc-invoke dup 4 cc-pointer-to cc-type!
   ap swap cc-lvalue-write drop result ;
 : cc-va-copy ( -- value ) 0 0 L{ ap source }
@@ -2115,7 +2143,6 @@ create cc-external-parameter-addresses 8 cells allot
         0 shape cc-fget dup 8 >= cc-limit 2 + shape type cc-unqualified -rot cc-fset
         name 0 shape cc-fget 10 + shape cc-fset 0 shape cc-fget 1+ 0 shape cc-fset
         tags 65536 and if
-          type cc-record? if s" aggregate parameter unsupported" cc-fail then
           type cc-object dup type cc-type!
           dup 0 shape cc-fget 1- cells cc-external-parameter-addresses + !
         then
@@ -2551,12 +2578,15 @@ variable cc-vararg-offset
     nargs 1- i - 5 (local!)
     1 shape cc-fget 1 and pointer 0 shape cc-fget < and if pointer 2 + shape cc-fget else
       dup cc-effective-type cc-promoted then
-    dup pointer types cc-fset dup cc-typed-cell 2 pick cc-assignment-check
-    cc-convert pointer types cc-fget cc-width cc-call-args pointer 64 * + rot cc-op
+    pointer types cc-fset pointer types cc-indirect-values-at cc-fset
   loop
-  cc-unevaluated @ if type cc-pointee cc-unqualified cc-typed-cell
+  nargs 0 ?do
+    nargs 1- i - 5 (local!)
+    pointer types cc-indirect-values-at cc-fget pointer types cc-fget cc-abi-value
+    pointer types cc-fget cc-width types nargs pointer cc-argument-location rot cc-op
+  loop
+  cc-unevaluated @ if type cc-pointee cc-unqualified cc-abi-result
     -1 cc-indirect-depth +! cc-unnest exit then
-  type cc-pointee cc-record? if s" aggregate indirect return pending" cc-fail then
   callee cc-check-function-pointer
   callee 0 cc-description-read 5 (local!)
   pointer cc-zero @ cc-eq-entry @ cc-invoke cc-reject-pointer-if
@@ -2569,17 +2599,24 @@ variable cc-vararg-offset
   cc-cell 7 (local!) 32 resultptr cc-zero @ cc-op 21 resultptr pointer 3 + cc-op
   resultptr type cc-pointee cc-pointer-to cc-type!
   0 cc-vararg-offset !
+  1 shape cc-fget 2 and if
+    callee 11 cc-description-read newsp cc-add-entry @ cc-invoke
+    32 cc-variadic-cursor rot cc-op then
   nargs 0 ?do
     1 shape cc-fget 2 and i 0 shape cc-fget >= and if
-      callee 11 cc-description-read cc-vararg-offset @ cc-const cc-add-entry @ cc-invoke
-      i types cc-fget cc-width cc-vararg-offset +!
-    else callee i 3 + cc-description-read then
-    newsp cc-add-entry @ cc-invoke
-    32 cc-indirect-parameters i 32 * + rot cc-op
+      cc-variadic-cursor i types cc-fget cc-alignment 8 * 1- cc-const cc-add-entry @ cc-invoke
+      i types cc-fget cc-alignment 8 * negate cc-const cc-and-entry @ cc-invoke
+      32 cc-indirect-parameters i 32 * + rot cc-op
+      cc-indirect-parameters i 32 * + i types cc-fget cc-width cc-const cc-add-entry @ cc-invoke
+      32 cc-variadic-cursor rot cc-op
+      i types cc-fget dup cc-width swap cc-alignment 8 * 1- + cc-vararg-offset +!
+      cc-vararg-offset @ cc-variadic-bits > cc-limit
+    else callee i 3 + cc-description-read newsp cc-add-entry @ cc-invoke
+      32 cc-indirect-parameters i 32 * + rot cc-op then
   loop
   32 cc-sp newsp cc-op
   nargs 0 ?do cc-indirect-parameters i 32 * + i types cc-fget cc-width
-    cc-call-args i 64 * + cc-description-write loop
+    types nargs i cc-argument-location cc-description-write loop
   3 cc-room cc-indirect-return 24 cc-current cc-layer-bits + cc-const cc-description-write
   cc-indirect-entry cc-dynamic cc-restore-call-frame
   type cc-pointee cc-kind 2 = if cc-cell dup 3 cc-type! else resultptr cc-pointer-read cc-value then
@@ -2591,8 +2628,8 @@ variable cc-vararg-offset
     drop cc-function-index @ cc-function-return cc-fget cc-dynamic exit
   then
   dup cc-function-index @ cc-function-value cc-fget swap cc-assignment-check
-  cc-function-index @ cc-function-value cc-fget cc-type cc-convert
-  cc-function-index @ cc-function-value cc-fget cc-type cc-width 32 max
+  cc-function-index @ cc-function-value cc-fget cc-type cc-abi-convert
+  cc-function-index @ cc-function-value cc-fget cc-type cc-abi-result-width
   cc-function-index @ cc-function-value cc-fget rot cc-op
   cc-function-index @ cc-function-return cc-fget cc-dynamic ;
 : cc-if
@@ -2819,6 +2856,13 @@ variable cc-static-flex-length
   source cc-aggregate-value 2 (local!)
   destination source cc-aggregate-copy source ;
 ' cc-aggregate-store-body is cc-aggregate-store
+: cc-abi-value-body ( source type -- value ) L{ source type }
+  type cc-typed-cell source cc-assignment-check
+  source type cc-abi-convert ;
+' cc-abi-value-body is cc-abi-value
+: cc-abi-convert-body ( source type -- value ) L{ source type }
+  type cc-record? if source cc-aggregate-value else source type cc-convert then ;
+' cc-abi-convert-body is cc-abi-convert
 : cc-range-view ( target index -- view ) cc-const 43 cc-additive-op cc-pointer-read ;
 : cc-initialize-range ( target low high -- ) 0 0 0 0
   L{ target low high type seed source data }
@@ -3317,6 +3361,30 @@ defer cc-local-static-initialize
   cc-cell drop cc-cell drop cc-cell drop 0 cc-symbol-count ! 0 cc-scope-level !
   cc-alias-count @ cc-function-aliases ! cc-tag-count @ cc-function-tags !
   0 cc-external-prototype-shape ! ;
+create cc-reflow-types 8 cells allot
+: cc-abi-result-location ( type -- target )
+  dup cc-record? if cc-alignment 8 * dup 1- cc-data-base 32 + + swap negate and
+  else drop cc-data-base 32 + then ;
+: cc-prepare-aggregate-result ( shape -- ) 0 0 0 0
+  L{ shape ending type previous target }
+  cc-function-type @ cc-record? 0= if exit then
+  cc-function-type @ cc-abi-result-location cc-function-type @ cc-width 8 max + 2 (local!)
+  ending cc-data-base 96 + <= if exit then
+  cc-external-prototype-shape @ if
+    0 shape cc-fget 0 ?do
+      cc-external-parameter-addresses i cells + @ cc-type i cc-reflow-types cc-fset
+    loop then
+  ending cc-data !
+  cc-external-prototype-shape @ if
+    0 shape cc-fget 0 ?do
+      i cc-reflow-types cc-fget 3 (local!)
+      cc-external-parameter-addresses i cells + @ 4 (local!)
+      type cc-object dup type cc-type! dup 1 cc-lvalue! 5 (local!)
+      cc-symbol-count @ 0 ?do
+        cc-symbol-address i cells + @ previous = if target cc-symbol-address i cells + ! then
+      loop
+      target cc-external-parameter-addresses i cells + !
+    loop then ;
 : cc-refresh-function-layout? ( old shape definition -- flag ) L{ old shape definition }
   definition old 0= or if -1 exit then
   1 shape cc-fget 1 and if -1 exit then
@@ -3324,7 +3392,6 @@ defer cc-local-static-initialize
 : cc-function ( type name after -- definition ) 0 0 0 cc-alias-count @ cc-token @ 123 =
   L{ type name after shape fn old aliases definition }
   type cc-pointee cc-function-type !
-  cc-function-type @ cc-record? if s" aggregate return unsupported" cc-fail then
   cc-external-prototype-shape @ dup 0= if drop type cc-type-function-shapes cc-fget then 4 (local!)
   name cc-pos ! cc-next cc-function-aliases @ cc-alias-count !
   cc-find-alias-raw 0< 0= if s" function conflicts with ordinary name" cc-fail then
@@ -3352,7 +3419,8 @@ defer cc-local-static-initialize
   aliases cc-alias-count ! after cc-pos ! cc-next
   fn cc-function-entry cc-fget 0= old shape definition cc-refresh-function-layout? and if
     cc-data-base fn cc-function-return cc-fset
-    cc-data-base 32 + dup cc-function-type @ cc-type! fn cc-function-value cc-fset
+    shape cc-prepare-aggregate-result
+    cc-function-type @ cc-abi-result-location dup cc-function-type @ cc-type! fn cc-function-value cc-fset
     cc-function-type @ cc-unqualified fn cc-function-result-types cc-fset
     0 shape cc-fget fn cc-function-argc cc-fset
     0 shape cc-fget 0 ?do
@@ -3363,7 +3431,7 @@ defer cc-local-static-initialize
     loop
     1 shape cc-fget 2 and if
       cc-data @ 31 + 31 invert and dup cc-data ! fn cc-function-varargs cc-fset
-      512 cc-data +! cc-data @ 147456 > cc-limit then
+      cc-variadic-bits cc-data +! cc-data @ 147456 > cc-limit then
   then
   definition 0= if cc-end-function-scope 0 exit then
   cc-external-prototype-shape @ 0= if s" function definition requires parameter list" cc-fail then
@@ -3375,7 +3443,9 @@ defer cc-local-static-initialize
   then
   cc-label-reset -1 cc-first-block !
   -1 cc-in-function ! cc-statement 0 cc-in-function ! cc-goto-finish
-  cc-function-type @ cc-kind 2 = if cc-cell dup 3 cc-type! else cc-zero @ then cc-return-value
+  cc-function-type @ cc-kind 2 = if cc-cell dup 3 cc-type! else
+    cc-function-type @ cc-record? if cc-function-type @ cc-abi-result
+      dup cc-function-type @ cc-size cc-clear-object else cc-zero @ then then cc-return-value
   cc-end-function-scope -1 ;
 
 variable cc-static-high

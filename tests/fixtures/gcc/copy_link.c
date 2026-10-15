@@ -16,7 +16,10 @@ static int cs_write(const void *p, unsigned n) { return (int)fwrite(p,1,n,stdout
 #endif
 #endif
 static unsigned char image[CS_COPY_IMAGE_BYTES];
-static char assembly[8192];
+#ifndef CS_COPY_ASSEMBLY_BYTES
+#define CS_COPY_ASSEMBLY_BYTES 8192
+#endif
+static char assembly[CS_COPY_ASSEMBLY_BYTES];
 #ifdef CS_COPY_OBJECTS
 #ifndef CS_COPY_OBJECT_TEXT_BYTES
 #define CS_COPY_OBJECT_TEXT_BYTES 32768

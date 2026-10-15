@@ -2,6 +2,22 @@
 #include "copy_emit.h"
 #include <string.h>
 
+/* These limits also determine the physical tables before generated code. */
+#ifndef CS_COPY_LABEL_CAPACITY
+#define CS_COPY_LABEL_CAPACITY 32
+#endif
+#ifndef CS_COPY_JUMP_CAPACITY
+#define CS_COPY_JUMP_CAPACITY 64
+#endif
+#ifndef CS_COPY_CALL_CAPACITY
+#define CS_COPY_CALL_CAPACITY 32
+#endif
+#if CS_COPY_LABEL_CAPACITY < 1 || CS_COPY_LABEL_CAPACITY > 1048576 || \
+    CS_COPY_JUMP_CAPACITY < 1 || CS_COPY_JUMP_CAPACITY > 1048576 || \
+    CS_COPY_CALL_CAPACITY < 1 || CS_COPY_CALL_CAPACITY > 1048576
+#error "copy table capacities must be in 1..1048576"
+#endif
+
 enum { REG_BASE=32768, CONSTANT_BASE=24576,
        CONSTANT_CAPACITY=(REG_BASE-CONSTANT_BASE)/32, ADD_TABLE=33792,
        SUB_TABLE=33808, AND_TABLE=33824, OR_TABLE=33828, XOR_TABLE=33832,
@@ -19,14 +35,16 @@ enum { REG_BASE=32768, CONSTANT_BASE=24576,
        MEM_ADDRESS=34720, MEM_FLAGS=34752, MEM_VALID=34757, MEM_BIT_ADDRESS=34784,
        STACK_VALUE=34816,
        RETURN_FP=34848, RETURN_PC=34880, CALL_TARGET=34912,
-       CALL_TABLE=64128, SYMBOL_TABLE=65152,
+       CALL_TABLE=BRANCH_TABLE+64*CS_COPY_JUMP_CAPACITY,
+       SYMBOL_TABLE=CALL_TABLE+32*CS_COPY_CALL_CAPACITY,
+       CODE_BEGIN=SYMBOL_TABLE+32*12,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
     uint32_t constants[CONSTANT_CAPACITY];
     unsigned constant_count;
-    struct { char name[64]; uint32_t address; int defined, data, alias, weak, missing_weak; } labels[32];
-    struct { uint32_t layer, table, fallthrough; int label, inverted; size_t line; } jumps[64];
+    struct { char name[64]; uint32_t address; int defined, data, alias, weak, missing_weak; } labels[CS_COPY_LABEL_CAPACITY];
+    struct { uint32_t layer, table, fallthrough; int label, inverted; size_t line; } jumps[CS_COPY_JUMP_CAPACITY];
     unsigned label_count, jump_count;
     int compared;
     uint32_t data_begin;
@@ -48,7 +66,7 @@ struct context {
     uint32_t data_cursor;
     struct { uint32_t destination,addend; int label; } relocations[64];
     unsigned relocation_count;
-    struct { int label,target; uint32_t addend; } aliases[32];
+    struct { int label,target; uint32_t addend; } aliases[CS_COPY_LABEL_CAPACITY];
     unsigned alias_count;
 };
 
@@ -63,7 +81,7 @@ static int label(struct context *ctx, const char *name)
     }
     for (unsigned i=0;i<ctx->label_count;++i)
         if (!strcmp(ctx->labels[i].name,name)) return (int)i;
-    if (ctx->label_count==32) return -1;
+    if (ctx->label_count==CS_COPY_LABEL_CAPACITY) return -1;
     unsigned i=ctx->label_count++;
     memcpy(ctx->labels[i].name,name,length+1);
     return (int)i;
@@ -71,7 +89,7 @@ static int label(struct context *ctx, const char *name)
 
 static int jump(struct context *ctx, int target, size_t line)
 {
-    if (ctx->jump_count==64) return -1;
+    if (ctx->jump_count==CS_COPY_JUMP_CAPACITY) return -1;
     unsigned i=ctx->jump_count;
     uint32_t layer=ctx->program.image.layer;
     if (cs_copy_program_next(&ctx->program)) return -1;
@@ -341,7 +359,7 @@ static int data_directive(struct context *ctx, char *s)
         ctx->previous_valid=1;
     } else if (!strcmp(s,".set") || !strcmp(s,".equ")) {
         char *comma=strchr(arguments,',');
-        if (!comma || ctx->alias_count==32) return -1;
+        if (!comma || ctx->alias_count==CS_COPY_LABEL_CAPACITY) return -1;
         *comma++=0;
         int index=label(ctx,trim(arguments)),target=-1;uint32_t addend;
         if (index<0 || ctx->labels[index].defined || ctx->labels[index].alias) return -1;
@@ -530,7 +548,7 @@ static int compare32(struct context *ctx, uint32_t left, uint32_t right)
 static const char *conditional_jump(struct context *ctx, int index,
                                    uint32_t flag, int inverted, size_t line)
 {
-    if (ctx->jump_count==64) return "jump capacity exceeded";
+    if (ctx->jump_count==CS_COPY_JUMP_CAPACITY) return "jump capacity exceeded";
     struct cs_copy_program *p=&ctx->program;
     if (p->image.slot>253 && cs_copy_program_next(p)) return "copy image capacity exceeded";
     uint32_t table=BRANCH_TABLE+64*ctx->jump_count;
@@ -568,7 +586,7 @@ static int multiply32(struct context *ctx, uint32_t destination, uint32_t source
 {
     struct cs_copy_program *p=&ctx->program;
     uint32_t zero,one;
-    if (ctx->label_count==32 || constant(ctx,0,&zero) || constant(ctx,1,&one)) return -1;
+    if (ctx->label_count==CS_COPY_LABEL_CAPACITY || constant(ctx,0,&zero) || constant(ctx,1,&one)) return -1;
     if (cs_copy_program_emit(p,32,MUL_LEFT,destination) ||
         cs_copy_program_emit(p,32,MUL_RIGHT,source) ||
         cs_copy_program_emit(p,32,MUL_ACC,zero) ||
@@ -591,7 +609,7 @@ static int multiply32(struct context *ctx, uint32_t destination, uint32_t source
 }
 static int internal_label(struct context *ctx)
 {
-    if (ctx->label_count==32) return -1;
+    if (ctx->label_count==CS_COPY_LABEL_CAPACITY) return -1;
     return (int)ctx->label_count++;
 }
 static int bind_internal(struct context *ctx, int index)
@@ -782,7 +800,7 @@ static int dynamic_jump(struct context *ctx, uint32_t address)
 }
 static const char *call(struct context *ctx, char *name, size_t line, int indirect)
 {
-    if (ctx->call_count==32) return "call capacity exceeded";
+    if (ctx->call_count==CS_COPY_CALL_CAPACITY) return "call capacity exceeded";
     int target=-1;
     struct cs_copy_program *p=&ctx->program;
     if (indirect) {
@@ -914,7 +932,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     ctx.memory_fault=-1;
     ctx.program_mode=program_mode;
     ctx.data_cursor=256;
-    if (cs_copy_program_init(&ctx.program,data,bytes,address_bits,65536,(uint32_t)(bytes*8))) goto fail;
+    if (cs_copy_program_init(&ctx.program,data,bytes,address_bits,CODE_BEGIN,(uint32_t)(bytes*8))) goto fail;
     if (cs_copy_constant(&ctx.program.image,EQ_TABLE,8,144) ||
         cs_copy_constant(&ctx.program.image,LT_TABLE,8,212) ||
         cs_copy_constant(&ctx.program.image,XOR_TABLE,4,6) ||
@@ -1117,7 +1135,7 @@ int cs_copy_link_program_memory(unsigned char *data, size_t bytes, unsigned addr
 
 struct object_names {
     struct { char name[64]; unsigned defined,external,local,common,strong,weak,referenced;
-             uint32_t common_size,common_alignment; } names[32];
+             uint32_t common_size,common_alignment; } names[CS_COPY_LABEL_CAPACITY];
     unsigned count;
 };
 static int name_start(unsigned char c)
@@ -1131,7 +1149,7 @@ static int object_name(struct object_names *names, const char *s, size_t n, int 
     for (size_t i=1;i<n;++i) if (!name_char((unsigned char)s[i])) return -1;
     for (unsigned i=0;i<names->count;++i)
         if (strlen(names->names[i].name)==n && !memcmp(names->names[i].name,s,n)) return (int)i;
-    if (!create || names->count==32) return -1;
+    if (!create || names->count==CS_COPY_LABEL_CAPACITY) return -1;
     unsigned i=names->count++;
     memcpy(names->names[i].name,s,n);names->names[i].name[n]=0;
     return (int)i;

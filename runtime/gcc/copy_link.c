@@ -1,6 +1,7 @@
 #include "copy_link.h"
 #include "copy_emit.h"
 #include <string.h>
+#include <stdlib.h>
 
 /* These limits also determine the physical tables before generated code. */
 #ifndef CS_COPY_LABEL_CAPACITY
@@ -920,17 +921,57 @@ static const char *instruction(struct context *ctx, char *s)
     return rc ? "copy image capacity exceeded" : NULL;
 }
 
+/* Return an operator boundary, retaining a terminating label colon. */
+static size_t statement_end(const char *assembly, size_t size, size_t begin, size_t *next)
+{
+    int quoted=0,escaped=0;
+    for (size_t i=begin;i<size;++i) {
+        unsigned char c=(unsigned char)assembly[i];
+        if (c=='\n') { *next=i+1;return i; }
+        if (escaped) { escaped=0;continue; }
+        if (quoted && c=='\\') { escaped=1;continue; }
+        if (c=='"') { quoted=!quoted;continue; }
+        if (quoted) continue;
+        if (c=='#') {
+            size_t end=i;
+            while (i<size && assembly[i]!='\n') ++i;
+            *next=i+(i<size);return end;
+        }
+        if (c==';' || c==':') {
+            *next=i+1;
+            if (c==':' && *next<size && assembly[*next]=='\n') ++*next;
+            return i+(c==':');
+        }
+    }
+    *next=size;return size;
+}
+static size_t statement_capacity(const char *assembly, size_t size)
+{
+    size_t capacity=1,offset=0;
+    while (offset<size) {
+        size_t next,end=statement_end(assembly,size,offset,&next);
+        if (end-offset==SIZE_MAX) return 0;
+        if (end-offset+1>capacity) capacity=end-offset+1;
+        offset=next;
+    }
+    return capacity;
+}
+
 static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
                        const char *assembly, size_t size, const char *entry,
                        const uint32_t *arguments, unsigned argc,
                        struct cs_copy_link_error *error, int program_mode, uint32_t memory_bytes)
 {
     struct context ctx;
+    char *buffer=NULL;
     const char *message="invalid link input";
-    size_t line=0, offset=0;
+    size_t line=0, offset=0, physical_line=1;
     int entered=0, returned=0, terminated=0;
     if (!data || bytes<32768 || bytes>UINT32_MAX/8 || !assembly || !entry || !*entry ||
         argc>6 || (argc && !arguments) || memchr(assembly,0,size)) goto fail;
+    message="out of memory for assembly operator";
+    size_t capacity=statement_capacity(assembly,size);
+    if (!capacity || !(buffer=malloc(capacity))) goto fail;
     memset(data,0,bytes);
     memset(&ctx,0,sizeof(ctx));
     message="invalid data/stack memory size";
@@ -967,14 +1008,11 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
             jump(&ctx,entry_label,0)) goto fail;
     }
     while (offset<size) {
-        size_t end=offset;
-        while (end<size && assembly[end]!='\n') ++end;
-        ++line;
-        char buffer[256];
-        message="assembly line too long";
-        if (end-offset>=sizeof(buffer)) goto fail;
+        size_t next,end=statement_end(assembly,size,offset,&next);
+        line=physical_line;
         memcpy(buffer,assembly+offset,end-offset); buffer[end-offset]=0;
-        offset=end+(end<size);
+        for (size_t i=offset;i<next;++i) if (assembly[i]=='\n') ++physical_line;
+        offset=next;
         char *s=trim(buffer);
         strip_comment(s);s=trim(s);
         if (!*s) continue;
@@ -1114,8 +1152,10 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     if (cs_copy_program_next(&ctx.program) || cs_copy_row(&ctx.program.image,2,32,OUTPUT,STATUS) ||
         cs_copy_program_finish(&ctx.program,ZERO_LAYER)) goto fail;
     if (error) *error=(struct cs_copy_link_error){0,NULL};
+    free(buffer);
     return 0;
 fail:
+    free(buffer);
     if (error) *error=(struct cs_copy_link_error){line,message};
     return -1;
 }
@@ -1162,21 +1202,18 @@ static int object_name(struct object_names *names, const char *s, size_t n, int 
     memcpy(names->names[i].name,s,n);names->names[i].name[n]=0;
     return (int)i;
 }
-static int object_line(const struct cs_copy_object *object, size_t *offset, char buffer[256])
+static int object_line(const struct cs_copy_object *object, size_t *offset, char *buffer)
 {
-    size_t end=*offset;
-    while (end<object->size && object->assembly[end]!='\n') ++end;
-    if (end-*offset>=256) return -1;
+    size_t next,end=statement_end(object->assembly,object->size,*offset,&next);
     memcpy(buffer,object->assembly+*offset,end-*offset);buffer[end-*offset]=0;
-    *offset=end+(end<object->size);
+    *offset=next;
     strip_comment(buffer);
     return 0;
 }
-static int object_references(struct object_names *names, const struct cs_copy_object *object)
+static int object_references(struct object_names *names, const struct cs_copy_object *object, char *buffer)
 {
     size_t offset=0;
     while (offset<object->size) {
-        char buffer[256];
         if (object_line(object,&offset,buffer)) return -1;
         char *s=trim(buffer);size_t length=strlen(s);
         if (!length || s[length-1]==':') continue;
@@ -1224,12 +1261,11 @@ static int object_references(struct object_names *names, const struct cs_copy_ob
     }
     return 0;
 }
-static int object_scan(struct object_names *names, const struct cs_copy_object *object)
+static int object_scan(struct object_names *names, const struct cs_copy_object *object, char *buffer)
 {
     size_t offset=0;
     unsigned depth=0;
     while (offset<object->size) {
-        char buffer[256];
         if (object_line(object,&offset,buffer)) return -1;
         char *s=trim(buffer);size_t length=strlen(s);
         if (!length) continue;
@@ -1282,7 +1318,7 @@ static int object_scan(struct object_names *names, const struct cs_copy_object *
             arguments=trim(comma+1);
         }
     }
-    if (depth || object_references(names,object)) return -1;
+    if (depth || object_references(names,object,buffer)) return -1;
     for (unsigned i=0;i<names->count;++i) {
         if (names->names[i].local && names->names[i].external) return -1;
         if (names->names[i].common && names->names[i].strong) return -1;
@@ -1314,13 +1350,12 @@ static int object_winner(struct object_names *units, unsigned count, const char 
     return winner;
 }
 static int object_rewrite(const struct cs_copy_object *object, struct object_names *units, unsigned count,
-                          unsigned unit, char tag, char *output, size_t *used)
+                          unsigned unit, char tag, char *output, size_t *used, char *buffer)
 {
     struct object_names *names=&units[unit];
     size_t offset=0;
     if (object_append(output,used,".text\n",6)) return -1;
     while (offset<object->size) {
-        char buffer[256];
         if (object_line(object,&offset,buffer)) return -1;
         char *line=trim(buffer);
         if (!strncmp(line,".weak",5) && whitespace((unsigned char)line[5])) continue;
@@ -1437,17 +1472,27 @@ int cs_copy_link_objects_memory(unsigned char *data, size_t bytes, unsigned addr
                         const char *entry, const uint32_t *arguments, unsigned argc,
                         struct cs_copy_link_error *error)
 {
+    char *buffer=NULL;
     const char *message="invalid separate link input";
     if (!objects || !count || count>8) goto fail;
     if (count==1) return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,objects[0].assembly,
                                             objects[0].size,entry,arguments,argc,error);
+    size_t buffer_capacity=1;
+    for (unsigned i=0;i<count;++i) {
+        if (!objects[i].assembly || memchr(objects[i].assembly,0,objects[i].size)) goto fail;
+        size_t n=statement_capacity(objects[i].assembly,objects[i].size);
+        if (!n) goto fail;
+        if (n>buffer_capacity) buffer_capacity=n;
+    }
+    message="out of memory for assembly operator";
+    if (!(buffer=malloc(buffer_capacity))) goto fail;
     struct object_names names[8];memset(names,0,sizeof(names));
     size_t needed=0;
     unsigned char occupied[256]={0};
     message="unsupported binding or invalid object assembly";
     for (unsigned i=0;i<count;++i) {
         if (!objects[i].assembly || memchr(objects[i].assembly,0,objects[i].size) ||
-            object_scan(&names[i],&objects[i])) goto fail;
+            object_scan(&names[i],&objects[i],buffer)) goto fail;
         for (size_t j=0;j<objects[i].size && objects[i].size-j>=5;++j)
             if (!memcmp(objects[i].assembly+j,".__c",4)) occupied[(unsigned char)objects[i].assembly[j+4]]=1;
     }
@@ -1456,17 +1501,19 @@ int cs_copy_link_objects_memory(unsigned char *data, size_t bytes, unsigned addr
     while (tags[tag] && occupied[(unsigned char)tags[tag]]) ++tag;
     if (!tags[tag]) goto fail;
     for (unsigned i=0;i<count;++i)
-        if (object_rewrite(&objects[i],names,count,i,tags[tag],NULL,&needed)) goto fail;
+        if (object_rewrite(&objects[i],names,count,i,tags[tag],NULL,&needed,buffer)) goto fail;
     if (object_commons(names,count,NULL,&needed) || object_weak_imports(names,count,NULL,&needed)) goto fail;
     message="separate link scratch buffer too small";
     if (!assembly || needed>=capacity) goto fail;
     size_t used=0;
     for (unsigned i=0;i<count;++i)
-        if (object_rewrite(&objects[i],names,count,i,tags[tag],assembly,&used)) goto fail;
+        if (object_rewrite(&objects[i],names,count,i,tags[tag],assembly,&used,buffer)) goto fail;
     if (object_commons(names,count,assembly,&used) || object_weak_imports(names,count,assembly,&used)) goto fail;
     assembly[used]=0;
+    free(buffer);
     return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,assembly,used,entry,arguments,argc,error);
 fail:
+    free(buffer);
     if (error) *error=(struct cs_copy_link_error){0,message};
     return -1;
 }

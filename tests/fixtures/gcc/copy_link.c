@@ -1,6 +1,26 @@
 #include "copy_link.h"
 #ifdef __riscv
 #include "copy_space.h"
+#include <errno.h>
+#include <stddef.h>
+/* Standalone fixture: newlib's operator buffer uses guest memory. */
+static union { long double alignment; unsigned char bytes[131072]; } heap;
+static size_t heap_used;
+void *_sbrk(ptrdiff_t increment)
+{
+    size_t next;
+    if (increment>=0) {
+        if ((size_t)increment>sizeof(heap.bytes)-heap_used) { errno=ENOMEM;return (void *)-1; }
+        next=heap_used+(size_t)increment;
+    } else {
+        size_t decrease=(size_t)(-(increment+1))+1;
+        if (decrease>heap_used) { errno=ENOMEM;return (void *)-1; }
+        next=heap_used-decrease;
+    }
+    void *previous=heap.bytes+heap_used;
+    heap_used=next;
+    return previous;
+}
 #else
 #include <stdio.h>
 static int cs_read(void *p, unsigned n) { return (int)fread(p,1,n,stdin); }
@@ -68,7 +88,12 @@ int main(void)
 #else
         cs_copy_link_program(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,
 #endif
-        assembly,size,"value",arguments,2,&error)) return 2;
+        assembly,size,"value",arguments,2,&error)) {
+#ifndef __riscv
+        fprintf(stderr,"%zu: %s\n",error.line,error.message);
+#endif
+        return 2;
+    }
 #else
     if (cs_copy_link_leaf(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,assembly,size,"value",arguments,2,&error)) return 2;
 #endif

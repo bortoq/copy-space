@@ -117,12 +117,24 @@ GROUPS = {
         'calls': ('c0((u32)cases[i].a)==cases[i].e0', 'c1(cases[i].a)==cases[i].e1',
                   'c2((u32)cases[i].a)==(u32)cases[i].e2', 'c3(cases[i].a)==cases[i].e3'),
     },
+    'divmod': {
+        'members': ('clz', 'divmoddi4', 'udivmoddi4'),
+        'checks': 4,
+        'decls': ('s64 __divmoddi4(s64,s64,s64*); u64 __udivmoddi4(u64,u64,u64*);\n'),
+        'calcs': ('c0', 'c1'),
+        'fns': ('static __attribute__((__noinline__,__noipa__)) unsigned c0(u64 a,u64 b,u64 eq,u64 er)'
+                '{u64 r;s64 q=__divmoddi4((s64)a,(s64)b,(s64*)&r);return (q==(s64)eq)+(r==er);}\n'
+                'static __attribute__((__noinline__,__noipa__)) unsigned c1(u64 a,u64 b,u64 eq,u64 er)'
+                '{u64 r;u64 q=__udivmoddi4(a,b,&r);return (q==eq)+(r==er);}\n'),
+        'calls': ('c0(cases[i].a,cases[i].b,cases[i].e0,cases[i].e1)',
+                  'c1(cases[i].a,cases[i].b,cases[i].e2,cases[i].e3)'),
+    },
 }
 
 
 def reference_cases(group, seed):
     mask = (1 << 64) - 1
-    if group == 'shifts':
+    if group in ('shifts', 'divmod'):
         rng = random.Random(seed)
         pairs = [(0, 1), (1, 1), (0xffffffffffffffff, 1), (0xffffffffffffffff, 0xffffffff),
                  (0x100000000, 0x10000), (0x8000000000000000, 3), (0x8000000000000000, 0xffffffff),
@@ -206,6 +218,17 @@ def main():
                       'int __cmpdi2(s64,s64); int __ucmpdi2(u64,u64); u64 __negdi2(u64);\n'
                       'struct record { u64 a; unsigned n; u64 b2; u64 e0,e1,e2; unsigned e3,e4; u64 e5; };\n')
             body = ['{%dULL,%d,%dULL,%dULL,%dULL,%dULL,%d,%d,%dULL}' % r for r in records]
+        elif name == 'divmod':
+            pairs = reference_cases(name, args.seed)
+            mask = (1 << 64)-1
+            records = []
+            for a, b in pairs:
+                sa, sb = (a if a < 1 << 63 else a-(1 << 64)), (b if b < 1 << 63 else b-(1 << 64))
+                quotient = (abs(sa)//abs(sb)) * (-1 if (sa < 0) != (sb < 0) else 1)
+                records.append((a, b, quotient & mask, (sa-quotient*sb) & mask, a//b, a % b))
+            header = ('typedef __UINT64_TYPE__ u64; typedef __INT64_TYPE__ s64;\n' + spec['decls']
+                      + 'struct record { u64 a,b,e0,e1,e2,e3; };\n')
+            body = ['{%dULL,%dULL,%dULL,%dULL,%dULL,%dULL}' % r for r in records]
         else:
             values = reference_cases(name, args.seed)
             if name == 'bitops':
@@ -249,14 +272,14 @@ def main():
         (folder/'direct.out').write_bytes(direct.stdout)
         if direct.returncode != 0:
             raise SystemExit(name+': direct failed %d %r' % (direct.returncode, direct.stderr[:300]))
-        expect = struct.pack('<I', len(records)*len(spec['calcs']))
+        expect = struct.pack('<I', len(records)*spec.get('checks', len(spec['calcs'])))
         if direct.stdout != expect or direct.stderr:
             raise SystemExit(name+': OUT mismatch %r vs %r err=%r'
                              % (direct.stdout, expect, direct.stderr[:200]))
         if (folder/'direct.trace').read_bytes()[-6:] != b' idle\n':
             raise SystemExit(name+': direct did not idle')
-        record = {'group': name, 'cases': len(records), 'operations': len(spec['calcs']),
-                  'direct_result': len(records)*len(spec['calcs']),
+        record = {'group': name, 'cases': len(records), 'operations': spec.get('checks', len(spec['calcs'])),
+                  'direct_result': len(records)*spec.get('checks', len(spec['calcs'])),
                   'archive_sha256': digest(lib), 'job_sha256': digest(folder/'job.bin'),
                   'image_sha256': digest(folder/'image.bin'), 'image_bytes': len(image)}
         (folder/'evidence.json').write_text(json.dumps(record, indent=2)+'\n')

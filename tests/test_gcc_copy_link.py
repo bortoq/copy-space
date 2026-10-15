@@ -160,6 +160,18 @@ def main():
         body=f'copy.ldi.l $r2,16\ncopy.ldi.{width} $r0,{1<<(bits-1)}\n'.encode()
         body+=f'copy.st.{width} ($r2),$r0\ncopy.ld.{width} $r0,($r2)\ncopy.sex.{width} $r0,$r0\n'.encode()
         cases.append((body,(1<<(bits-1))- (1<<bits) &0xffffffff,suffix))
+    cases.extend([
+        (b'copy.push $sp,$r0\ncopy.ldi.l $r0,99\ncopy.pop $sp,$r0\n',3,suffix),
+        (b'copy.push $sp,$sp\ncopy.pop $sp,$r0\n',8192,suffix),
+        (b'copy.push $sp,$r0\ncopy.pop $sp,$r1\ncopy.mov $r0,$sp\n',8192,suffix),
+        (b'copy.push $sp,$r0\ncopy.push $sp,$r1\ncopy.pop $sp,$r2\ncopy.pop $sp,$r0\ncopy.sub $r0,$r2\n',0xffffffff,suffix),
+        (b'copy.ldi.l $r2,20\ncopy.push $r2,$r0\ncopy.pop $r2,$r2\ncopy.mov $r0,$r2\n',3,suffix),
+        (b'copy.cmp $r0,$r1\ncopy.push $sp,$r1\ncopy.pop $sp,$r2\ncopy.branch.ltu .Ldone\n'
+         b'copy.ldi.l $r0,100\n.Ldone:\n',3,suffix),
+        (b'copy.ldi.l $sp,0\ncopy.push $sp,$r0\n',None,suffix),
+        (b'copy.ldi.l $sp,2\ncopy.push $sp,$r0\n',None,suffix),
+        (b'copy.pop $sp,$r0\n',None,suffix),
+        (b'copy.ldi.l $sp,8190\ncopy.pop $sp,$r0\n',None,suffix)])
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()

@@ -16,6 +16,7 @@ enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
        DIV_FLAGS=34690, DIV_REDUCE=34695, DIV_NUM_SIGN=34696,
        DIV_DEN_SIGN=34697, DIV_SIGN=34698,
        MEM_ADDRESS=34720, MEM_FLAGS=34752, MEM_VALID=34757, MEM_BIT_ADDRESS=34784,
+       STACK_VALUE=34816,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
@@ -324,14 +325,9 @@ static int shift32(struct context *ctx, int right, int arithmetic,
     }
     return 0;
 }
-static const char *memory(struct context *ctx, const char *operation, char *left, char *right)
+static const char *memory_access(struct context *ctx, int store, unsigned width,
+                                 uint32_t value, uint32_t base, uint32_t offset)
 {
-    size_t length=strlen(operation);
-    unsigned width=operation[length-1]=='b' ? 8 : operation[length-1]=='s' ? 16 : 32;
-    int store=operation[5]=='s';
-    char *address=store ? left : right;
-    uint32_t value,base,offset=0;
-    if (reg(store ? right : left,&value)) return "invalid memory value register";
     struct cs_copy_program *p=&ctx->program;
     if (!ctx->data_begin) {
         uint32_t bits=(uint32_t)(p->image.bytes*8);
@@ -341,17 +337,6 @@ static const char *memory(struct context *ctx, const char *operation, char *left
         p->code_limit=ctx->data_begin;
         ctx->memory_fault=internal_label(ctx);
         if (ctx->memory_fault<0) return "label capacity exceeded";
-    }
-    char *open=strchr(address,'(');
-    if (open) {
-        char *close=strchr(open,')');
-        if (!close || *trim(close+1)) return "invalid memory address";
-        *open=0;*close=0;
-        char *displacement=trim(address);
-        if ((*displacement && integer(displacement,&offset)) || reg(trim(open+1),&base)) return "invalid memory address";
-    } else {
-        uint32_t absolute;
-        if (integer(address,&absolute) || constant(ctx,absolute,&base)) return "invalid absolute memory address";
     }
     if (cs_copy_program_emit(p,32,MEM_ADDRESS,base)) return "copy image capacity exceeded";
     if (offset) {
@@ -381,6 +366,44 @@ static const char *memory(struct context *ctx, const char *operation, char *left
         return "copy image capacity exceeded";
     return NULL;
 }
+static const char *memory(struct context *ctx, const char *operation, char *left, char *right)
+{
+    size_t length=strlen(operation);
+    unsigned width=operation[length-1]=='b' ? 8 : operation[length-1]=='s' ? 16 : 32;
+    int store=operation[5]=='s';
+    char *address=store ? left : right;
+    uint32_t value,base,offset=0;
+    if (reg(store ? right : left,&value)) return "invalid memory value register";
+    char *open=strchr(address,'(');
+    if (open) {
+        char *close=strchr(open,')');
+        if (!close || *trim(close+1)) return "invalid memory address";
+        *open=0;*close=0;
+        char *displacement=trim(address);
+        if ((*displacement && integer(displacement,&offset)) || reg(trim(open+1),&base)) return "invalid memory address";
+    } else {
+        uint32_t absolute;
+        if (integer(address,&absolute) || constant(ctx,absolute,&base)) return "invalid absolute memory address";
+    }
+    return memory_access(ctx,store,width,value,base,offset);
+}
+static const char *stack(struct context *ctx, int push, char *cursor, char *operand)
+{
+    uint32_t pointer,value,four;
+    if (reg(cursor,&pointer) || reg(operand,&value)) return "invalid stack register";
+    if (constant(ctx,4,&four)) return "constant capacity exceeded";
+    struct cs_copy_program *p=&ctx->program;
+    if (push) {
+        if (cs_copy_program_emit(p,32,STACK_VALUE,value) ||
+            cs_copy_program_sub32(p,pointer,pointer,four,SUB_TABLE,TEMPORARY,CARRY)) return "copy image capacity exceeded";
+        return memory_access(ctx,1,32,STACK_VALUE,pointer,0);
+    }
+    const char *error=memory_access(ctx,0,32,STACK_VALUE,pointer,0);
+    if (error) return error;
+    if (cs_copy_program_add32(p,pointer,pointer,four,ADD_TABLE,TEMPORARY,CARRY) ||
+        cs_copy_program_emit(p,32,value,STACK_VALUE)) return "copy image capacity exceeded";
+    return NULL;
+}
 static const char *instruction(struct context *ctx, char *s)
 {
     char *operands=s;
@@ -391,6 +414,8 @@ static const char *instruction(struct context *ctx, char *s)
     char *comma=strchr(operands,',');
     if (!comma) return "two operands required";
     *comma++=0;
+    if (!strcmp(s,"copy.push") || !strcmp(s,"copy.pop"))
+        return stack(ctx,!strcmp(s,"copy.push"),trim(operands),trim(comma));
     const char *memory_ops[]={"copy.ld.b","copy.ld.s","copy.ld.l","copy.lda.b","copy.lda.s","copy.lda.l",
         "copy.ldo.b","copy.ldo.s","copy.ldo.l","copy.st.b","copy.st.s","copy.st.l",
         "copy.sta.b","copy.sta.s","copy.sta.l","copy.sto.b","copy.sto.s","copy.sto.l"};

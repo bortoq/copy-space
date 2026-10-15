@@ -46,8 +46,8 @@ def main():
         b'copy.add $r3,$r2\ncopy.st.b ($r3),$r1\ncopy.ld.b $r0,($sp)\n'
         b'copy.ld.b $r1,($r3)\ncopy.jsra helper\ncopy.ret\n'
         b'helper:\ncopy.add $r0,$r1\ncopy.ret\n')
-    cases = [(b'value:\ncopy.mov $r0,$sp\ncopy.ret\n', memory-12),
-        (b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.mov $r0,$sp\ncopy.ret\n', memory-24),
+    cases = [(b'value:\ncopy.mov $r0,$sp\ncopy.ret\n', memory-36),
+        (b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.mov $r0,$sp\ncopy.ret\n', memory-48),
         (frame, 7),
         (b'value:\ncopy.ldi.l $r2,131071\ncopy.st.l ($r2),$r0\ncopy.ld.l $r0,($r2)\ncopy.ret\n', 3),
         (f'value:\ncopy.ldi.l $r2,{memory-1}\ncopy.st.b ($r2),$r0\ncopy.ld.b $r0,($r2)\ncopy.ret\n'.encode(), 3),

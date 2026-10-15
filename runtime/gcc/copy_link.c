@@ -1060,8 +1060,10 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         ctx.return_handler=internal_label(&ctx);
         ctx.memory_fault=internal_label(&ctx);
         if (entry_label<0 || ctx.return_handler<0 || ctx.memory_fault<0 ||
-            cs_copy_constant(&ctx.program.image,REG_BASE,32,memory_bytes-12) ||
-            cs_copy_constant(&ctx.program.image,REG_BASE+32,32,memory_bytes-12) ||
+            /* GCC reserves six register-argument home words above its
+             * 12-byte call frame, even when all arguments arrive in fields. */
+            cs_copy_constant(&ctx.program.image,REG_BASE,32,memory_bytes-36) ||
+            cs_copy_constant(&ctx.program.image,REG_BASE+32,32,memory_bytes-36) ||
             jump(&ctx,entry_label,0)) goto fail;
     }
     while (offset<size) {
@@ -1189,8 +1191,8 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     }
     if (program_mode) {
         pack_data(&ctx);
-        if (cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-12)*8,32,memory_bytes) ||
-            cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-8)*8,32,report)) goto fail;
+        if (cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-36)*8,32,memory_bytes) ||
+            cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-32)*8,32,report)) goto fail;
     }
     for (unsigned i=0;i<ctx.jump_count;++i) {
         int index=ctx.jumps[i].label;
@@ -1213,6 +1215,8 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         }
     }
     message="copy image capacity exceeded";
+    /* The synthetic caller releases its 24-byte argument area after return. */
+    if (program_mode && cs_copy_program_emit(&ctx.program,32,REG_BASE+32,REG_BASE)) goto fail;
     for (unsigned i=0;i<32;++i)
         if (cs_copy_program_emit(&ctx.program,1,OUTPUT+(i/8)*8+7-(i%8),REG_BASE+64+i)) goto fail;
     if (cs_copy_program_next(&ctx.program) || cs_copy_row(&ctx.program.image,2,32,OUTPUT,STATUS) ||

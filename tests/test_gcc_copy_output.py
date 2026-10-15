@@ -70,7 +70,7 @@ def main():
         run=subprocess.run([str(root/"native")],input=packet,capture_output=True)
         status,stdout,stderr,file=decode(run.stdout)
         assert run.returncode==status==0 and not stdout and not stderr
-        direct(file,root/f"memory-{memory}",memory-12)
+        direct(file,root/f"memory-{memory}",memory-36)
     explicit=subprocess.run([str(root/"native")],input=job(program_asm,program_options+["--space-memory=8192"]),capture_output=True)
     assert explicit.stdout==program.stdout
     scaled_flags=["-DCS_GCC_COPY_PROGRAM_BYTES=2097152", "-DCS_COPY_LABEL_CAPACITY=128",
@@ -82,7 +82,7 @@ def main():
     for name,body,private,expected in (
         ("scaled-calls",many_calls,program_options,43),
         ("scaled-memory",b'value:\ncopy.mov $r0,$sp\ncopy.ret\n',
-         program_options+["--space-memory=1048576"],1048576-12)):
+         program_options+["--space-memory=1048576"],1048576-36)):
         packet=job(body,private);(root/(name+".job")).write_bytes(packet)
         result=subprocess.run([str(root/"scaled")],input=packet,capture_output=True)
         status,stdout,stderr,file=decode(result.stdout)
@@ -124,7 +124,7 @@ def main():
         "native_direct_result":7,"rejected_arguments":len(invalid)+4,"rejected_lowering":status}
     evidence["native_program_result"]=8
     evidence["scaled_program"]={"image_bytes":2097152,"calls":40,"result":43,
-        "memory_bytes":1048576,"memory_result":1048576-12}
+        "memory_bytes":1048576,"memory_result":1048576-36}
     evidence.update({"memory_sizes_checked":[8192,16384,32768,65536,131072],
         "rejected_memory_arguments":len(invalid_memory)+1,"default_program_image_unchanged":True})
     if not args.native_only:

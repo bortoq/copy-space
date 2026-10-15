@@ -54,6 +54,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts",type=Path,required=True)
     parser.add_argument("--native-only",action="store_true")
+    parser.add_argument("--sanitize",action="store_true",help="prepare the native linker with ASan/UBSan")
     parser.add_argument("--compiler")
     parser.add_argument("--newlib",type=Path)
     parser.add_argument("--result-space-bytes",type=int,choices=[2097152,268435456],default=2097152)
@@ -96,6 +97,8 @@ def main():
     flags=["-DCS_COPY_PROGRAM","-DCS_COPY_RESULT_ADDRESS_BITS="+str(bits),"-I"+str(root/"sources/runtime/gcc")]
     if args.objects:flags.append("-DCS_COPY_OBJECTS")
     command=["gcc","-O2","-Wall","-Wextra","-Werror"]+flags+[str(s) for s in sources]+["-o",str(root/"native")]
+    if args.sanitize:
+        command[1:1]=["-g","-fsanitize=address,undefined","-fno-omit-frame-pointer","-fno-pie","-no-pie"]
     (root/"native-command.json").write_text(json.dumps(command)+"\n")
     result=subprocess.run(command,capture_output=True);assert result.returncode==0,result.stderr
     cases=[
@@ -105,8 +108,8 @@ def main():
         (b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.jsra inner\ncopy.inc $r0,1\ncopy.ret\ninner:\ncopy.add $r0,$r1\ncopy.ret\n',8),
         (b'value:\ncopy.ldi.l $r2,0\ncopy.cmp $r0,$r2\ncopy.branch.eq .Lbase\ncopy.dec $r0,1\ncopy.jsra value\ncopy.inc $r0,2\n.Lbase:\ncopy.ret\n',6),
         (b'value:\ncopy.ldi.l $r6,12345\ncopy.jsra helper\ncopy.mov $r0,$r6\ncopy.ret\nhelper:\ncopy.push $sp,$r6\ncopy.ldi.l $r6,99\ncopy.mov $r12,$fp\ncopy.dec $r12,4\ncopy.pop $r12,$r6\ncopy.ret\n',12345),
-        (b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.mov $r0,$sp\ncopy.ret\n',8168),
-        (b'value:\ncopy.jsra helper\ncopy.mov $r0,$sp\ncopy.ret\nhelper:\ncopy.dec $sp,16\ncopy.ret\n',8180),
+        (b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.mov $r0,$sp\ncopy.ret\n',8144),
+        (b'value:\ncopy.jsra helper\ncopy.mov $r0,$sp\ncopy.ret\nhelper:\ncopy.dec $sp,16\ncopy.ret\n',8156),
         (b'value:\ncopy.dec $sp,4\ncopy.ldi.l $r2,19\ncopy.st.l ($sp),$r2\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ldo.l $r0,12($fp)\ncopy.ret\n',19),
         (b'value:\ncopy.ldi.l $r2,helper\ncopy.jsr $r2\ncopy.inc $r0,1\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',8),
         (b'value:\ncopy.ldi.l $r2,helper\ncopy.sta.l 16,$r2\ncopy.lda.l $r3,16\ncopy.jsr $r3\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',7),
@@ -148,6 +151,13 @@ def main():
     large=b'value:\n'+b''.join((f'copy.ldi.l $r2,{65536+i}\n'+('copy.add $r0,$r2\n' if i%16==0 else '')).encode() for i in range(253))+b'copy.ret\n'
     cases.append((large,3+sum(65536+i for i in range(253) if i%16==0)))
     cases.append((b'value:\n'+b'copy.ldi.l $r0,123456\n'*300+b'copy.ret\n',123456))
+    cases.append((b'value:\ncopy.sto.l 12($fp),$r0\ncopy.sto.l 32($fp),$r1\n'
+                  b'copy.ldo.l $r0,12($fp)\ncopy.ldo.l $r1,32($fp)\ncopy.add $r0,$r1\ncopy.ret\n',7))
+    cases.append((b'value:\ncopy.sto.l 12($fp),$r0\ncopy.sto.l 32($fp),$r1\n'
+                  b'copy.dec $sp,24\ncopy.jsra helper\ncopy.ldo.l $r0,12($fp)\n'
+                  b'copy.ldo.l $r1,32($fp)\ncopy.add $r0,$r1\ncopy.ret\n'
+                  b'helper:\ncopy.ldi.l $r0,99\ncopy.sto.l 12($fp),$r0\n'
+                  b'copy.sto.l 32($fp),$r0\ncopy.ret\n',7))
     if args.assembly:
         if not 0<=args.expected_result<=0xffffffff:raise ValueError("expected result must fit uint32")
         cases.append((args.assembly.read_bytes(),args.expected_result))

@@ -43,8 +43,8 @@ struct context {
     unsigned section_count,active_section,previous_section;
     int previous_valid;
     unsigned section_stack[16],section_depth;
-    unsigned char byte_section[4096];
-    uint16_t byte_offset[4096];
+    struct { uint32_t staging,offset,count; unsigned section; } fragments[256];
+    unsigned fragment_count;
     uint32_t data_cursor;
     struct { uint32_t destination,addend; int label; } relocations[64];
     unsigned relocation_count;
@@ -187,11 +187,24 @@ static int integer64(const char *s, uint64_t *value)
 }
 static int data_reserve(struct context *ctx, uint32_t count, uint32_t *at)
 {
-    if (ctx->data_cursor>4096 || count>4096-ctx->data_cursor) return -1;
+    uint32_t capacity=ctx->memory_bytes/2;
+    if (ctx->data_cursor>capacity || count>capacity-ctx->data_cursor) return -1;
     *at=ctx->data_begin+ctx->data_cursor*8;
-    for (uint32_t i=0;i<count;++i) {
-        ctx->byte_section[ctx->data_cursor+i]=(unsigned char)ctx->active_section;
-        ctx->byte_offset[ctx->data_cursor+i]=(uint16_t)(ctx->sections[ctx->active_section].position+i);
+    if (count) {
+        unsigned index=ctx->fragment_count;
+        uint32_t offset=ctx->sections[ctx->active_section].position;
+        if (index && ctx->fragments[index-1].section==ctx->active_section &&
+            ctx->fragments[index-1].staging+ctx->fragments[index-1].count==ctx->data_cursor &&
+            ctx->fragments[index-1].offset+ctx->fragments[index-1].count==offset) {
+            ctx->fragments[index-1].count+=count;
+        } else {
+            if (index==256) return -1;
+            ctx->fragments[index].staging=ctx->data_cursor;
+            ctx->fragments[index].offset=offset;
+            ctx->fragments[index].count=count;
+            ctx->fragments[index].section=ctx->active_section;
+            ++ctx->fragment_count;
+        }
     }
     ctx->sections[ctx->active_section].position+=count;
     ctx->data_cursor+=count;
@@ -199,7 +212,7 @@ static int data_reserve(struct context *ctx, uint32_t count, uint32_t *at)
 }
 static int data_align(struct context *ctx, uint32_t alignment)
 {
-    if (!alignment || alignment>4096 || (alignment&(alignment-1))) return -1;
+    if (!alignment || alignment>ctx->memory_bytes/2 || (alignment&(alignment-1))) return -1;
     if (alignment>ctx->sections[ctx->active_section].alignment) ctx->sections[ctx->active_section].alignment=alignment;
     uint32_t padding=(0-ctx->sections[ctx->active_section].position)&(alignment-1),at;
     return data_reserve(ctx,padding,&at);
@@ -368,7 +381,7 @@ static int data_directive(struct context *ctx, char *s)
         uint32_t count,at;
         if (!strcmp(s,".align") || !strcmp(s,".p2align") || !strcmp(s,".balign")) {
             if (integer(arguments,&count)) return -1;
-            if (strcmp(s,".balign")) { if (count>12) return -1;count=1u<<count; }
+            if (strcmp(s,".balign")) { if (count>30) return -1;count=1u<<count; }
             if (data_align(ctx,count)) return -1;
         } else if (!strcmp(s,".zero") || !strcmp(s,".space") || !strcmp(s,".skip")) {
             if (integer(arguments,&count) || data_reserve(ctx,count,&at)) return -1;
@@ -421,7 +434,8 @@ static int layout_data(struct context *ctx)
         if (ctx->sections[i].kind!=1 && ctx->sections[i].kind!=2) continue;
         uint32_t align=ctx->sections[i].alignment;
         cursor=(cursor+align-1)&~(align-1);
-        if (cursor>4096 || ctx->sections[i].position>4096-cursor) return -1;
+        uint32_t capacity=ctx->memory_bytes/2;
+        if (cursor>capacity || ctx->sections[i].position>capacity-cursor) return -1;
         ctx->sections[i].base=cursor;cursor+=ctx->sections[i].position;
     }
     for (unsigned i=0;i<ctx->label_count;++i)
@@ -447,11 +461,15 @@ static int layout_data(struct context *ctx)
 }
 static void pack_data(struct context *ctx)
 {
-    unsigned char packed[4096]={0};
     unsigned char *staging=ctx->program.image.data+ctx->data_begin/8;
-    for (uint32_t i=256;i<ctx->data_cursor;++i)
-        packed[ctx->sections[ctx->byte_section[i]].base+ctx->byte_offset[i]]=staging[i];
-    memcpy(staging,packed,sizeof(packed));
+    uint32_t capacity=ctx->memory_bytes/2;
+    unsigned char *packed=staging+capacity;
+    memset(packed,0,capacity);
+    for (unsigned i=0;i<ctx->fragment_count;++i)
+        memcpy(packed+ctx->sections[ctx->fragments[i].section].base+ctx->fragments[i].offset,
+               staging+ctx->fragments[i].staging,ctx->fragments[i].count);
+    memcpy(staging,packed,capacity);
+    memset(packed,0,capacity);
 }
 static int symbol(struct context *ctx, const char *name, uint32_t *address)
 {
@@ -920,7 +938,6 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         if (entry_label<0 || ctx.return_handler<0 || ctx.memory_fault<0 ||
             cs_copy_constant(&ctx.program.image,REG_BASE,32,memory_bytes-12) ||
             cs_copy_constant(&ctx.program.image,REG_BASE+32,32,memory_bytes-12) ||
-            cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-12)*8,32,memory_bytes) ||
             jump(&ctx,entry_label,0)) goto fail;
     }
     while (offset<size) {
@@ -1027,7 +1044,6 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     }
     if (cs_copy_program_next(&ctx.program)) goto fail;
     uint32_t report=ctx.program.image.layer;
-    if (program_mode && cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-8)*8,32,report)) goto fail;
     for (unsigned i=0;i<ctx.symbol_count;++i) {
         int index=ctx.symbols[i].label;
         message="undefined copy symbol";
@@ -1041,7 +1057,11 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
             cs_copy_constant(&ctx.program.image,ctx.relocations[i].destination,32,
                 ctx.labels[index].address+ctx.relocations[i].addend)) goto fail;
     }
-    if (program_mode) pack_data(&ctx);
+    if (program_mode) {
+        pack_data(&ctx);
+        if (cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-12)*8,32,memory_bytes) ||
+            cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-8)*8,32,report)) goto fail;
+    }
     for (unsigned i=0;i<ctx.jump_count;++i) {
         int index=ctx.jumps[i].label;
         int missing_weak=index>=0 && ctx.labels[index].missing_weak;

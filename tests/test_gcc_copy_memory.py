@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifacts', type=Path, required=True)
-    parser.add_argument('--assembly', type=Path)
+    parser.add_argument('--assembly', type=Path, action='append')
     parser.add_argument('--expected-result', type=lambda s: int(s, 0), default=7)
     args = parser.parse_args()
     root = args.artifacts.resolve()
@@ -56,11 +56,30 @@ def main():
         (f'value:\ncopy.ldi.l $r2,{memory}\ncopy.ld.b $r0,($r2)\ncopy.ret\n'.encode(), None),
         (b'value:\ncopy.ldi.l $r2,4294967295\ncopy.ld.b $r0,($r2)\ncopy.ret\n', None),
         (b'value:\ncopy.ldi.l $r2,4294967295\ncopy.ldo.b $r0,1($r2)\ncopy.ret\n', 0)]
-    if args.assembly:
-        cases.append((args.assembly.read_bytes(), args.expected_result))
+    cases += [
+        (b'.bss\nlarge:\n.zero 131072\n.text\nvalue:\ncopy.lda.l $r0,large+131068\ncopy.ret\n', 0),
+        (b'.data\narray:\n.zero 70000\n.byte 17\n.rodata\nother:\n.byte 34\n.data\n.byte 51\n.text\nvalue:\ncopy.lda.s $r0,array+70000\ncopy.ret\n', 0x3311),
+        (b'.data\npointer:\n.long tail\n.zero 131072\n.rodata\ntail:\n.long 12345\n.text\nvalue:\ncopy.lda.l $r2,pointer\ncopy.ld.l $r0,($r2)\ncopy.ret\n', 12345),
+        (b'.comm huge,196608,65536\n.text\nvalue:\ncopy.sta.l huge+196604,$r1\ncopy.lda.l $r0,huge+196604\ncopy.ret\n', 4),
+        (b'.data\n.p2align 16\naligned:\n.long 7\n.text\nvalue:\ncopy.ldi.l $r0,aligned\ncopy.ret\n', 65536),
+        (b'.bss\nexact:\n.zero 524032\n.text\nvalue:\ncopy.lda.l $r0,exact+524028\ncopy.ret\n', 0),
+        (b''.join(b'.data\n.zero 1\n' if i%2==0 else b'.bss\n.zero 1\n' for i in range(256))+b'.text\nvalue:\ncopy.ret\n', 3),
+        (b'.data\narray:\n'+b'.byte 1\n'*900+b'.text\nvalue:\ncopy.lda.b $r0,array+899\ncopy.ret\n', 1)]
+    for assembly in args.assembly or []:
+        cases.append((assembly.read_bytes(), args.expected_result))
+    invalid_sections = [
+        b'.bss\n.zero 524033\n.text\nvalue:\ncopy.ret\n',
+        b'.data\n.byte 1\n.bss\n.balign 524288\n.zero 1\n.text\nvalue:\ncopy.ret\n',
+        b'.data\n.p2align 20\n.long 0\n.text\nvalue:\ncopy.ret\n',
+        b'.data\n.zero 4294967295\n.text\nvalue:\ncopy.ret\n',
+        b''.join(b'.data\n.zero 1\n' if i%2==0 else b'.bss\n.zero 1\n' for i in range(257))+b'.text\nvalue:\ncopy.ret\n']
     evidence = []
     for bits, emulator in [(24, 'space'), (31, 'space-256m')]:
         native = build('native-'+str(bits), bits, memory)
+        for index, assembly in enumerate(invalid_sections):
+            (root/f'invalid-section-{index}.s').write_bytes(assembly)
+            invalid = subprocess.run([str(native)], input=assembly, capture_output=True)
+            assert invalid.returncode == 2 and not invalid.stdout
         for i, (assembly, expected) in enumerate(cases):
             folder = root/str(bits)/str(i)
             folder.mkdir(parents=True)
@@ -75,7 +94,7 @@ def main():
             (folder/'command.json').write_text(json.dumps(command)+'\n')
             run = subprocess.run(command, capture_output=True, check=True, timeout=120)
             (folder/'out.bin').write_bytes(run.stdout)
-            assert not run.stderr and run.stdout == (b'' if expected is None else struct.pack('<I', expected))
+            assert not run.stderr and run.stdout == (b'' if expected is None else struct.pack('<I', expected)), (bits, i, run.stdout.hex(), expected)
             with (folder/'trace.txt').open('rb') as log:
                 log.seek(max(0, (folder/'trace.txt').stat().st_size-80))
                 assert log.read().endswith(b' idle\n')
@@ -116,7 +135,8 @@ def main():
     large_memory = 134217728
     exe = build('native-maximum-memory', 31, large_memory, image_bytes=268435456)
     folder = root/'maximum-memory';folder.mkdir()
-    assembly = (f'value:\ncopy.ldi.l $r2,{large_memory-4}\n'
+    assembly = (f'.data\nmaximum:\n.zero {large_memory//2-257}\n.byte 173\n.text\n'
+        f'value:\ncopy.lda.b $r0,maximum+{large_memory//2-257}\ncopy.ldi.l $r2,{large_memory-4}\n'
         'copy.st.l ($r2),$r0\ncopy.ld.l $r0,($r2)\ncopy.ret\n').encode()
     (folder/'input.s').write_bytes(assembly)
     with (folder/'image.bin').open('wb') as out:
@@ -127,7 +147,7 @@ def main():
     (folder/'command.json').write_text(json.dumps(command)+'\n')
     run = subprocess.run(command, capture_output=True, check=True, timeout=120)
     (folder/'out.bin').write_bytes(run.stdout)
-    assert not run.stderr and run.stdout == struct.pack('<I', 3)
+    assert not run.stderr and run.stdout == struct.pack('<I', 173)
     raw = (folder/'space.bin').read_bytes()
     def large_word(at):
         return sum(((raw[(at+j)//8] >> (7-(at+j)%8)) & 1) << j for j in range(32))
@@ -136,7 +156,7 @@ def main():
         with (folder/name).open('rb') as inp, gzip.open(folder/(name+'.gz'), 'wb', compresslevel=1) as out:
             shutil.copyfileobj(inp, out, 1048576)
         (folder/name).unlink()
-    print('OK maximum memory: 128 MiB, SP/FP restored, high-address word', flush=True)
+    print('OK maximum memory: 128 MiB, 64 MiB global boundary, SP/FP restored, high-address word', flush=True)
     for value in (0, 4096, 8193, 65535, 2097152, 4194304, 2147483648):
         exe = build('invalid-'+str(value), 24, value)
         run = subprocess.run([str(exe)], input=b'value:\ncopy.ret\n', capture_output=True)
@@ -145,7 +165,9 @@ def main():
     run = subprocess.run([str(exe)], input=frame, capture_output=True)
     assert run.returncode == 2 and not run.stdout
     (root/'evidence.json').write_text(json.dumps({'memory_bytes': memory, 'cases': evidence,
-        'rejected_memory_configurations': 8, 'default_images_equal': True, 'maximum_memory_bytes': large_memory,
+        'rejected_memory_configurations': 8, 'rejected_sections': len(invalid_sections),
+        'default_images_equal': True, 'maximum_memory_bytes': large_memory,
+        'maximum_global_end': large_memory//2, 'maximum_result': 173,
         'source_sha256': {name: hashlib.sha256((root/'sources'/name).read_bytes()).hexdigest() for name in paths}}, indent=2)+'\n')
 
 

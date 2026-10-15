@@ -32,4 +32,13 @@ int cs_copy_link_objects_alloc(unsigned char *, size_t, unsigned, uint32_t,
                         const struct cs_copy_object *, unsigned,
                         const char *, const uint32_t *, unsigned,
                         struct cs_copy_link_error *);
+/* A regular ar archive of copy assembly (up to 64 members). Extract members
+   for unresolved strong references, iterating dependencies to closure.
+   Selected inputs, including explicit objects, must fit the eight-unit limit.
+   Weak imports and definitions already supplied by inputs do not extract. */
+int cs_copy_link_archive_alloc(unsigned char *, size_t, unsigned, uint32_t,
+                        const struct cs_copy_object *, unsigned,
+                        const char *, size_t,
+                        const char *, const uint32_t *, unsigned,
+                        struct cs_copy_link_error *);
 #endif

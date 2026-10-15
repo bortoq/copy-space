@@ -37,6 +37,7 @@ static unsigned copy_argc;
 static uint32_t copy_memory_bytes=8192;
 static const char *copy_objects[7];
 static unsigned copy_objectc;
+static const char *copy_library;
 static int copy_number(const char *number, uint32_t *result)
 {
     char *end;
@@ -56,7 +57,7 @@ static int lower_copy(const unsigned char *data, unsigned size)
     struct cs_copy_link_error error={0,"out of memory"};
     int failed=!image;
     if (image) {
-        if (copy_objectc) {
+        if (copy_objectc || copy_library) {
             struct cs_copy_object objects[8]={{size ? (const char *)data : "",size}};
             for (unsigned i=0;i<copy_objectc;++i) {
                 const unsigned char *source;unsigned bytes;
@@ -65,7 +66,14 @@ static int lower_copy(const unsigned char *data, unsigned size)
                 }
                 objects[i+1]=(struct cs_copy_object){bytes ? (const char *)source : "",bytes};
             }
-            if (!failed) failed=cs_copy_link_objects_alloc(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+            if (!failed && copy_library) {
+                const unsigned char *archive;unsigned bytes;
+                if (cs_gcc_fs_output(copy_library,&archive,&bytes)) {
+                    error.message="missing copy library file";failed=1;
+                } else failed=cs_copy_link_archive_alloc(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+                    copy_memory_bytes,objects,copy_objectc+1,(const char *)archive,bytes,
+                    copy_entry,copy_arguments,copy_argc,&error);
+            } else if (!failed) failed=cs_copy_link_objects_alloc(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
                 copy_memory_bytes,objects,copy_objectc+1,copy_entry,copy_arguments,copy_argc,&error);
         } else failed=copy_program ? cs_copy_link_program_memory(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
             copy_memory_bytes,(const char *)data,size,copy_entry,copy_arguments,copy_argc,&error) :
@@ -145,6 +153,9 @@ int __wrap_main(void)
             } else if (!strncmp(option,"--space-object=",15)) {
                 if (!copy_program || copy_objectc==7 || !option[15]) return 125;
                 copy_objects[copy_objectc++]=option+15;
+            } else if (!strncmp(option,"--space-library=",16)) {
+                if (!copy_program || copy_library || !option[16]) return 125;
+                copy_library=option+16;
             } else break;
             ++consumed;
         }

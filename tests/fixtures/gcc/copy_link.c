@@ -61,7 +61,20 @@ int main(void)
     }
     const uint32_t arguments[]={3,4};
     struct cs_copy_link_error error;
-#ifdef CS_COPY_OBJECTS
+#ifdef CS_COPY_ARCHIVE
+    if (size<4) return 2;
+    uint32_t object_size=0;
+    for (unsigned i=0;i<4;++i) object_size|=(uint32_t)(unsigned char)assembly[i]<<(8*i);
+    if (object_size>size-4) return 2;
+    const struct cs_copy_object object={assembly+4,object_size};
+    if (cs_copy_link_archive_alloc(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,8192,
+        &object,1,assembly+4+object_size,size-4-object_size,"value",arguments,2,&error)) {
+#ifndef __riscv
+        fprintf(stderr,"%zu: %s\n",error.line,error.message);
+#endif
+        return 2;
+    }
+#elif defined(CS_COPY_OBJECTS)
     struct cs_copy_object objects[8];unsigned count=0,begin=0;
     for (unsigned i=0;i<=size;++i) {
         if (i<size && assembly[i]) continue;

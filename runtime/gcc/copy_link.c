@@ -1641,3 +1641,132 @@ int cs_copy_link_objects_alloc(unsigned char *data, size_t bytes, unsigned addre
     return link_objects(data,bytes,address_bits,memory_bytes,objects,count,NULL,0,1,
                         entry,arguments,argc,error);
 }
+
+static int archive_decimal(const char *s, size_t bytes, size_t *value)
+{
+    size_t n=0,i=0;
+    while (i<bytes && s[i]>='0' && s[i]<='9') {
+        unsigned digit=(unsigned)(s[i++]-'0');
+        if (n>(SIZE_MAX-digit)/10) return -1;
+        n=n*10+digit;
+    }
+    if (!i) return -1;
+    while (i<bytes) if (s[i++]!=' ') return -1;
+    *value=n;return 0;
+}
+
+static int archive_members(const char *archive, size_t size,
+                            struct cs_copy_object *members, unsigned *count)
+{
+    if (!archive || size<8 || memcmp(archive,"!<arch>\n",8)) return -1;
+    size_t at=8;*count=0;
+    while (at<size) {
+        if (size-at<60) return -1;
+        const char *header=archive+at;
+        size_t bytes;
+        if (memcmp(header+58,"`\n",2) || archive_decimal(header+48,10,&bytes)) return -1;
+        at+=60;
+        if (bytes>size-at) return -1;
+        size_t name_size=16;
+        while (name_size && header[name_size-1]==' ') --name_size;
+        if (!name_size) return -1;
+        int metadata=(name_size==1 && header[0]=='/') ||
+                     (name_size==2 && !memcmp(header,"//",2)) ||
+                     (name_size==7 && !memcmp(header,"/SYM64/",7));
+        size_t filename=0;
+        if (name_size>3 && !memcmp(header,"#1/",3)) {
+            if (archive_decimal(header+3,name_size-3,&filename) || filename>bytes) return -1;
+            /* BSD symbol index, with its name embedded before the data. */
+            if (filename>=9 && !memcmp(archive+at,"__.SYMDEF",9)) metadata=1;
+        } else if (name_size>=9 && !memcmp(header,"__.SYMDEF",9)) metadata=1;
+        if (!metadata) {
+            if (*count==64) return -1;
+            members[(*count)++]=(struct cs_copy_object){archive+at+filename,bytes-filename};
+        }
+        at+=bytes;
+        if (bytes&1) {
+            if (at==size || archive[at++]!='\n') return -1;
+        }
+    }
+    return 0;
+}
+
+static int archive_needed(struct object_names *units, unsigned count,
+                           struct object_names *candidate, const char *entry)
+{
+    int entry_defined=0;
+    for (unsigned u=0;u<count;++u) {
+        int index=object_name(&units[u],entry,strlen(entry),0);
+        if (index>=0 && units[u].names[index].defined &&
+            (units[u].names[index].external || u==0)) entry_defined=1;
+    }
+    for (unsigned i=0;i<candidate->count;++i) {
+        if (!candidate->names[i].external || !candidate->names[i].defined) continue;
+        const char *name=candidate->names[i].name;
+        if (!entry_defined && !strcmp(name,entry)) return 1;
+        unsigned rank;int strong_reference;
+        object_winner(units,count,name,&rank,&strong_reference);
+        if (rank) continue;
+        for (unsigned u=0;u<count;++u) {
+            int j=object_name(&units[u],name,strlen(name),0);
+            if (j>=0 && units[u].names[j].external && units[u].names[j].referenced && !units[u].names[j].weak &&
+                !units[u].names[j].local) return 1;
+        }
+    }
+    return 0;
+}
+
+int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned address_bits,
+                        uint32_t memory_bytes, const struct cs_copy_object *objects, unsigned count,
+                        const char *archive, size_t archive_size,
+                        const char *entry, const uint32_t *arguments, unsigned argc,
+                        struct cs_copy_link_error *error)
+{
+    const char *message="invalid copy archive input";
+    struct cs_copy_object members[64],selected[8];unsigned member_count;
+    struct object_names *names=NULL;
+    char *buffer=NULL;
+    if (!objects || !count || count>8 || !entry || !*entry ||
+        archive_members(archive,archive_size,members,&member_count)) goto fail;
+    size_t capacity=1;
+    for (unsigned i=0;i<count+member_count;++i) {
+        const struct cs_copy_object *object=i<count ? &objects[i] : &members[i-count];
+        if (!object->assembly || memchr(object->assembly,0,object->size)) goto fail;
+        size_t n=statement_capacity(object->assembly,object->size);
+        if (!n) goto fail;
+        if (n>capacity) capacity=n;
+    }
+    message="out of memory for archive symbols";
+    names=malloc(9*sizeof(*names));
+    buffer=malloc(capacity);
+    if (!names || !buffer) goto fail;
+    memset(names,0,9*sizeof(*names));
+    message="unsupported binding or invalid archive assembly";
+    for (unsigned i=0;i<count;++i) {
+        selected[i]=objects[i];
+        if (object_scan(&names[i],&objects[i],buffer)) goto fail;
+    }
+    unsigned char extracted[64]={0};
+    int changed;
+    do {
+        changed=0;
+        for (unsigned m=0;m<member_count;++m) {
+            if (extracted[m]) continue;
+            memset(&names[8],0,sizeof(*names));
+            if (object_scan(&names[8],&members[m],buffer)) goto fail;
+            if (!archive_needed(names,count,&names[8],entry)) continue;
+            message="too many selected copy archive units";
+            if (count==8) goto fail;
+            selected[count]=members[m];names[count++]=names[8];
+            extracted[m]=1;changed=1;
+            message="unsupported binding or invalid archive assembly";
+        }
+    } while (changed);
+    free(buffer);free(names);
+    return cs_copy_link_objects_alloc(data,bytes,address_bits,memory_bytes,selected,count,
+                                     entry,arguments,argc,error);
+fail:
+    free(buffer);free(names);
+    if (error) *error=(struct cs_copy_link_error){0,message};
+    return -1;
+}

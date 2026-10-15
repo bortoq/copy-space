@@ -11,7 +11,9 @@
         "ffssi2", "ffsdi2", "popcountsi2", "popcountdi2", "paritysi2", "paritydi2", "bswapsi2", "bswapdi2",
         "divmoddi4", "udivmoddi4", "fixunssfsi", "fixunsdfsi", "fixsfdi", "fixdfdi",
         "floatdisf", "floatdidf", "floatundisf", "floatundidf", "fixunssfdi", "fixunsdfdi",
-        "mulsc3", "muldc3", "divsc3", "divdc3", "powisf2", "powidf2"
+        "mulsc3", "muldc3", "divsc3", "divdc3", "powisf2", "powidf2",
+        "addvsi3", "addvdi3", "subvsi3", "subvdi3", "mulvsi3", "mulvdi3",
+        "negvsi2", "negvdi2", "absvsi2", "absvdi2"
       ]
     },
     {

@@ -50,10 +50,10 @@ def main():
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--unit', choices=['string', 'ctype', 'sort', 'rbtree', 'bug'], default='string')
     parser.add_argument('--entry-probe', action='store_true',
-                        help='compile ctype/sort with a direct execution entry')
+                        help='compile ctype/sort/string with direct execution entries')
     args = parser.parse_args()
-    if args.entry_probe and args.unit not in ('ctype', 'sort'):
-        parser.error('--entry-probe requires ctype or sort')
+    if args.entry_probe and args.unit not in ('ctype', 'sort', 'string'):
+        parser.error('--entry-probe requires ctype, sort or string')
     archive = args.linux_archive.resolve()
     archive_sha256 = 'b1a2562be56e42afb3f8489d4c2a7ac472ac23098f1ef1c1e40da601f54625eb'
     assert digest(archive) == archive_sha256, 'changed pinned Linux 6.12 archive'
@@ -77,9 +77,8 @@ def main():
     # The probe keeps the RISC-V scaffold's other headers explicitly. This
     # initial architecture fragment has fatal BUG, but no generic bug tables.
     port = root/'port'
+    shutil.copytree(ROOT/'runtime/linux/arch/copyspace/include', port/'include')
     header = port/'include/asm/bug.h'
-    header.parent.mkdir(parents=True)
-    shutil.copyfile(ROOT/'runtime/linux/arch/copyspace/include/asm/bug.h', header)
     config = port/'config.h'
     config.write_text('/* Initial copyspace BUG configuration for this probe. */\n'
         '#include <linux/kconfig.h>\n'
@@ -92,6 +91,8 @@ def main():
         words[-1] = str(source)
     if args.entry_probe:
         words[1:1] = ['-I'+str(linux)]
+        if args.unit == 'string':
+            shutil.copyfile(ROOT/'runtime/gcc/target/muldi3.c', port/'muldi3.c')
     collector = []
     skip = False
     for word in words:
@@ -103,7 +104,8 @@ def main():
             continue
         else:
             collector.append(word)
-    collector[1:1] = ['-I'+str(port/'include'), '-D__copyspace__=1']
+    collector[1:1] = ['-I'+str(port/'include'), '-D__copyspace__=1',
+                      '-D__COPYSPACE_LITTLE_ENDIAN__=1']
     collector += ['-include', str(config), '-M']
     (root/'dependency-command.json').write_text(json.dumps(collector, indent=2)+'\n')
     dependencies = subprocess.run(collector, cwd=build, capture_output=True, timeout=120)
@@ -162,7 +164,8 @@ def main():
         i += 1
     argv = ['cc1', '--space-result=result.s', '-quiet', '-O2', '-std=gnu11',
             '-ffreestanding', '-fno-builtin', '-fno-common', '-fno-strict-aliasing',
-            '-fno-stack-protector', '-nostdinc'] + options + [
+            '-fno-stack-protector', '-Werror=implicit-function-declaration',
+            '-Werror=implicit-int', '-nostdinc'] + options + [
             '-include', 'port/config.h', '-o', 'result.s', virtual(source)]
     (root/'argv.json').write_text(json.dumps(argv, indent=2)+'\n')
     job = pack(argv, files)
@@ -191,18 +194,37 @@ def main():
     (root/'evidence.json').write_text(json.dumps(evidence, indent=2)+'\n')
     assert status == 0, (root/'stderr.bin').read_bytes()
     assert not outsize and size
+    rejections = []
     if args.unit == 'bug':
+        rejections = [
+            ('generic-bug', [], b'\n#define CONFIG_GENERIC_BUG 1\n', None,
+             b'copyspace does not yet support CONFIG_GENERIC_BUG'),
+            ('wrong-target', ['-U__copyspace__'], b'', None,
+             b'copyspace asm/bug.h requires the copyspace GCC target')]
+    elif args.unit == 'string' and args.entry_probe:
+        rejections = [
+            ('smp', [], b'\n#define CONFIG_SMP 1\n', 'barrier.h',
+             b'copyspace SMP ordering is not implemented'),
+            ('mmu', [], b'\n#define CONFIG_MMU 1\n', 'page.h',
+             b'copyspace page tables are not implemented'),
+            ('64bit', [], b'\n#define CONFIG_64BIT 1\n', 'page.h',
+             b'copyspace requires a 32-bit kernel configuration'),
+            ('page-size', [], b'\n#undef CONFIG_PAGE_SHIFT\n#define CONFIG_PAGE_SHIFT 16\n', 'page.h',
+             b'copyspace requires 4096-byte logical pages'),
+            ('fault-recovery', [], b'\n#define CONFIG_DCACHE_WORD_ACCESS 1\n', 'word-at-a-time.h',
+             b'copyspace fault-recovering word access is not implemented'),
+            ('endian', ['-U__COPYSPACE_LITTLE_ENDIAN__'], b'', 'byteorder.h',
+             b'copyspace requires its little-endian GCC target')]
+    if rejections:
         rejected = []
-        for name in ['generic-bug', 'wrong-target']:
+        for name, flags, configuration, include, message in rejections:
             folder = root/name
             folder.mkdir()
             bad_files, bad_argv = dict(files), argv[:]
-            if name == 'generic-bug':
-                bad_files['port/config.h'] += b'\n#define CONFIG_GENERIC_BUG 1\n'
-                message = b'copyspace does not yet support CONFIG_GENERIC_BUG'
-            else:
-                bad_argv[2:2] = ['-U__copyspace__']
-                message = b'copyspace asm/bug.h requires the copyspace GCC target'
+            bad_files['port/config.h'] += configuration
+            bad_argv[2:2] = flags
+            if include:
+                bad_files['port/probe.c'] = ('#include <asm/'+include+'>\n').encode()
             bad_job = pack(bad_argv, bad_files)
             (folder/'job.bin').write_bytes(bad_job)
             failed = subprocess.run(run, input=bad_job, capture_output=True, timeout=180)
@@ -214,15 +236,21 @@ def main():
             assert len(failed.stdout) == 24+errsize and message in failed.stdout[24:]
             rejected.append({'case': name, 'exit': status, 'job_sha256': digest(folder/'job.bin')})
         evidence['rejected_cases'] = rejected
+    if args.unit == 'bug':
         check_direct(root, assembly, evidence, [('value', 7), ('fatal', None), ('conditional_trap', None),
                             ('condition_once', 5), ('warning_once', 21), ('warning_return', 101)])
     elif args.entry_probe:
-        check_direct(root, assembly, evidence, [('value', 65 if args.unit == 'ctype' else 204)])
+        cases = {'ctype': [('value', 65)], 'sort': [('value', 204)],
+                 'string': [('value', 207), ('fatal', None), ('warning_once', 1),
+                            ('multiplication', 8), ('bit_operations', 32),
+                            ('argument_home', 11), ('variadic', 15),
+                            ('stack_arguments', 52), ('variadic_call', 42)]}
+        check_direct(root, assembly, evidence, cases[args.unit], large=args.unit == 'string')
     print('OK actual copyspace GCC:', 'BUG fixture with original Linux headers' if args.unit == 'bug' else 'original Linux '+args.unit,
           ';', len(files), 'guest files;', len(assembly), 'assembly bytes; QEMU diagnostic only')
 
 
-def check_direct(root, assembly, evidence, cases):
+def check_direct(root, assembly, evidence, cases, large=False):
     """Execute generated code as direct copies; GCC itself ran in QEMU."""
     harness = root/'direct.c'
     harness.write_text('''#include "copy_link.h"
@@ -231,10 +259,10 @@ static unsigned char image[8388608];
 static char assembly[131072];
 int main(int argc,char **argv) {
     size_t n=fread(assembly,1,sizeof(assembly),stdin);
-    unsigned arguments[]={3,4}; struct cs_copy_link_error error;
+    unsigned arguments[]={3,4,5,6,7,8}; struct cs_copy_link_error error;
     if(argc!=2 || n==sizeof(assembly)) return 1;
     if(cs_copy_link_program_memory(image,sizeof(image),31,65536,assembly,n,
-                                  argv[1],arguments,2,&error)) {
+                                  argv[1],arguments,6,&error)) {
         fprintf(stderr,"%zu: %s\\n",error.line,error.message);return 2;
     }
     return fwrite(image,1,sizeof(image),stdout)==sizeof(image) ? 0 : 3;
@@ -245,10 +273,11 @@ int main(int argc,char **argv) {
         dest = root/'sources'/name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT/name, dest)
+    capacities = {'LABEL': 1024, 'JUMP': 2048, 'CALL': 256, 'SYMBOL': 256, 'RELOCATION': 256} if large else {
+                  'LABEL': 256, 'JUMP': 1024, 'CALL': 128, 'SYMBOL': 128, 'RELOCATION': 128}
     command = ['gcc', '-O2', '-Wall', '-Wextra', '-Werror',
-               '-I'+str(root/'sources/runtime/gcc'), '-DCS_COPY_LABEL_CAPACITY=256',
-               '-DCS_COPY_JUMP_CAPACITY=1024', '-DCS_COPY_CALL_CAPACITY=128',
-               '-DCS_COPY_SYMBOL_CAPACITY=128', '-DCS_COPY_RELOCATION_CAPACITY=128', str(harness)]
+               '-I'+str(root/'sources/runtime/gcc')] + [
+               '-DCS_COPY_'+key+'_CAPACITY='+str(value) for key, value in capacities.items()] + [str(harness)]
     command += [str(root/'sources'/name) for name in paths if name.endswith('.c')]
     command += ['-o', str(root/'direct-linker')]
     (root/'direct-link-command.json').write_text(json.dumps(command, indent=2)+'\n')
@@ -257,11 +286,15 @@ int main(int argc,char **argv) {
     for entry, expected in cases:
         folder = root/entry
         folder.mkdir()
-        linked = subprocess.run([str(root/'direct-linker'), entry], input=assembly,
-                                capture_output=True, check=True, timeout=60)
+        link_command = [str(root/'direct-linker'), entry]
+        (folder/'link-command.json').write_text(json.dumps(link_command)+'\n')
+        linked = subprocess.run(link_command, input=assembly,
+                                capture_output=True, timeout=60)
+        (folder/'link.stderr').write_bytes(linked.stderr)
+        assert linked.returncode == 0, linked.stderr
         assert not linked.stderr and len(linked.stdout) == 8388608
         (folder/'image.bin').write_bytes(linked.stdout)
-        command = [str(ROOT/'build/bin/space-256m'), '--ticks', '100000', '--core',
+        command = [str(ROOT/'build/bin/space-256m'), '--ticks', '1000000' if large else '100000', '--core',
                    str(folder/'image.bin'), '--trace', str(folder/'trace.txt')]
         (folder/'command.json').write_text(json.dumps(command)+'\n')
         checked = subprocess.run(command, capture_output=True, check=True, timeout=120)

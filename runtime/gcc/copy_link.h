@@ -27,4 +27,9 @@ int cs_copy_link_objects_memory(unsigned char *, size_t, unsigned, uint32_t,
                         const struct cs_copy_object *, unsigned,
                         char *, size_t, const char *, const uint32_t *, unsigned,
                         struct cs_copy_link_error *);
+/* Same linking, with an internally allocated exact-size rewrite buffer. */
+int cs_copy_link_objects_alloc(unsigned char *, size_t, unsigned, uint32_t,
+                        const struct cs_copy_object *, unsigned,
+                        const char *, const uint32_t *, unsigned,
+                        struct cs_copy_link_error *);
 #endif

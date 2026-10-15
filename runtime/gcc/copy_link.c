@@ -1563,13 +1563,13 @@ int cs_copy_link_objects(unsigned char *data, size_t bytes, unsigned address_bit
                                        assembly,capacity,entry,arguments,argc,error);
 }
 
-int cs_copy_link_objects_memory(unsigned char *data, size_t bytes, unsigned address_bits,
+static int link_objects(unsigned char *data, size_t bytes, unsigned address_bits,
                         uint32_t memory_bytes, const struct cs_copy_object *objects, unsigned count,
-                        char *assembly, size_t capacity,
+                        char *assembly, size_t capacity, int allocate,
                         const char *entry, const uint32_t *arguments, unsigned argc,
                         struct cs_copy_link_error *error)
 {
-    char *buffer=NULL;
+    char *buffer=NULL, *owned=NULL;
     const char *message="invalid separate link input";
     if (!objects || !count || count>8) goto fail;
     if (count==1) return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,objects[0].assembly,
@@ -1600,6 +1600,11 @@ int cs_copy_link_objects_memory(unsigned char *data, size_t bytes, unsigned addr
     for (unsigned i=0;i<count;++i)
         if (object_rewrite(&objects[i],names,count,i,tags[tag],NULL,&needed,buffer)) goto fail;
     if (object_commons(names,count,NULL,&needed) || object_weak_imports(names,count,NULL,&needed)) goto fail;
+    if (allocate) {
+        message="out of memory for separate link text";
+        if (needed==SIZE_MAX || !(owned=malloc(needed+1))) goto fail;
+        assembly=owned;capacity=needed+1;
+    }
     message="separate link scratch buffer too small";
     if (!assembly || needed>=capacity) goto fail;
     size_t used=0;
@@ -1608,9 +1613,31 @@ int cs_copy_link_objects_memory(unsigned char *data, size_t bytes, unsigned addr
     if (object_commons(names,count,assembly,&used) || object_weak_imports(names,count,assembly,&used)) goto fail;
     assembly[used]=0;
     free(buffer);
-    return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,assembly,used,entry,arguments,argc,error);
+    int result=cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,assembly,used,entry,arguments,argc,error);
+    free(owned);
+    return result;
 fail:
+    free(owned);
     free(buffer);
     if (error) *error=(struct cs_copy_link_error){0,message};
     return -1;
+}
+
+int cs_copy_link_objects_memory(unsigned char *data, size_t bytes, unsigned address_bits,
+                        uint32_t memory_bytes, const struct cs_copy_object *objects, unsigned count,
+                        char *assembly, size_t capacity,
+                        const char *entry, const uint32_t *arguments, unsigned argc,
+                        struct cs_copy_link_error *error)
+{
+    return link_objects(data,bytes,address_bits,memory_bytes,objects,count,assembly,capacity,0,
+                        entry,arguments,argc,error);
+}
+
+int cs_copy_link_objects_alloc(unsigned char *data, size_t bytes, unsigned address_bits,
+                        uint32_t memory_bytes, const struct cs_copy_object *objects, unsigned count,
+                        const char *entry, const uint32_t *arguments, unsigned argc,
+                        struct cs_copy_link_error *error)
+{
+    return link_objects(data,bytes,address_bits,memory_bytes,objects,count,NULL,0,1,
+                        entry,arguments,argc,error);
 }

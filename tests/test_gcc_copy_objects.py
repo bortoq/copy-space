@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import struct
 import subprocess
 from pathlib import Path
@@ -15,6 +16,8 @@ def main():
     parser.add_argument('--result-space-bytes', type=int, choices=[2097152, 268435456], default=2097152)
     parser.add_argument('--assembly', type=Path, action='append', help='also link these real GCC outputs together')
     parser.add_argument('--expected-result', type=lambda s: int(s, 0))
+    parser.add_argument('--allocate', action='store_true', help='allocate exact rewrite storage inside the linker')
+    parser.add_argument('--sanitize', action='store_true')
     args = parser.parse_args()
     root = args.artifacts.resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -29,6 +32,25 @@ def main():
     command = ['gcc', '-O2', '-Wall', '-Wextra', '-Werror', '-DCS_COPY_PROGRAM', '-DCS_COPY_OBJECTS',
                '-DCS_COPY_RESULT_ADDRESS_BITS=' + str(bits), '-I' + str(root / 'sources/runtime/gcc')]
     command += [str(root / 'sources' / path) for path in paths if path.suffix == '.c'] + ['-o', str(root / 'native')]
+    if args.allocate:
+        checks = root/'allocation_checks.c'
+        checks.write_text('''#include <stdlib.h>
+static unsigned active, calls;
+extern void *__real_malloc(size_t);
+extern void __real_free(void *);
+void *__wrap_malloc(size_t size) {
+    const char *fail=getenv("CS_COPY_TEST_ALLOC_FAIL");
+    ++calls; if(fail && (unsigned)atoi(fail)==calls) return NULL;
+    void *p=__real_malloc(size); if(p) ++active; return p;
+}
+void __wrap_free(void *p) {
+    if(p) { if(!active) abort(); --active; } __real_free(p);
+}
+__attribute__((destructor)) static void check(void) { if(active) abort(); }
+''')
+        command[1:1] = ['-DCS_COPY_OBJECT_ALLOC', str(checks), '-Wl,--wrap=malloc', '-Wl,--wrap=free']
+    if args.sanitize:
+        command[1:1] = ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie']
     (root / 'native-command.json').write_text(json.dumps(command) + '\n')
     subprocess.run(command, check=True, capture_output=True)
     native_command = command[:]
@@ -161,7 +183,7 @@ def main():
     # Both units in case 0 contain only external names: rewriting adds just
     # the initial .text line for each unit, plus one final NUL byte.
     needed = sum(map(len, cases[0][0])) + 6 * len(cases[0][0])
-    for capacity in (needed, needed + 1):
+    for capacity in (() if args.allocate else (needed, needed + 1)):
         command = native_command[:-2] + [f'-DCS_COPY_OBJECT_TEXT_BYTES={capacity}', '-o', str(root / f'capacity-{capacity}')]
         (root / f'capacity-{capacity}-command.json').write_text(json.dumps(command) + '\n')
         subprocess.run(command, check=True, capture_output=True)
@@ -170,9 +192,17 @@ def main():
             assert result.returncode == 2 and not result.stdout
         else:
             assert result.returncode == 0 and result.stdout == (root / '0/image.bin').read_bytes()
+    if args.allocate:
+        for allocation in (1, 2, 3):
+            result = subprocess.run([str(root/'native')], input=b'\0'.join(cases[0][0]), capture_output=True,
+                env={**os.environ, 'CS_COPY_TEST_ALLOC_FAIL': str(allocation)})
+            (root/('allocation-'+str(allocation)+'.stderr')).write_bytes(result.stderr)
+            assert result.returncode == 2 and not result.stdout and b'out of memory' in result.stderr
     (root / 'evidence.json').write_text(json.dumps({'scope': 'Separate assembly linking prepared natively; output executed directly as copies. Guest generation not yet verified.',
         'source_sha256': hashes, 'result_space_bytes': args.result_space_bytes, 'direct_cases': results, 'rejected_cases': len(invalid),
-        'scratch_exact_fit_bytes': needed + 1, 'scratch_one_byte_short_rejected': True}, indent=2) + '\n')
+        'automatic_scratch': args.allocate, 'allocation_failures_checked': 3 if args.allocate else 0,
+        'scratch_exact_fit_bytes': None if args.allocate else needed + 1,
+        'scratch_one_byte_short_rejected': not args.allocate}, indent=2) + '\n')
     print('OK separate linking:', len(results), 'programs,', len(invalid), 'rejected inputs')
 
 

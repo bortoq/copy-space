@@ -40,7 +40,7 @@ static unsigned char image[CS_COPY_IMAGE_BYTES];
 #define CS_COPY_ASSEMBLY_BYTES 8192
 #endif
 static char assembly[CS_COPY_ASSEMBLY_BYTES];
-#ifdef CS_COPY_OBJECTS
+#if defined(CS_COPY_OBJECTS) && !defined(CS_COPY_OBJECT_ALLOC)
 #ifndef CS_COPY_OBJECT_TEXT_BYTES
 #define CS_COPY_OBJECT_TEXT_BYTES 32768
 #endif
@@ -70,12 +70,23 @@ int main(void)
         begin=i+1;
     }
     if (
+#ifdef CS_COPY_OBJECT_ALLOC
+        cs_copy_link_objects_alloc(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,
+#ifdef CS_COPY_MEMORY_BYTES
+        CS_COPY_MEMORY_BYTES,
+#else
+        8192,
+#endif
+        objects,count,"value",arguments,2,&error)
+#else
 #ifdef CS_COPY_MEMORY_BYTES
         cs_copy_link_objects_memory(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,CS_COPY_MEMORY_BYTES,
 #else
         cs_copy_link_objects(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,
 #endif
-        objects,count,object_text,sizeof(object_text),"value",arguments,2,&error)) {
+        objects,count,object_text,sizeof(object_text),"value",arguments,2,&error)
+#endif
+        ) {
 #ifndef __riscv
         fprintf(stderr,"%zu: %s\n",error.line,error.message);
 #endif

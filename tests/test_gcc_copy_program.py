@@ -19,6 +19,9 @@ def main():
     parser.add_argument("--compiler")
     parser.add_argument("--newlib",type=Path)
     parser.add_argument("--result-space-bytes",type=int,choices=[2097152,268435456],default=2097152)
+    parser.add_argument("--guest-case",type=int,default=0)
+    parser.add_argument("--assembly",type=Path,help="also execute existing GCC output and use it for guest generation")
+    parser.add_argument("--expected-result",type=lambda s:int(s,0),default=8)
     args=parser.parse_args();root=args.artifacts.resolve();root.mkdir(parents=True,exist_ok=False)
     paths=[ROOT/"tests/fixtures/gcc/copy_link.c"]+[ROOT/"runtime/gcc"/name for name in ("copy_link.c","copy_link.h","copy_emit.c","copy_emit.h")]
     hashes={}
@@ -41,7 +44,18 @@ def main():
         (b'value:\ncopy.ldi.l $r6,12345\ncopy.jsra helper\ncopy.mov $r0,$r6\ncopy.ret\nhelper:\ncopy.push $sp,$r6\ncopy.ldi.l $r6,99\ncopy.mov $r12,$fp\ncopy.dec $r12,4\ncopy.pop $r12,$r6\ncopy.ret\n',12345),
         (b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.mov $r0,$sp\ncopy.ret\n',8168),
         (b'value:\ncopy.jsra helper\ncopy.mov $r0,$sp\ncopy.ret\nhelper:\ncopy.dec $sp,16\ncopy.ret\n',8180),
-        (b'value:\ncopy.dec $sp,4\ncopy.ldi.l $r2,19\ncopy.st.l ($sp),$r2\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ldo.l $r0,12($fp)\ncopy.ret\n',19)]
+        (b'value:\ncopy.dec $sp,4\ncopy.ldi.l $r2,19\ncopy.st.l ($sp),$r2\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ldo.l $r0,12($fp)\ncopy.ret\n',19),
+        (b'value:\ncopy.ldi.l $r2,helper\ncopy.jsr $r2\ncopy.inc $r0,1\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',8),
+        (b'value:\ncopy.ldi.l $r2,helper\ncopy.sta.l 16,$r2\ncopy.lda.l $r3,16\ncopy.jsr $r3\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',7),
+        (b'value:\ncopy.ldi.l $r2,helper\ncopy.ldi.l $r3,helper\ncopy.cmp $r2,$r3\ncopy.branch.ne .Lbad\ncopy.jsr $r2\ncopy.ret\n.Lbad:\ncopy.ldi.l $r0,99\ncopy.ret\nhelper:\ncopy.inc $r0,1\ncopy.ret\n',4),
+        (b'value:\ncopy.ldi.l $r2,.Lnext\ncopy.jmp $r2\n.Lskip:\ncopy.ldi.l $r0,99\ncopy.ret\n.Lnext:\ncopy.add $r0,$r1\ncopy.ret\n',7),
+        (b'value:\ncopy.ldi.l $r2,helper\ncopy.jsr $r2\ncopy.ret\nhelper:\ncopy.ldi.l $r3,inner\ncopy.jsr $r3\ncopy.inc $r0,1\ncopy.ret\ninner:\ncopy.add $r0,$r1\ncopy.ret\n',8),
+        (b'value:\ncopy.ldi.l $r2,0\ncopy.cmp $r0,$r2\ncopy.branch.eq .Lbase\ncopy.dec $r0,1\ncopy.ldi.l $r3,value\ncopy.jsr $r3\ncopy.inc $r0,2\n.Lbase:\ncopy.ret\n',6)]
+    if args.assembly:
+        if not 0<=args.expected_result<=0xffffffff:raise ValueError("expected result must fit uint32")
+        cases.append((args.assembly.read_bytes(),args.expected_result))
+        args.guest_case=len(cases)-1
+    if not 0<=args.guest_case<len(cases):raise ValueError("invalid guest case")
     emulator=ROOT/"build/bin"/("space" if bits==24 else "space-256m")
     results=[]
     for index,(assembly,value) in enumerate(cases):
@@ -61,14 +75,18 @@ def main():
             with gzip.open(folder/"space.bin.gz","wb",compresslevel=1) as stream:stream.write(raw)
             (folder/"space.bin").unlink()
         results.append({"result":value,"final_fp":word(32768),"final_sp":word(32800),"image_sha256":hashlib.sha256(result.stdout).hexdigest()})
-        if index==0:incoming,expected=assembly,result.stdout
+        if index==args.guest_case:incoming,expected,expected_value=assembly,result.stdout,value
     invalid=[b'value:\ncopy.jsra missing\ncopy.ret\n',b'other:\ncopy.ret\n',
-             b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ret\nhelper:\ncopy.ret\n']
+             b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ret\nhelper:\ncopy.ret\n',
+             b'value:\ncopy.ldi.l $r2,missing\ncopy.ret\n',
+             b'value:\ncopy.jsr $r99\ncopy.ret\n',
+             b'value:\ncopy.jmp symbol\n.Lend:\ncopy.ret\n']
     for assembly in invalid:
         result=subprocess.run([str(root/"native")],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout
-    evidence={"scope":"call frames, no data sections or indirect calls","source_sha256":hashes,
+    evidence={"scope":"call frames and function addresses; data sections still required","source_sha256":hashes,
         "result_space_bytes":args.result_space_bytes,"direct_cases":results,"rejected_cases":len(invalid)}
+    evidence.update({"guest_case":args.guest_case,"guest_assembly_sha256":hashlib.sha256(incoming).hexdigest()})
     if not args.native_only:
         if not args.newlib:raise ValueError("--newlib required for guest generation")
         prefix=args.newlib.resolve()/"riscv64-unknown-elf"
@@ -87,8 +105,8 @@ def main():
         command=[str(emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
         (folder/"command.json").write_text(json.dumps(command)+"\n")
         checked=subprocess.run(command,capture_output=True,check=True,timeout=30)
-        (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==struct.pack("<I",8)
-        evidence.update({"guest_generation":execution,"guest_exit":word(132160),"guest_direct_result":8})
+        (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==struct.pack("<I",expected_value)
+        evidence.update({"guest_generation":execution,"guest_exit":word(132160),"guest_direct_result":expected_value})
     (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     print("OK direct call frames:",len(results),"programs")
 

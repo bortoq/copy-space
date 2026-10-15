@@ -17,7 +17,8 @@ enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
        DIV_DEN_SIGN=34697, DIV_SIGN=34698,
        MEM_ADDRESS=34720, MEM_FLAGS=34752, MEM_VALID=34757, MEM_BIT_ADDRESS=34784,
        STACK_VALUE=34816,
-       RETURN_FP=34848, RETURN_PC=34880, CALL_TABLE=64128,
+       RETURN_FP=34848, RETURN_PC=34880, CALL_TARGET=34912,
+       CALL_TABLE=64128, SYMBOL_TABLE=65152,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
@@ -31,6 +32,9 @@ struct context {
     int memory_fault;
     int return_handler;
     unsigned call_count;
+    struct { int label; } symbols[12];
+    unsigned symbol_count;
+    int program_mode;
 };
 
 static int label(struct context *ctx, const char *name)
@@ -119,6 +123,19 @@ static int constant(struct context *ctx, uint32_t value, uint32_t *address)
         if (cs_copy_constant(&ctx->program.image,CONSTANT_BASE+32*i,32,value)) return -1;
     }
     *address=CONSTANT_BASE+32*i;
+    return 0;
+}
+static int symbol(struct context *ctx, const char *name, uint32_t *address)
+{
+    int index=label(ctx,name);
+    if (index<0) return -1;
+    unsigned i;
+    for (i=0;i<ctx->symbol_count;++i) if (ctx->symbols[i].label==index) break;
+    if (i==ctx->symbol_count) {
+        if (i==12) return -1;
+        ctx->symbols[ctx->symbol_count++].label=index;
+    }
+    *address=SYMBOL_TABLE+32*i;
     return 0;
 }
 static int metadata(const char *s)
@@ -407,12 +424,26 @@ static const char *stack(struct context *ctx, int push, char *cursor, char *oper
         cs_copy_program_emit(p,32,value,STACK_VALUE)) return "copy image capacity exceeded";
     return NULL;
 }
-static const char *call(struct context *ctx, char *name, size_t line)
+static int dynamic_jump(struct context *ctx, uint32_t address)
+{
+    struct cs_copy_program *p=&ctx->program;
+    uint32_t source_field=255*p->image.instruction_bits+p->image.count_bits+p->image.address_bits;
+    return cs_copy_program_emit(p,p->image.address_bits,source_field,address) ||
+           cs_copy_program_next(p) ? -1 : 0;
+}
+static const char *call(struct context *ctx, char *name, size_t line, int indirect)
 {
     if (ctx->call_count==32) return "call capacity exceeded";
-    int target=label(ctx,name);
-    if (target<0) return "invalid function label";
+    int target=-1;
     struct cs_copy_program *p=&ctx->program;
+    if (indirect) {
+        uint32_t source;
+        if (reg(name,&source)) return "invalid indirect function register";
+        if (cs_copy_program_emit(p,32,CALL_TARGET,source)) return "copy image capacity exceeded";
+    } else {
+        target=label(ctx,name);
+        if (target<0) return "invalid function label";
+    }
     uint32_t twelve,zero;
     uint32_t continuation=CALL_TABLE+32*ctx->call_count++;
     if (constant(ctx,12,&twelve) || constant(ctx,0,&zero) ||
@@ -420,7 +451,8 @@ static const char *call(struct context *ctx, char *name, size_t line)
         memory_access(ctx,1,32,REG_BASE,REG_BASE+32,0) ||
         memory_access(ctx,1,32,continuation,REG_BASE+32,4) ||
         memory_access(ctx,1,32,zero,REG_BASE+32,8) ||
-        cs_copy_program_emit(p,32,REG_BASE,REG_BASE+32) || jump(ctx,target,line) ||
+        cs_copy_program_emit(p,32,REG_BASE,REG_BASE+32) ||
+        (indirect ? dynamic_jump(ctx,CALL_TARGET) : jump(ctx,target,line)) ||
         cs_copy_constant(&p->image,continuation,32,p->image.layer)) return "copy image capacity exceeded";
     return NULL;
 }
@@ -433,9 +465,7 @@ static int return_frame(struct context *ctx)
         memory_access(ctx,0,32,RETURN_PC,REG_BASE,4) ||
         cs_copy_program_add32(p,REG_BASE+32,REG_BASE,twelve,ADD_TABLE,TEMPORARY,CARRY) ||
         cs_copy_program_emit(p,32,REG_BASE,RETURN_FP)) return -1;
-    uint32_t source_field=255*p->image.instruction_bits+p->image.count_bits+p->image.address_bits;
-    return cs_copy_program_emit(p,p->image.address_bits,source_field,RETURN_PC) ||
-           cs_copy_program_next(p) ? -1 : 0;
+    return dynamic_jump(ctx,RETURN_PC);
 }
 static const char *instruction(struct context *ctx, char *s)
 {
@@ -461,7 +491,11 @@ static const char *instruction(struct context *ctx, char *s)
     int load_constant=!strcmp(s,"copy.ldi.l") || !strcmp(s,"copy.ldi.b") || !strcmp(s,"copy.ldi.s");
     if (load_constant || !strcmp(s,"copy.inc") || !strcmp(s,"copy.dec")) {
         uint32_t value;
-        if (integer(argument,&value)) return "invalid 32-bit integer";
+        if (integer(argument,&value)) {
+            if (!ctx->program_mode || strcmp(s,"copy.ldi.l") || symbol(ctx,argument,&source))
+                return "invalid 32-bit integer or symbol";
+            return cs_copy_program_emit(&ctx->program,32,destination,source) ? "copy image capacity exceeded" : NULL;
+        }
         if (!strcmp(s,"copy.ldi.b")) value&=255;
         else if (!strcmp(s,"copy.ldi.s")) value&=65535;
         if (constant(ctx,value,&source)) return "constant capacity exceeded";
@@ -525,6 +559,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     memset(data,0,bytes);
     memset(&ctx,0,sizeof(ctx));
     ctx.memory_fault=-1;
+    ctx.program_mode=program_mode;
     if (cs_copy_program_init(&ctx.program,data,bytes,address_bits,65536,(uint32_t)(bytes*8))) goto fail;
     if (cs_copy_constant(&ctx.program.image,EQ_TABLE,8,144) ||
         cs_copy_constant(&ctx.program.image,LT_TABLE,8,212) ||
@@ -591,9 +626,22 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
             returned=1; terminated=1; continue;
         }
         if (program_mode && !strncmp(s,"copy.jsra",9) && whitespace((unsigned char)s[9])) {
-            message=call(&ctx,trim(s+9),line);
+            message=call(&ctx,trim(s+9),line,0);
             if (message) goto fail;
             continue;
+        }
+        if (program_mode && !strncmp(s,"copy.jsr",8) && whitespace((unsigned char)s[8])) {
+            message=call(&ctx,trim(s+8),line,1);
+            if (message) goto fail;
+            continue;
+        }
+        if (program_mode && !strncmp(s,"copy.jmp",8) && whitespace((unsigned char)s[8])) {
+            uint32_t source;
+            message="invalid indirect jump register";
+            if (reg(trim(s+8),&source)) goto fail;
+            message="copy image capacity exceeded";
+            if (dynamic_jump(&ctx,source)) goto fail;
+            terminated=1; continue;
         }
         if (!strncmp(s,"copy.branch.",12)) {
             message=branch(&ctx,s,line);
@@ -627,6 +675,12 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     if (cs_copy_program_next(&ctx.program)) goto fail;
     uint32_t report=ctx.program.image.layer;
     if (program_mode && cs_copy_constant(&ctx.program.image,ctx.data_begin+8184*8,32,report)) goto fail;
+    for (unsigned i=0;i<ctx.symbol_count;++i) {
+        int index=ctx.symbols[i].label;
+        message="undefined copy symbol";
+        if (!ctx.labels[index].defined ||
+            cs_copy_constant(&ctx.program.image,SYMBOL_TABLE+32*i,32,ctx.labels[index].address)) goto fail;
+    }
     for (unsigned i=0;i<ctx.jump_count;++i) {
         int index=ctx.jumps[i].label;
         if (index>=0 && !ctx.labels[index].defined) {

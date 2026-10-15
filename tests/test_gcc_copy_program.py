@@ -12,7 +12,9 @@ sys.path.insert(0,str(ROOT/"scripts/rv32i"))
 from build import build
 from space_segments import execute_segments
 
-def finish_guest(root,evidence,*,resume=False,max_parts=512,timeout=900):
+def finish_guest(root,evidence,*,resume=False,max_parts=512,timeout=900,
+                 emulator=None,channels_only=False,execution_name="linker",fork_from=None,
+                 segment_ticks=None):
     assert evidence.get("guest_generation_pending"), "no pending guest generation"
     for name,digest in evidence["source_sha256"].items():
         assert hashlib.sha256((root/"sources"/name).read_bytes()).hexdigest()==digest, "changed frozen source"
@@ -25,12 +27,15 @@ def finish_guest(root,evidence,*,resume=False,max_parts=512,timeout=900):
     assert (root/"in.bin").read_bytes()==(root/"linker.stream").read_bytes()+incoming, "changed guest input"
     manifest=json.loads((root/"linker.stream.json").read_text())
     profiles={2097152:"space",67108864:"space-64m",268435456:"space-256m"}
-    guest_emulator=ROOT/"build/bin"/profiles[manifest["space_bytes"]]
-    execution=execute_segments(guest_emulator,root/"linker",root/"in.bin",
+    guest_emulator=Path(emulator).resolve() if emulator else ROOT/"build/bin"/profiles[manifest["space_bytes"]]
+    execution_folder=root/execution_name
+    execution=execute_segments(guest_emulator,execution_folder,root/"in.bin",
         space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,
-        ticks=evidence.get("segment_ticks",100000),timeout=timeout,compression="zstd",resume=resume,max_parts=max_parts)
-    assert (root/"linker/program.in").read_bytes()==expected
-    raw=(root/"linker/space.bin").read_bytes()
+        ticks=segment_ticks or evidence.get("segment_ticks",100000),timeout=timeout,
+        compression="zstd",resume=resume,max_parts=max_parts,
+        channels_only=channels_only,fork_from=fork_from)
+    assert (execution_folder/"program.in").read_bytes()==expected
+    raw=(execution_folder/"space.bin").read_bytes()
     def word(at):return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
     assert word(132128)==10 and word(132160)==0
     folder=root/"guest-result";folder.mkdir();(folder/"image.bin").write_bytes(expected)
@@ -59,15 +64,24 @@ def main():
     parser.add_argument("--resume",action="store_true",help="continue pending guest generation from frozen artifacts")
     parser.add_argument("--max-parts",type=int,default=512)
     parser.add_argument("--guest-timeout",type=float,default=900)
-    parser.add_argument("--segment-ticks",type=int,default=100000)
+    parser.add_argument("--segment-ticks",type=int,help="ticks per segment; default 100000 or frozen value on resume")
     parser.add_argument("--objects",action="store_true",help="test fixture accepts NUL-separated assembly units")
+    parser.add_argument("--emulator",type=Path)
+    parser.add_argument("--trace-channels",action="store_true")
+    parser.add_argument("--execution-name",default="linker")
+    parser.add_argument("--checkpoint-from",type=Path)
     args=parser.parse_args();root=args.artifacts.resolve()
     if args.max_parts<1:parser.error("--max-parts must be positive")
-    if args.segment_ticks<1:parser.error("--segment-ticks must be positive")
-    if args.resume:
+    if args.segment_ticks is not None and args.segment_ticks<1:parser.error("--segment-ticks must be positive")
+    if args.resume and args.checkpoint_from:parser.error("choose resume or checkpoint-from")
+    if args.execution_name in ("", ".", "..") or Path(args.execution_name).name!=args.execution_name:parser.error("execution-name must be a folder name")
+    guest_options=dict(emulator=args.emulator,channels_only=args.trace_channels,
+        execution_name=args.execution_name,fork_from=args.checkpoint_from)
+    if args.resume or args.checkpoint_from:
         if args.native_only or args.assembly:parser.error("resume uses the frozen guest case")
         evidence=json.loads((root/"evidence.json").read_text())
-        finish_guest(root,evidence,resume=True,max_parts=args.max_parts,timeout=args.guest_timeout)
+        finish_guest(root,evidence,resume=args.resume,max_parts=args.max_parts,
+            timeout=args.guest_timeout,segment_ticks=args.segment_ticks,**guest_options)
         print("OK resumed guest generation")
         return
     root.mkdir(parents=True,exist_ok=False)
@@ -189,7 +203,7 @@ def main():
         "objects_mode":args.objects,"source_sha256":hashes,
         "result_space_bytes":args.result_space_bytes,"direct_cases":results,"rejected_cases":len(invalid)}
     evidence.update({"guest_case":args.guest_case,"guest_assembly_sha256":hashlib.sha256(incoming).hexdigest()})
-    evidence["segment_ticks"]=args.segment_ticks
+    evidence["segment_ticks"]=args.segment_ticks or 100000
     if not args.native_only:
         if not args.newlib:raise ValueError("--newlib required for guest generation")
         prefix=args.newlib.resolve()/"riscv64-unknown-elf"
@@ -200,7 +214,7 @@ def main():
         (root/"in.bin").write_bytes((root/"linker.stream").read_bytes()+incoming)
         evidence["guest_generation_pending"]=True
         (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
-        finish_guest(root,evidence,max_parts=args.max_parts,timeout=args.guest_timeout)
+        finish_guest(root,evidence,max_parts=args.max_parts,timeout=args.guest_timeout,**guest_options)
     (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     print("OK direct call frames:",len(results),"programs")
 

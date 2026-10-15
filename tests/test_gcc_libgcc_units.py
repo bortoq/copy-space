@@ -38,8 +38,14 @@ def main():
     parser.add_argument('--unit', action='append', choices=['muldi3', 'udivdi3', 'divdi3', 'umoddi3', 'moddi3',
         'ashldi3', 'lshrdi3', 'ashrdi3', 'cmpdi2', 'ucmpdi2', 'clzsi2', 'clzdi2', 'ctzsi2', 'ctzdi2', 'negdi2', 'clz',
         'ffssi2', 'ffsdi2', 'popcountsi2', 'popcountdi2', 'paritysi2', 'paritydi2', 'bswapsi2', 'bswapdi2',
-        'divmoddi4', 'udivmoddi4', 'clrsbsi2', 'clrsbdi2'])
+        'divmoddi4', 'udivmoddi4', 'clrsbsi2', 'clrsbdi2', 'sfsingle', 'dfdouble',
+        'addsub_sf', 'mul_sf', 'div_sf', 'eq_sf', 'fpcmp_parts_sf', 'pack_sf', 'unpack_sf',
+        'thenan_sf', 'make_sf', 'negate_sf', 'sf_to_si', 'si_to_sf'])
     parser.add_argument('--link-probe', action='store_true', help='link five original arithmetic helpers from an archive and execute direct copies')
+    parser.add_argument('--source-file', default='libgcc/libgcc2.c',
+                        help='C file inside the pinned GCC tree, e.g. libgcc/fp-bit.c')
+    parser.add_argument('--extra-define', action='append', default=[],
+                        help='additional -DNAME for the target cc1, e.g. FLOAT for fp-bit.c single precision')
     args = parser.parse_args()
     store, build, target, diagnostic = (p.resolve() for p in
         (args.store, args.cc1_work/'gcc', args.target_source/'gcc', args.diagnostic))
@@ -73,13 +79,15 @@ def main():
     include = [generated, build, target, source/'libgcc', source/'include', source/'gcc/ginclude']
     flags = ['-nostdinc', '-Dinhibit_libc', '-DIN_GCC', '-DIN_LIBGCC2', '-fbuilding-libgcc',
              '-fno-stack-protector', '-ffreestanding', '-O2']
-    original = source/'libgcc/libgcc2.c'
+    original = (source/args.source_file)
+    if not original.resolve().is_relative_to(source.resolve()) or not original.is_file():
+        parser.error('--source-file must name a file inside the pinned GCC tree')
     summary = []
     verified_originals = {}
     for unit in args.unit or ['muldi3', 'udivdi3', 'divdi3', 'umoddi3', 'moddi3', 'clz']:
         folder = root/unit
         folder.mkdir()
-        options = flags+['-DL_'+unit]
+        options = flags+['-D'+name for name in args.extra_define]+['-DL_'+unit]
         dependency = ['gcc', '-M']+options+['-I'+str(p) for p in include]+[str(original)]
         (folder/'dependency-command.json').write_text(json.dumps(dependency)+'\n')
         selected = subprocess.run(dependency, capture_output=True, timeout=120)

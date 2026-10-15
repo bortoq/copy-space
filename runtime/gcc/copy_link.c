@@ -52,7 +52,7 @@ struct context {
     struct cs_copy_program program;
     uint32_t constants[CONSTANT_CAPACITY];
     unsigned constant_count;
-    struct { char name[64]; uint32_t address; int defined, data, alias, weak, missing_weak; } labels[CS_COPY_LABEL_CAPACITY];
+    struct { char name[64]; uint32_t address; int defined, data, alias, weak, missing_weak, numbered; size_t offset; } labels[CS_COPY_LABEL_CAPACITY];
     struct { uint32_t layer, table, fallthrough; int label, inverted; size_t line; } jumps[CS_COPY_JUMP_CAPACITY];
     unsigned label_count, jump_count;
     int compared;
@@ -77,11 +77,67 @@ struct context {
     unsigned relocation_count;
     struct { int label,target; uint32_t addend; } aliases[CS_COPY_LABEL_CAPACITY];
     unsigned alias_count;
+    const char *assembly;
+    size_t assembly_size,statement_offset;
 };
+
+static size_t statement_end(const char *, size_t, size_t, size_t *);
+static int decimal_label_range(const char *s, const char *limit, const char **end, uint32_t *number)
+{
+    uint32_t n=0;
+    if (s==limit || *s<'0' || *s>'9') return -1;
+    do {
+        unsigned digit=(unsigned)(*s++-'0');
+        if (n>(UINT32_MAX-digit)/10) return -1;
+        n=n*10+digit;
+    } while (s!=limit && *s>='0' && *s<='9');
+    *end=s;*number=n;return 0;
+}
+static int decimal_label(const char *s, const char **end, uint32_t *number)
+{
+    return decimal_label_range(s,NULL,end,number);
+}
+static int numeric_target(const char *assembly, size_t size, size_t before,
+                          uint32_t number, int forward, size_t *target)
+{
+    int found=0;
+    size_t offset=0;
+    while (offset<size) {
+        size_t next,end=statement_end(assembly,size,offset,&next),start=offset;
+        while (start<end && (assembly[start]==' ' || assembly[start]=='\t' || assembly[start]=='\r')) ++start;
+        const char *after;uint32_t value;
+        if (start<end && !decimal_label_range(assembly+start,assembly+end,&after,&value)) {
+            while (after<assembly+end && (*after==' ' || *after=='\t' || *after=='\r')) ++after;
+            if (after<assembly+end && *after==':' && value==number &&
+                ((forward && offset>before) || (!forward && offset<before))) {
+                *target=offset;found=1;
+                if (forward) return 0;
+            }
+        }
+        offset=next;
+    }
+    return found ? 0 : -1;
+}
+static int numeric_label(struct context *ctx, size_t offset)
+{
+    for (unsigned i=0;i<ctx->label_count;++i)
+        if (ctx->labels[i].numbered && ctx->labels[i].offset==offset) return (int)i;
+    if (ctx->label_count==CS_COPY_LABEL_CAPACITY) return -1;
+    unsigned i=ctx->label_count++;
+    ctx->labels[i].numbered=1;ctx->labels[i].offset=offset;
+    return (int)i;
+}
 
 static int label(struct context *ctx, const char *name)
 {
     size_t length=strlen(name);
+    const char *end;uint32_t number;
+    if (!decimal_label(name,&end,&number) && (*end=='b' || *end=='f') && !end[1]) {
+        size_t target;
+        if (ctx->statement_offset==SIZE_MAX || numeric_target(ctx->assembly,ctx->assembly_size,
+            ctx->statement_offset,number,*end=='f',&target)) return -1;
+        return numeric_label(ctx,target);
+    }
     if (!length || length>=sizeof(ctx->labels[0].name)) return -1;
     for (size_t i=0;i<length;++i) {
         unsigned char c=(unsigned char)name[i];
@@ -976,6 +1032,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     memset(&ctx,0,sizeof(ctx));
     message="invalid data/stack memory size";
     if (memory_bytes<8192 || (memory_bytes&(memory_bytes-1))) goto fail;
+    ctx.assembly=assembly;ctx.assembly_size=size;ctx.statement_offset=SIZE_MAX;
     ctx.memory_bytes=memory_bytes;
     for (uint32_t n=memory_bytes; n>1; n>>=1) ++ctx.memory_address_bits;
     ctx.memory_fault=-1;
@@ -1010,6 +1067,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     while (offset<size) {
         size_t next,end=statement_end(assembly,size,offset,&next);
         line=physical_line;
+        ctx.statement_offset=offset;
         memcpy(buffer,assembly+offset,end-offset); buffer[end-offset]=0;
         for (size_t i=offset;i<next;++i) if (assembly[i]=='\n') ++physical_line;
         offset=next;
@@ -1020,9 +1078,11 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         if (s[length-1]==':') {
             s[length-1]=0;
             s=trim(s);
+            const char *number_end;uint32_t number;
+            int numbered=!decimal_label(s,&number_end,&number) && !*number_end;
             message="only one function and local labels are supported";
-            if (!program_mode && ((!entered && strcmp(s,entry)) || (entered && strncmp(s,".L",2)))) goto fail;
-            int index=label(&ctx,s);
+            if (!program_mode && ((!entered && strcmp(s,entry)) || (entered && !numbered && strncmp(s,".L",2)))) goto fail;
+            int index=numbered ? numeric_label(&ctx,ctx.statement_offset) : label(&ctx,s);
             message="invalid or duplicate copy label";
             if (index<0 || ctx.labels[index].defined || ctx.labels[index].alias) goto fail;
             if (program_mode && ctx.section) {
@@ -1037,7 +1097,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
             }
             ctx.labels[index].address=ctx.program.image.layer;
             ctx.labels[index].defined=1;
-            if (program_mode && strncmp(s,".L",2)) ctx.compared=0;
+            if (program_mode && !numbered && strncmp(s,".L",2)) ctx.compared=0;
             entered=1; terminated=0; continue;
         }
         if (*s=='.') {
@@ -1271,6 +1331,8 @@ static int object_scan(struct object_names *names, const struct cs_copy_object *
         if (!length) continue;
         if (s[length-1]==':') {
             s[length-1]=0;s=trim(s);
+            const char *number_end;uint32_t number;
+            if (!decimal_label(s,&number_end,&number) && !*number_end) continue;
             int index=object_name(names,s,strlen(s),1);
             if (index<0) return -1;
             names->names[index].defined=1;names->names[index].strong=1;continue;
@@ -1349,6 +1411,13 @@ static int object_winner(struct object_names *units, unsigned count, const char 
     }
     return winner;
 }
+static int object_decimal(char *, size_t *, uint32_t);
+static int object_numeric_name(char *output, size_t *used, unsigned unit, char tag, size_t offset)
+{
+    char prefix[]=".L.__cA0.N";prefix[6]=tag;prefix[7]=(char)('0'+unit);
+    if (offset>UINT32_MAX) return -1;
+    return object_append(output,used,prefix,10) || object_decimal(output,used,(uint32_t)offset) ? -1 : 0;
+}
 static int object_rewrite(const struct cs_copy_object *object, struct object_names *units, unsigned count,
                           unsigned unit, char tag, char *output, size_t *used, char *buffer)
 {
@@ -1356,11 +1425,21 @@ static int object_rewrite(const struct cs_copy_object *object, struct object_nam
     size_t offset=0;
     if (object_append(output,used,".text\n",6)) return -1;
     while (offset<object->size) {
+        size_t statement=offset;
         if (object_line(object,&offset,buffer)) return -1;
         char *line=trim(buffer);
         if (!strncmp(line,".weak",5) && whitespace((unsigned char)line[5])) continue;
         size_t length=strlen(line);
         int definition=length && line[length-1]==':';
+        const char *number_end;uint32_t number;
+        if (definition && !decimal_label(line,&number_end,&number)) {
+            while (whitespace((unsigned char)*number_end)) ++number_end;
+            if (*number_end==':' && !number_end[1]) {
+                if (object_numeric_name(output,used,unit,tag,statement) ||
+                    object_append(output,used,":\n",2)) return -1;
+                continue;
+            }
+        }
         int alias=(!strncmp(line,".set",4) || !strncmp(line,".equ",4)) && whitespace((unsigned char)line[4]);
         if (!strncmp(line,".comm",5) && whitespace((unsigned char)line[5])) {
             const char *name=line+5;
@@ -1378,6 +1457,14 @@ static int object_rewrite(const struct cs_copy_object *object, struct object_nam
             if (quoted && *s=='\\' && s[1]) {
                 if (object_append(output,used,s,2)) return -1;
                 s+=2;continue;
+            }
+            if (!quoted && (s==buffer || !name_char((unsigned char)s[-1])) &&
+                !decimal_label(s,&number_end,&number) && (*number_end=='b' || *number_end=='f') &&
+                !name_char((unsigned char)number_end[1])) {
+                size_t target;
+                if (numeric_target(object->assembly,object->size,statement,number,*number_end=='f',&target) ||
+                    object_numeric_name(output,used,unit,tag,target)) return -1;
+                s=number_end+1;continue;
             }
             if (!quoted && name_start((unsigned char)*s) && (s==buffer || !name_char((unsigned char)s[-1]))) {
                 const char *end=s+1;

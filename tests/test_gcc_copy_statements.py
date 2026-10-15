@@ -66,7 +66,23 @@ __attribute__((destructor)) static void check(void) { if(active) abort(); }
         (b';;# ignored ; nonsense\n.text; value: copy.jmpa .Lnext; .Lnext: copy.ret\n', 3),
         (args.ctype_assembly.read_bytes()+b'\n.text; value: '
          b'copy.ldi.l $r2,__export_symbol__ctype+4; copy.ld.l $r2,($r2); '
-         b'copy.ldo.b $r0,65($r2); copy.ret\n', 65)]
+         b'copy.ldo.b $r0,65($r2); copy.ret\n', 65),
+        (b'value: copy.jmpa 1f; .Ldead: copy.ldi.l $r0,99; 1: copy.inc $r0,2; '
+         b'copy.jmpa 1f; 1: copy.inc $r0,3; copy.ret\n', 8),
+        (b'value: copy.ldi.l $r1,0; copy.ldi.l $r2,0; 1: copy.inc $r1,2; '
+         b'copy.dec $r0,1; copy.cmp $r0,$r2; copy.branch.ne 1b; '
+         b'copy.mov $r0,$r1; copy.ret\n', 6),
+        (b'value: copy.cmp $r0,$r1; 1: copy.branch.ltu 2f; copy.ldi.l $r0,99; '
+         b'copy.ret; 2: copy.ldi.l $r0,7; copy.ret\n', 7),
+        (b'.data; pointer: .long 1f+1; 1: .byte 4,9; .text; value: '
+         b'copy.lda.l $r2,pointer; copy.ld.b $r0,($r2); copy.ret\n', 9),
+        (b'value: copy.jmpa 4294967295f; 4294967295: copy.ldi.l $r0,11; copy.ret\n', 11),
+        (b'.data; 1: .long 15; pointer: .long 1b; .text; value: '
+         b'copy.lda.l $r2,pointer; copy.ld.l $r0,($r2); copy.ret\n', 15),
+        (b'.data; text: .ascii "1f;1b#1:"; .text; value: '
+         b'copy.lda.b $r0,text; copy.ret\n', 49),
+        (b'value: copy.jmpa 1f; .L.__cA0.N0: copy.ldi.l $r0,99; '
+         b'1: copy.ldi.l $r0,13; copy.ret\n', 13)]
     evidence = []
     for objects in (False, True):
         folder = root/('objects' if objects else 'program')
@@ -85,7 +101,7 @@ __attribute__((destructor)) static void check(void) { if(active) abort(); }
             incoming = assembly
             if objects:
                 # Force the scanner and rewriter for multiple units, including scoped local labels.
-                incoming += b'\0.text; .global unused; unused: copy.ret\n'
+                incoming += b'\0.text; .global unused; unused: copy.jmpa 1f; 1: copy.ret\n'
                 incoming = b'.global value; '+incoming
             (case/'input.s').write_bytes(incoming)
             run = subprocess.run([str(native)], input=incoming, capture_output=True, check=True)
@@ -111,15 +127,23 @@ __attribute__((destructor)) static void check(void) { if(active) abort(); }
         if not objects:
             assert rejected.stderr.startswith(b'2: '), rejected.stderr
         for invalid in [b'.data; text: .ascii "unterminated; # :\n',
-                        b'.data; text: .ascii "escaped\\"\n']:
+                        b'.data; text: .ascii "escaped\\"\n',
+                        b'value: copy.jmpa 1f; copy.ret\n',
+                        b'value: copy.jmpa 1b; copy.ret\n',
+                        b'value: 4294967296: copy.ret\n']:
             if objects:
                 invalid += b'\0.text; value: copy.ret\n'
             rejected = subprocess.run([str(native)], input=invalid, capture_output=True)
             assert rejected.returncode == 2 and not rejected.stdout
+        if objects:
+            for invalid in [b'.global value; value: copy.jmpa 1f\0 1: copy.ret\n',
+                            b'1: copy.ret\0.global value; value: copy.jmpa 1b\n']:
+                rejected = subprocess.run([str(native)], input=invalid, capture_output=True)
+                assert rejected.returncode == 2 and not rejected.stdout
     (root/'evidence.json').write_text(json.dumps({'source_sha256': hashes, 'cases': evidence,
         'scope': 'Native linker preparation, direct copies in Space; ctype assembly from diagnostic GCC. '
                  'Not Linux or compiler execution in Space.'}, indent=2)+'\n')
-    print('OK assembly statements: ten direct results, separate inputs, ASan/UBSan and errors')
+    print('OK assembly statements:', len(evidence), 'direct results, separate inputs, ASan/UBSan and errors')
 
 
 if __name__ == '__main__':

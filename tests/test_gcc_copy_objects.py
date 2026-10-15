@@ -58,6 +58,21 @@ def main():
         ([b'.global value\nvalue:\ncopy.jsra helper\ncopy.jsra .__cA0.helper\ncopy.ret\nhelper:\ncopy.inc $r0,1\ncopy.ret\n',
           b'.global .__cA0.helper\n.__cA0.helper:\ncopy.inc $r0,4\ncopy.ret\n'], 8),
     ]
+    common_pair = [b'.comm shared,4,4\n.global value\nvalue:\ncopy.ldi.l $r0,17\ncopy.sta.l shared,$r0\ncopy.jsra helper\ncopy.ret\n',
+                   b'.comm shared,12,32\n.global helper\nhelper:\ncopy.lda.l $r0,shared\ncopy.inc $r0,2\ncopy.ret\n']
+    override_pair = [b'.comm shared,12,32\n.global value\nvalue:\ncopy.lda.l $r0,shared\ncopy.ret\n',
+                     b'.data\n.global shared\nshared:\n.long 37\n']
+    cases += [(common_pair, 19), (common_pair[::-1], 19), (override_pair, 37), (override_pair[::-1], 37),
+              ([b'.comm shared,4,4\n.global value\nvalue:\ncopy.ldi.l $r0,after\ncopy.ldi.l $r1,shared\ncopy.sub $r0,$r1\ncopy.ret\n',
+                b'.comm shared,12,32\n.comm after,4,4\n'], 12),
+              ([b'.data\n.byte 1\n.comm shared,4,4\n.text\n.global value\nvalue:\ncopy.ldi.l $r0,shared\ncopy.ret\n',
+                b'.comm shared,12,32\n'], 288),
+              ([b'.comm counter,4,4\n.global value\nvalue:\ncopy.ldi.l $r0,counter\ncopy.ret\n',
+                b'.data\ncounter:\n.long 9\n'], 260),
+              ([b'.comm shared,4,4\n.comm shared,12,32\n.comm after,4,4\n.global value\nvalue:\ncopy.ldi.l $r0,after\ncopy.ldi.l $r1,shared\ncopy.sub $r0,$r1\ncopy.ret\n',
+                b'.comm shared,8,4\n'], 8)]
+    cases.append(([b'.comm shared,0,1\n.comm shared,12,32\n.comm after,4,4\n.global value\nvalue:\ncopy.ldi.l $r0,after\ncopy.ldi.l $r1,shared\ncopy.sub $r0,$r1\ncopy.ret\n',
+                   b'.comm shared,8,4\n'], 12))
     if args.assembly:
         if args.expected_result is None or not 0 <= args.expected_result <= 0xffffffff:
             parser.error('--assembly requires a uint32 --expected-result')
@@ -86,12 +101,16 @@ def main():
         [b'.global value\nvalue:\ncopy.ret\n', b'.global value\nvalue:\ncopy.ret\n'],
         [b'.global value\n.local missing\nvalue:\ncopy.jsra missing\ncopy.ret\n', b'.global missing\nmissing:\ncopy.ret\n'],
         [b'.weak missing\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
-        [b'.comm shared,4,4\n.global value\nvalue:\ncopy.ret\n', b'.comm shared,4,4\n'],
         [b'.global value\nvalue:\ncopy.ret\n.pushsection .data\n', b'.popsection\n'],
         [b'.global value,\nvalue:\ncopy.ret\n', b'.text\n'],
         [b'.local value\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
         [b'value:\ncopy.ret\n', b'.text\n'],
         [b'.text\n'] * 9,
+        [b'.comm shared,-1,4\n.global value\nvalue:\ncopy.ret\n', b'.data\n.global shared\nshared:\n.long 1\n'],
+        [b'.comm shared,4,3\n.global value\nvalue:\ncopy.ret\n', b'.data\n.global shared\nshared:\n.long 1\n'],
+        [b'.comm shared,4,0\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
+        [b'.comm shared,4,4,8\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
+        [b'.comm shared,4294967296,4\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
     ]
     for index, units in enumerate(invalid):
         incoming = b'\0'.join(units)

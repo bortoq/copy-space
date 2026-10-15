@@ -41,7 +41,12 @@ int main(void)
         objects[count].assembly=assembly+begin;objects[count++].size=i-begin;
         begin=i+1;
     }
-    if (cs_copy_link_objects(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,objects,count,object_text,sizeof(object_text),"value",arguments,2,&error)) return 2;
+    if (cs_copy_link_objects(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,objects,count,object_text,sizeof(object_text),"value",arguments,2,&error)) {
+#ifndef __riscv
+        fprintf(stderr,"%zu: %s\n",error.line,error.message);
+#endif
+        return 2;
+    }
 #elif defined(CS_COPY_PROGRAM)
     if (cs_copy_link_program(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,assembly,size,"value",arguments,2,&error)) return 2;
 #else

@@ -1081,7 +1081,8 @@ int cs_copy_link_program(unsigned char *data, size_t bytes, unsigned address_bit
 }
 
 struct object_names {
-    struct { char name[64]; unsigned defined,external,local,common; } names[32];
+    struct { char name[64]; unsigned defined,external,local,common,strong;
+             uint32_t common_size,common_alignment; } names[32];
     unsigned count;
 };
 static int name_start(unsigned char c)
@@ -1123,7 +1124,7 @@ static int object_scan(struct object_names *names, const struct cs_copy_object *
             s[length-1]=0;s=trim(s);
             int index=object_name(names,s,strlen(s),1);
             if (index<0) return -1;
-            names->names[index].defined=1;continue;
+            names->names[index].defined=1;names->names[index].strong=1;continue;
         }
         char *arguments=s;
         while (*arguments && !whitespace((unsigned char)*arguments)) ++arguments;
@@ -1147,7 +1148,21 @@ static int object_scan(struct object_names *names, const struct cs_copy_object *
             names->names[index].local|=local;
             names->names[index].defined|=definition;
             names->names[index].common|=common;
-            if (definition) { if (!comma) return -1;break; }
+            names->names[index].strong|=definition && !common;
+            if (definition) {
+                if (!comma) return -1;
+                if (common) {
+                    char *alignment=strchr(comma+1,',');uint32_t size,align=4;
+                    if (alignment) { *alignment++=0;alignment=trim(alignment); }
+                    char *amount=trim(comma+1);
+                    if (strchr(amount,'-') || integer(amount,&size) ||
+                        (alignment && (strchr(alignment,'-') || integer(alignment,&align))) ||
+                        !align || (align&(align-1))) return -1;
+                    if (!names->names[index].common_size) names->names[index].common_size=size;
+                    if (align>names->names[index].common_alignment) names->names[index].common_alignment=align;
+                }
+                break;
+            }
             if (!comma) break;
             arguments=trim(comma+1);
         }
@@ -1155,6 +1170,7 @@ static int object_scan(struct object_names *names, const struct cs_copy_object *
     if (depth) return -1;
     for (unsigned i=0;i<names->count;++i) {
         if (names->names[i].local && names->names[i].external) return -1;
+        if (names->names[i].common && names->names[i].strong) return -1;
         if (names->names[i].common && !names->names[i].local) names->names[i].external=1;
         if ((names->names[i].defined || names->names[i].local) && !names->names[i].external && strlen(names->names[i].name)+7>=64) return -1;
     }
@@ -1174,6 +1190,16 @@ static int object_rewrite(const struct cs_copy_object *object, struct object_nam
     while (offset<object->size) {
         char buffer[256];
         if (object_line(object,&offset,buffer)) return -1;
+        char *line=trim(buffer);
+        if (!strncmp(line,".comm",5) && whitespace((unsigned char)line[5])) {
+            const char *name=line+5;
+            while (whitespace((unsigned char)*name)) ++name;
+            const char *end=name;
+            while (name_char((unsigned char)*end)) ++end;
+            int index=object_name(names,name,(size_t)(end-name),0);
+            if (index<0) return -1;
+            if (names->names[index].external) continue;
+        }
         const char *s=buffer;
         int quoted=0;
         while (*s) {
@@ -1197,6 +1223,35 @@ static int object_rewrite(const struct cs_copy_object *object, struct object_nam
             }
         }
         if (quoted || object_append(output,used,"\n",1)) return -1;
+    }
+    return 0;
+}
+static int object_decimal(char *output, size_t *used, uint32_t value)
+{
+    char digits[10];unsigned count=0;
+    do { digits[count++]=(char)('0'+value%10);value/=10; } while (value);
+    while (count) if (object_append(output,used,&digits[--count],1)) return -1;
+    return 0;
+}
+static int object_commons(struct object_names *units, unsigned count, char *output, size_t *used)
+{
+    for (unsigned u=0;u<count;++u) for (unsigned i=0;i<units[u].count;++i) {
+        if (!units[u].names[i].external || !units[u].names[i].common) continue;
+        const char *name=units[u].names[i].name;
+        uint32_t size=0,alignment=0;int strong=0,earlier=0;
+        for (unsigned v=0;v<count;++v) for (unsigned j=0;j<units[v].count;++j) {
+            if (!units[v].names[j].external || strcmp(name,units[v].names[j].name)) continue;
+            strong|=units[v].names[j].strong;
+            if (!units[v].names[j].common) continue;
+            earlier|=v<u || (v==u && j<i);
+            if (units[v].names[j].common_size>size) size=units[v].names[j].common_size;
+            if (units[v].names[j].common_alignment>alignment) alignment=units[v].names[j].common_alignment;
+        }
+        if (strong || earlier) continue;
+        if (object_append(output,used,".comm ",6) || object_append(output,used,name,strlen(name)) ||
+            object_append(output,used,",",1) || object_decimal(output,used,size) ||
+            object_append(output,used,",",1) || object_decimal(output,used,alignment) ||
+            object_append(output,used,"\n",1)) return -1;
     }
     return 0;
 }
@@ -1226,11 +1281,13 @@ int cs_copy_link_objects(unsigned char *data, size_t bytes, unsigned address_bit
     if (!tags[tag]) goto fail;
     for (unsigned i=0;i<count;++i)
         if (object_rewrite(&objects[i],&names[i],i,tags[tag],NULL,&needed)) goto fail;
+    if (object_commons(names,count,NULL,&needed)) goto fail;
     message="separate link scratch buffer too small";
     if (!assembly || needed>=capacity) goto fail;
     size_t used=0;
     for (unsigned i=0;i<count;++i)
         if (object_rewrite(&objects[i],&names[i],i,tags[tag],assembly,&used)) goto fail;
+    if (object_commons(names,count,assembly,&used)) goto fail;
     assembly[used]=0;
     return cs_copy_link_program(data,bytes,address_bits,assembly,used,entry,arguments,argc,error);
 fail:

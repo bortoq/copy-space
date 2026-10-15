@@ -50,7 +50,18 @@ def main():
         (b'value:\ncopy.ldi.l $r2,helper\ncopy.ldi.l $r3,helper\ncopy.cmp $r2,$r3\ncopy.branch.ne .Lbad\ncopy.jsr $r2\ncopy.ret\n.Lbad:\ncopy.ldi.l $r0,99\ncopy.ret\nhelper:\ncopy.inc $r0,1\ncopy.ret\n',4),
         (b'value:\ncopy.ldi.l $r2,.Lnext\ncopy.jmp $r2\n.Lskip:\ncopy.ldi.l $r0,99\ncopy.ret\n.Lnext:\ncopy.add $r0,$r1\ncopy.ret\n',7),
         (b'value:\ncopy.ldi.l $r2,helper\ncopy.jsr $r2\ncopy.ret\nhelper:\ncopy.ldi.l $r3,inner\ncopy.jsr $r3\ncopy.inc $r0,1\ncopy.ret\ninner:\ncopy.add $r0,$r1\ncopy.ret\n',8),
-        (b'value:\ncopy.ldi.l $r2,0\ncopy.cmp $r0,$r2\ncopy.branch.eq .Lbase\ncopy.dec $r0,1\ncopy.ldi.l $r3,value\ncopy.jsr $r3\ncopy.inc $r0,2\n.Lbase:\ncopy.ret\n',6)]
+        (b'value:\ncopy.ldi.l $r2,0\ncopy.cmp $r0,$r2\ncopy.branch.eq .Lbase\ncopy.dec $r0,1\ncopy.ldi.l $r3,value\ncopy.jsr $r3\ncopy.inc $r0,2\n.Lbase:\ncopy.ret\n',6),
+        (b'.data\n.p2align 2\nglobal:\n.long 5\n.text\nvalue:\ncopy.lda.l $r0,global\ncopy.inc $r0,2\ncopy.sta.l global,$r0\ncopy.lda.l $r0,global\ncopy.ret\n',7),
+        (b'.bss\n.p2align 2\nzero:\n.zero 4\n.text\nvalue:\ncopy.lda.l $r0,zero\ncopy.ret\n',0),
+        (b'.data\npointer:\n.long array+4\narray:\n.long 2,3,4\n.text\nvalue:\ncopy.lda.l $r2,pointer\ncopy.ld.l $r0,($r2)\ncopy.ret\n',3),
+        (b'.data\ncallback:\n.long helper\n.text\nvalue:\ncopy.lda.l $r2,callback\ncopy.jsr $r2\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',7),
+        (b'.section .rodata.str1.1,"aMS",@progbits,1\nmessage:\n.string "a#b\\000c"\n.text\nvalue:\ncopy.lda.b $r0,message+1\ncopy.ret\n',35),
+        (b'.rodata\nbytes:\n.ascii "\\101\\x42\\n\\\\\\\""\n.text\nvalue:\ncopy.lda.l $r0,bytes\ncopy.ret\n',0x5c0a4241),
+        (b'.data\n.byte 1\n.p2align 4\naligned:\n.long 9\n.text\nvalue:\ncopy.ldi.l $r0,aligned\ncopy.ret\n',272),
+        (b'.local shared\n.comm shared,12,16\n.text\nvalue:\ncopy.lda.l $r0,shared+8\ncopy.ret\n',0),
+        (b'.data\nwide:\n.quad 0x123456789abcdef0\n.text\nvalue:\ncopy.lda.l $r0,wide+4\ncopy.ret\n',0x12345678),
+        (b'.data\nwide:\n.quad -9223372036854775808\n.text\nvalue:\ncopy.lda.l $r0,wide+4\ncopy.ret\n',0x80000000),
+        (b'.data\nfirst:\n.byte 1,-1\n.short 0x2345\n.text\nvalue:\ncopy.lda.l $r0,first\ncopy.ret\n',0x2345ff01)]
     if args.assembly:
         if not 0<=args.expected_result<=0xffffffff:raise ValueError("expected result must fit uint32")
         cases.append((args.assembly.read_bytes(),args.expected_result))
@@ -80,11 +91,18 @@ def main():
              b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ret\nhelper:\ncopy.ret\n',
              b'value:\ncopy.ldi.l $r2,missing\ncopy.ret\n',
              b'value:\ncopy.jsr $r99\ncopy.ret\n',
-             b'value:\ncopy.jmp symbol\n.Lend:\ncopy.ret\n']
+             b'value:\ncopy.jmp symbol\n.Lend:\ncopy.ret\n',
+             b'.data\nx:\n.zero 4096\n.text\nvalue:\ncopy.ret\n',
+             b'.data\nx:\n.long missing+4\n.text\nvalue:\ncopy.ret\n',
+             b'.data\nx:\n.long 1\n.text\nvalue:\ncopy.jsra x\ncopy.ret\n',
+             b'.bss\nx:\n.long 1\n.text\nvalue:\ncopy.ret\n',
+             b'.data\nx:\n.p2align 33\n.text\nvalue:\ncopy.ret\n',
+             b'.data\nx:\n.string "unterminated\n.text\nvalue:\ncopy.ret\n',
+             b'.data\nx:\n.quad 18446744073709551616\n.text\nvalue:\ncopy.ret\n']
     for assembly in invalid:
         result=subprocess.run([str(root/"native")],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout
-    evidence={"scope":"call frames and function addresses; data sections still required","source_sha256":hashes,
+    evidence={"scope":"call frames, function addresses and initial data sections; separate translation units still required","source_sha256":hashes,
         "result_space_bytes":args.result_space_bytes,"direct_cases":results,"rejected_cases":len(invalid)}
     evidence.update({"guest_case":args.guest_case,"guest_assembly_sha256":hashlib.sha256(incoming).hexdigest()})
     if not args.native_only:

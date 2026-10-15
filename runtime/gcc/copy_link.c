@@ -24,7 +24,7 @@ struct context {
     struct cs_copy_program program;
     uint32_t constants[12];
     unsigned constant_count;
-    struct { char name[64]; uint32_t address; int defined; } labels[32];
+    struct { char name[64]; uint32_t address; int defined, data; } labels[32];
     struct { uint32_t layer, table, fallthrough; int label, inverted; size_t line; } jumps[64];
     unsigned label_count, jump_count;
     int compared;
@@ -32,9 +32,13 @@ struct context {
     int memory_fault;
     int return_handler;
     unsigned call_count;
-    struct { int label; } symbols[12];
+    struct { int label; uint32_t addend; } symbols[12];
     unsigned symbol_count;
     int program_mode;
+    int section;
+    uint32_t data_cursor;
+    struct { uint32_t destination,addend; int label; } relocations[64];
+    unsigned relocation_count;
 };
 
 static int label(struct context *ctx, const char *name)
@@ -125,15 +129,206 @@ static int constant(struct context *ctx, uint32_t value, uint32_t *address)
     *address=CONSTANT_BASE+32*i;
     return 0;
 }
+static int expression(struct context *ctx, const char *text, int *index, uint32_t *addend)
+{
+    char name[64];
+    size_t n=0;
+    while (text[n] && text[n]!='+' && text[n]!='-') ++n;
+    if (!n || n>=sizeof(name)) return -1;
+    memcpy(name,text,n);name[n]=0;
+    *index=label(ctx,trim(name));*addend=0;
+    if (*index<0) return -1;
+    if (text[n]) {
+        uint32_t value;
+        const char *number=text+n+1;
+        while (whitespace((unsigned char)*number)) ++number;
+        if (integer(number,&value)) return -1;
+        *addend=text[n]=='-' ? 0-value : value;
+    }
+    return 0;
+}
+static int hex_digit(unsigned char c)
+{
+    if (c>='0' && c<='9') return c-'0';
+    if (c>='a' && c<='f') return c-'a'+10;
+    if (c>='A' && c<='F') return c-'A'+10;
+    return -1;
+}
+static int integer64(const char *s, uint64_t *value)
+{
+    unsigned negative=0,signs=0,base=10;
+    while (*s=='+' || *s=='-') {
+        if (++signs>2) return -1;
+        negative^=(*s++=='-');
+    }
+    if (s[0]=='0' && (s[1]=='x' || s[1]=='X')) { base=16;s+=2; }
+    else if (s[0]=='0' && s[1]) base=8;
+    if (!*s) return -1;
+    uint64_t n=0;
+    for (;*s;++s) {
+        int d=hex_digit((unsigned char)*s);
+        if (d<0 || (unsigned)d>=base || n>(UINT64_MAX-(unsigned)d)/base) return -1;
+        n=n*base+(unsigned)d;
+    }
+    if (negative && n>(UINT64_C(1)<<63)) return -1;
+    *value=negative ? 0-n : n;
+    return 0;
+}
+static int data_reserve(struct context *ctx, uint32_t count, uint32_t *at)
+{
+    if (ctx->data_cursor>4096 || count>4096-ctx->data_cursor) return -1;
+    *at=ctx->data_begin+ctx->data_cursor*8;
+    ctx->data_cursor+=count;
+    return 0;
+}
+static int data_align(struct context *ctx, uint32_t alignment)
+{
+    if (!alignment || alignment>4096 || (alignment&(alignment-1))) return -1;
+    uint32_t padding=(0-ctx->data_cursor)&(alignment-1),at;
+    return data_reserve(ctx,padding,&at);
+}
+static int data_string(struct context *ctx, char *s, int terminated)
+{
+    for (;;) {
+        s=trim(s);
+        if (*s++!='"') return -1;
+        while (*s && *s!='"') {
+            unsigned value=(unsigned char)*s++;
+            if (value=='\\') {
+                value=(unsigned char)*s++;
+                if (!value) return -1;
+                if (value>='0' && value<='7') {
+                    value-='0';
+                    for (unsigned i=1;i<3 && *s>='0' && *s<='7';++i) value=value*8+(unsigned)(*s++-'0');
+                } else if (value=='x') {
+                    int digit=hex_digit((unsigned char)*s);
+                    if (digit<0) return -1;
+                    value=0;
+                    while ((digit=hex_digit((unsigned char)*s))>=0) {
+                        if (value>(255u-(unsigned)digit)/16) return -1;
+                        value=value*16+(unsigned)digit;++s;
+                    }
+                } else {
+                    switch (value) {
+                    case 'a':value=7;break;case 'b':value=8;break;
+                    case 'f':value=12;break;case 'n':value=10;break;
+                    case 'r':value=13;break;case 't':value=9;break;
+                    case 'v':value=11;break;case '\\':case '"':break;
+                    default:return -1;
+                    }
+                }
+            }
+            uint32_t at;
+            if (value>255 || data_reserve(ctx,1,&at) ||
+                cs_copy_constant(&ctx->program.image,at,8,value)) return -1;
+        }
+        if (*s++!='"') return -1;
+        if (terminated) { uint32_t at;if (data_reserve(ctx,1,&at)) return -1; }
+        s=trim(s);
+        if (!*s) return 0;
+        if (*s++!=',') return -1;
+    }
+}
+/* 0: metadata handled by caller, 1: consumed, -1: invalid directive. */
+static int data_directive(struct context *ctx, char *s)
+{
+    char *arguments=s;
+    while (*arguments && !whitespace((unsigned char)*arguments)) ++arguments;
+    char saved=*arguments;
+    if (saved) *arguments++=0;
+    arguments=trim(arguments);
+    int result=1;
+    if (!strcmp(s,".text")) ctx->section=0;
+    else if (!strcmp(s,".data") || !strcmp(s,".rodata") || !strcmp(s,".bss")) ctx->section=!strcmp(s,".bss") ? 2 : 1;
+    else if (!strcmp(s,".section")) {
+        char name[64];size_t n=0;const char *p=arguments;
+        if (*p=='"') ++p;
+        while (*p && *p!=',' && *p!='"' && !whitespace((unsigned char)*p)) {
+            if (n+1==sizeof(name)) return -1;
+            name[n++]=*p++;
+        }
+        name[n]=0;
+        if (!strcmp(name,".text") || !strncmp(name,".text.",6)) ctx->section=0;
+        else if (!strcmp(name,".data") || !strncmp(name,".data.",6) ||
+                 !strcmp(name,".rodata") || !strncmp(name,".rodata.",8) ||
+                 !strcmp(name,".sdata") || !strncmp(name,".sdata.",7)) ctx->section=1;
+        else if (!strcmp(name,".bss") || !strncmp(name,".bss.",5) ||
+                 !strcmp(name,".sbss") || !strncmp(name,".sbss.",7)) ctx->section=2;
+        else if (!strcmp(name,".note.GNU-stack")) ctx->section=3;
+        else return -1;
+    } else if (!strcmp(s,".comm")) {
+        char *comma=strchr(arguments,',');
+        if (!comma) return -1;
+        *comma++=0;
+        char *align=strchr(comma,',');uint32_t count,alignment=4,at;
+        if (align) { *align++=0;if (integer(trim(align),&alignment)) return -1; }
+        int index=label(ctx,trim(arguments));
+        if (index<0 || ctx->labels[index].defined || integer(trim(comma),&count) ||
+            data_align(ctx,alignment)) return -1;
+        ctx->labels[index].address=ctx->data_cursor;ctx->labels[index].data=1;ctx->labels[index].defined=1;
+        if (data_reserve(ctx,count,&at)) return -1;
+    } else if (!strcmp(s,".local") || !strcmp(s,".hidden") || !strcmp(s,".protected")) {
+        if (!*arguments) return -1;
+    } else if (ctx->section==1 || ctx->section==2) {
+        uint32_t count,at;
+        if (!strcmp(s,".align") || !strcmp(s,".p2align") || !strcmp(s,".balign")) {
+            if (integer(arguments,&count)) return -1;
+            if (strcmp(s,".balign")) { if (count>12) return -1;count=1u<<count; }
+            if (data_align(ctx,count)) return -1;
+        } else if (!strcmp(s,".zero") || !strcmp(s,".space") || !strcmp(s,".skip")) {
+            if (integer(arguments,&count) || data_reserve(ctx,count,&at)) return -1;
+        } else if (!strcmp(s,".ascii") || !strcmp(s,".string") || !strcmp(s,".asciz")) {
+            if (ctx->section==2 || data_string(ctx,arguments,strcmp(s,".ascii")!=0)) return -1;
+        } else {
+            unsigned bytes=!strcmp(s,".byte") ? 1 : (!strcmp(s,".short") || !strcmp(s,".2byte")) ? 2 :
+                (!strcmp(s,".long") || !strcmp(s,".word") || !strcmp(s,".4byte")) ? 4 :
+                (!strcmp(s,".quad") || !strcmp(s,".8byte")) ? 8 : 0;
+            if (!bytes) result=0;
+            else for (;;) {
+                char *comma=strchr(arguments,',');if (comma) *comma=0;
+                char *value=trim(arguments);uint64_t number;
+                if (data_reserve(ctx,bytes,&at)) return -1;
+                if (!integer64(value,&number)) {
+                    if (ctx->section==2 && number) return -1;
+                    if (cs_copy_constant(&ctx->program.image,at,bytes>4 ? 32 : bytes*8,(uint32_t)number) ||
+                        (bytes==8 && cs_copy_constant(&ctx->program.image,at+32,32,(uint32_t)(number>>32)))) return -1;
+                } else {
+                    int index;uint32_t addend;
+                    if (ctx->section==2 || bytes<4 || ctx->relocation_count==64 || expression(ctx,value,&index,&addend)) return -1;
+                    unsigned i=ctx->relocation_count++;
+                    ctx->relocations[i].destination=at;ctx->relocations[i].addend=addend;ctx->relocations[i].label=index;
+                }
+                if (!comma) break;
+                arguments=comma+1;
+            }
+        }
+    } else result=0;
+    if (!result && saved) {
+        /* Restore token separation before the metadata fallback. */
+        s[strlen(s)]=saved;
+    }
+    return result;
+}
+static void strip_comment(char *s)
+{
+    int quoted=0,escaped=0;
+    for (;*s;++s) {
+        if (escaped) escaped=0;
+        else if (quoted && *s=='\\') escaped=1;
+        else if (*s=='"') quoted=!quoted;
+        else if (!quoted && *s=='#') { *s=0;break; }
+    }
+}
 static int symbol(struct context *ctx, const char *name, uint32_t *address)
 {
-    int index=label(ctx,name);
-    if (index<0) return -1;
+    int index;uint32_t addend;
+    if (expression(ctx,name,&index,&addend)) return -1;
     unsigned i;
-    for (i=0;i<ctx->symbol_count;++i) if (ctx->symbols[i].label==index) break;
+    for (i=0;i<ctx->symbol_count;++i)
+        if (ctx->symbols[i].label==index && ctx->symbols[i].addend==addend) break;
     if (i==ctx->symbol_count) {
         if (i==12) return -1;
-        ctx->symbols[ctx->symbol_count++].label=index;
+        ctx->symbols[i].label=index;ctx->symbols[i].addend=addend;++ctx->symbol_count;
     }
     *address=SYMBOL_TABLE+32*i;
     return 0;
@@ -403,7 +598,9 @@ static const char *memory(struct context *ctx, const char *operation, char *left
         if ((*displacement && integer(displacement,&offset)) || reg(trim(open+1),&base)) return "invalid memory address";
     } else {
         uint32_t absolute;
-        if (integer(address,&absolute) || constant(ctx,absolute,&base)) return "invalid absolute memory address";
+        if (integer(address,&absolute)) {
+            if (!ctx->program_mode || symbol(ctx,address,&base)) return "invalid absolute memory address";
+        } else if (constant(ctx,absolute,&base)) return "constant capacity exceeded";
     }
     return memory_access(ctx,store,width,value,base,offset);
 }
@@ -560,6 +757,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     memset(&ctx,0,sizeof(ctx));
     ctx.memory_fault=-1;
     ctx.program_mode=program_mode;
+    ctx.data_cursor=256;
     if (cs_copy_program_init(&ctx.program,data,bytes,address_bits,65536,(uint32_t)(bytes*8))) goto fail;
     if (cs_copy_constant(&ctx.program.image,EQ_TABLE,8,144) ||
         cs_copy_constant(&ctx.program.image,LT_TABLE,8,212) ||
@@ -593,8 +791,8 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         if (end-offset>=sizeof(buffer)) goto fail;
         memcpy(buffer,assembly+offset,end-offset); buffer[end-offset]=0;
         offset=end+(end<size);
-        char *s=trim(buffer), *comment=strchr(s,'#');
-        if (comment) { *comment=0; s=trim(s); }
+        char *s=trim(buffer);
+        strip_comment(s);s=trim(s);
         if (!*s) continue;
         size_t length=strlen(s);
         if (s[length-1]==':') {
@@ -605,6 +803,12 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
             int index=label(&ctx,s);
             message="invalid or duplicate copy label";
             if (index<0 || ctx.labels[index].defined) goto fail;
+            if (program_mode && ctx.section) {
+                message="label outside text or data section";
+                if (ctx.section!=1 && ctx.section!=2) goto fail;
+                ctx.labels[index].address=ctx.data_cursor;ctx.labels[index].data=1;
+                ctx.labels[index].defined=1;continue;
+            }
             if (ctx.program.image.slot!=3 && cs_copy_program_next(&ctx.program)) {
                 message="copy image capacity exceeded"; goto fail;
             }
@@ -615,11 +819,16 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         }
         if (*s=='.') {
             message="unsupported section or directive";
+            if (program_mode) {
+                int handled=data_directive(&ctx,s);
+                if (handled<0) goto fail;
+                if (handled) continue;
+            }
             if (!metadata(s)) goto fail;
             continue;
         }
         message="operation outside leaf body";
-        if (!entered || terminated) goto fail;
+        if (!entered || terminated || (program_mode && ctx.section)) goto fail;
         if (!strcmp(s,"copy.ret")) {
             message="copy image capacity exceeded";
             if (jump(&ctx,program_mode ? ctx.return_handler : -2,line)) goto fail;
@@ -661,7 +870,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     }
     message="missing leaf entry or return";
     if (!entered || !returned) goto fail;
-    if (program_mode && !ctx.labels[entry_label].defined) goto fail;
+    if (program_mode && (!ctx.labels[entry_label].defined || ctx.labels[entry_label].data)) goto fail;
     message="copy image capacity exceeded";
     if (program_mode && (bind_internal(&ctx,ctx.return_handler) || return_frame(&ctx))) goto fail;
     if (ctx.memory_fault>=0) {
@@ -679,12 +888,19 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         int index=ctx.symbols[i].label;
         message="undefined copy symbol";
         if (!ctx.labels[index].defined ||
-            cs_copy_constant(&ctx.program.image,SYMBOL_TABLE+32*i,32,ctx.labels[index].address)) goto fail;
+            cs_copy_constant(&ctx.program.image,SYMBOL_TABLE+32*i,32,ctx.labels[index].address+ctx.symbols[i].addend)) goto fail;
+    }
+    for (unsigned i=0;i<ctx.relocation_count;++i) {
+        int index=ctx.relocations[i].label;
+        message="undefined data initializer symbol";
+        if (!ctx.labels[index].defined ||
+            cs_copy_constant(&ctx.program.image,ctx.relocations[i].destination,32,
+                ctx.labels[index].address+ctx.relocations[i].addend)) goto fail;
     }
     for (unsigned i=0;i<ctx.jump_count;++i) {
         int index=ctx.jumps[i].label;
-        if (index>=0 && !ctx.labels[index].defined) {
-            line=ctx.jumps[i].line; message="undefined copy label"; goto fail;
+        if (index>=0 && (!ctx.labels[index].defined || ctx.labels[index].data)) {
+            line=ctx.jumps[i].line; message="undefined or non-code jump label"; goto fail;
         }
         uint32_t target=index==-2 ? report : ctx.labels[index].address;
         if (ctx.jumps[i].table) {

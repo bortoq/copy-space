@@ -12,6 +12,39 @@ sys.path.insert(0,str(ROOT/"scripts/rv32i"))
 from build import build
 from space_segments import execute_segments
 
+def finish_guest(root,evidence,*,resume=False,max_parts=512,timeout=900):
+    assert evidence.get("guest_generation_pending"), "no pending guest generation"
+    for name,digest in evidence["source_sha256"].items():
+        assert hashlib.sha256((root/"sources"/name).read_bytes()).hexdigest()==digest, "changed frozen source"
+    selected=root/str(evidence["guest_case"])
+    incoming=(selected/"input.s").read_bytes()
+    assert hashlib.sha256(incoming).hexdigest()==evidence["guest_assembly_sha256"], "changed assembly"
+    expected=(selected/"image.bin").read_bytes()
+    case=evidence["direct_cases"][evidence["guest_case"]]
+    assert hashlib.sha256(expected).hexdigest()==case["image_sha256"], "changed expected image"
+    assert (root/"in.bin").read_bytes()==(root/"linker.stream").read_bytes()+incoming, "changed guest input"
+    manifest=json.loads((root/"linker.stream.json").read_text())
+    profiles={2097152:"space",67108864:"space-64m",268435456:"space-256m"}
+    guest_emulator=ROOT/"build/bin"/profiles[manifest["space_bytes"]]
+    execution=execute_segments(guest_emulator,root/"linker",root/"in.bin",
+        space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,
+        ticks=100000,timeout=timeout,compression="zstd",resume=resume,max_parts=max_parts)
+    assert (root/"linker/program.in").read_bytes()==expected
+    raw=(root/"linker/space.bin").read_bytes()
+    def word(at):return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
+    assert word(132128)==10 and word(132160)==0
+    folder=root/"guest-result";folder.mkdir();(folder/"image.bin").write_bytes(expected)
+    emulator=ROOT/"build/bin"/("space" if evidence["result_space_bytes"]==2097152 else "space-256m")
+    command=[str(emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
+    (folder/"command.json").write_text(json.dumps(command)+"\n")
+    checked=subprocess.run(command,capture_output=True,check=True,timeout=30)
+    value=case["result"]
+    expected_output=b"" if value is None else struct.pack("<I",value)
+    (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==expected_output
+    evidence.pop("guest_generation_pending")
+    evidence.update({"guest_generation":execution,"guest_exit":word(132160),"guest_direct_result":value})
+    (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts",type=Path,required=True)
@@ -23,7 +56,18 @@ def main():
     parser.add_argument("--assembly",type=Path,help="also execute existing GCC output and use it for guest generation")
     parser.add_argument("--expected-result",type=lambda s:int(s,0),default=8)
     parser.add_argument("--direct-timeout",type=float,default=300,help="include large snapshot I/O in direct execution limit")
-    args=parser.parse_args();root=args.artifacts.resolve();root.mkdir(parents=True,exist_ok=False)
+    parser.add_argument("--resume",action="store_true",help="continue pending guest generation from frozen artifacts")
+    parser.add_argument("--max-parts",type=int,default=512)
+    parser.add_argument("--guest-timeout",type=float,default=900)
+    args=parser.parse_args();root=args.artifacts.resolve()
+    if args.max_parts<1:parser.error("--max-parts must be positive")
+    if args.resume:
+        if args.native_only or args.assembly:parser.error("resume uses the frozen guest case")
+        evidence=json.loads((root/"evidence.json").read_text())
+        finish_guest(root,evidence,resume=True,max_parts=args.max_parts,timeout=args.guest_timeout)
+        print("OK resumed guest generation")
+        return
+    root.mkdir(parents=True,exist_ok=False)
     paths=[ROOT/"tests/fixtures/gcc/copy_link.c"]+[ROOT/"runtime/gcc"/name for name in ("copy_link.c","copy_link.h","copy_emit.c","copy_emit.h")]
     hashes={}
     for source in paths:
@@ -107,7 +151,7 @@ def main():
             with gzip.open(folder/"space.bin.gz","wb",compresslevel=1) as stream:stream.write(raw)
             (folder/"space.bin").unlink()
         results.append({"result":value,"final_fp":word(32768),"final_sp":word(32800),"image_sha256":hashlib.sha256(result.stdout).hexdigest()})
-        if index==args.guest_case:incoming,expected,expected_value=assembly,result.stdout,value
+        if index==args.guest_case:incoming=assembly
     invalid=[b'value:\ncopy.jsra missing\ncopy.ret\n',b'other:\ncopy.ret\n',
              b'value:\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ret\nhelper:\ncopy.ret\n',
              b'value:\ncopy.ldi.l $r2,missing\ncopy.ret\n',
@@ -137,24 +181,14 @@ def main():
     if not args.native_only:
         if not args.newlib:raise ValueError("--newlib required for guest generation")
         prefix=args.newlib.resolve()/"riscv64-unknown-elf"
-        manifest=build(sources,root/"linker.stream",compiler=args.compiler,stream=True,optimization="-O2",
+        build(sources,root/"linker.stream",compiler=args.compiler,stream=True,optimization="-O2",
             memory_bytes=1024*1024,space_bytes=64*1024*1024,
             extra_cflags=flags+["-isystem",str(prefix/"include"),"-DCS_RUNTIME_EXTERNAL_MEMORY"],
             extra_libraries=["-Wl,--start-group",str(prefix/"lib/libc.a"),"-lgcc","-Wl,--end-group"])
         (root/"in.bin").write_bytes((root/"linker.stream").read_bytes()+incoming)
-        execution=execute_segments(ROOT/"build/bin/space-64m",root/"linker",root/"in.bin",
-            space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,ticks=100000,timeout=900,compression="zstd")
-        assert (root/"linker/program.in").read_bytes()==expected
-        raw=(root/"linker/space.bin").read_bytes()
-        def word(at):return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
-        assert word(132128)==10 and word(132160)==0
-        folder=root/"guest-result";folder.mkdir();(folder/"image.bin").write_bytes(expected)
-        command=[str(emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
-        (folder/"command.json").write_text(json.dumps(command)+"\n")
-        checked=subprocess.run(command,capture_output=True,check=True,timeout=30)
-        expected_output=b"" if expected_value is None else struct.pack("<I",expected_value)
-        (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==expected_output
-        evidence.update({"guest_generation":execution,"guest_exit":word(132160),"guest_direct_result":expected_value})
+        evidence["guest_generation_pending"]=True
+        (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
+        finish_guest(root,evidence,max_parts=args.max_parts,timeout=args.guest_timeout)
     (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     print("OK direct call frames:",len(results),"programs")
 

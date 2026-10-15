@@ -1079,3 +1079,161 @@ int cs_copy_link_program(unsigned char *data, size_t bytes, unsigned address_bit
 {
     return link_image(data,bytes,address_bits,assembly,size,entry,arguments,argc,error,1);
 }
+
+struct object_names {
+    struct { char name[64]; unsigned defined,external,local,common; } names[32];
+    unsigned count;
+};
+static int name_start(unsigned char c)
+{
+    return c=='_' || c=='.' || c=='$' || (c>='a' && c<='z') || (c>='A' && c<='Z');
+}
+static int name_char(unsigned char c) { return name_start(c) || (c>='0' && c<='9'); }
+static int object_name(struct object_names *names, const char *s, size_t n, int create)
+{
+    if (!n || n>=sizeof(names->names[0].name) || !name_start((unsigned char)*s)) return -1;
+    for (size_t i=1;i<n;++i) if (!name_char((unsigned char)s[i])) return -1;
+    for (unsigned i=0;i<names->count;++i)
+        if (strlen(names->names[i].name)==n && !memcmp(names->names[i].name,s,n)) return (int)i;
+    if (!create || names->count==32) return -1;
+    unsigned i=names->count++;
+    memcpy(names->names[i].name,s,n);names->names[i].name[n]=0;
+    return (int)i;
+}
+static int object_line(const struct cs_copy_object *object, size_t *offset, char buffer[256])
+{
+    size_t end=*offset;
+    while (end<object->size && object->assembly[end]!='\n') ++end;
+    if (end-*offset>=256) return -1;
+    memcpy(buffer,object->assembly+*offset,end-*offset);buffer[end-*offset]=0;
+    *offset=end+(end<object->size);
+    strip_comment(buffer);
+    return 0;
+}
+static int object_scan(struct object_names *names, const struct cs_copy_object *object)
+{
+    size_t offset=0;
+    unsigned depth=0;
+    while (offset<object->size) {
+        char buffer[256];
+        if (object_line(object,&offset,buffer)) return -1;
+        char *s=trim(buffer);size_t length=strlen(s);
+        if (!length) continue;
+        if (s[length-1]==':') {
+            s[length-1]=0;s=trim(s);
+            int index=object_name(names,s,strlen(s),1);
+            if (index<0) return -1;
+            names->names[index].defined=1;continue;
+        }
+        char *arguments=s;
+        while (*arguments && !whitespace((unsigned char)*arguments)) ++arguments;
+        if (*arguments) *arguments++=0;
+        arguments=trim(arguments);
+        if (!strcmp(s,".weak") || !strcmp(s,".weakref")) return -1;
+        if (!strcmp(s,".pushsection")) { if (++depth>16) return -1; }
+        if (!strcmp(s,".popsection")) { if (!depth) return -1;--depth; }
+        int external=!strcmp(s,".global") || !strcmp(s,".globl");
+        int local=!strcmp(s,".local");
+        int common=!strcmp(s,".comm");
+        int definition=common || !strcmp(s,".set") || !strcmp(s,".equ");
+        if (!external && !local && !definition) continue;
+        for (;;) {
+            char *comma=strchr(arguments,',');
+            if (comma) *comma=0;
+            char *name=trim(arguments);
+            int index=object_name(names,name,strlen(name),1);
+            if (index<0) return -1;
+            names->names[index].external|=external;
+            names->names[index].local|=local;
+            names->names[index].defined|=definition;
+            names->names[index].common|=common;
+            if (definition) { if (!comma) return -1;break; }
+            if (!comma) break;
+            arguments=trim(comma+1);
+        }
+    }
+    if (depth) return -1;
+    for (unsigned i=0;i<names->count;++i) {
+        if (names->names[i].local && names->names[i].external) return -1;
+        if (names->names[i].common && !names->names[i].local) names->names[i].external=1;
+        if ((names->names[i].defined || names->names[i].local) && !names->names[i].external && strlen(names->names[i].name)+7>=64) return -1;
+    }
+    return 0;
+}
+static int object_append(char *output, size_t *used, const char *s, size_t n)
+{
+    if (n>SIZE_MAX-*used) return -1;
+    if (output) memcpy(output+*used,s,n);
+    *used+=n;return 0;
+}
+static int object_rewrite(const struct cs_copy_object *object, struct object_names *names,
+                          unsigned unit, char tag, char *output, size_t *used)
+{
+    size_t offset=0;
+    if (object_append(output,used,".text\n",6)) return -1;
+    while (offset<object->size) {
+        char buffer[256];
+        if (object_line(object,&offset,buffer)) return -1;
+        const char *s=buffer;
+        int quoted=0;
+        while (*s) {
+            if (*s=='"') quoted=!quoted;
+            if (quoted && *s=='\\' && s[1]) {
+                if (object_append(output,used,s,2)) return -1;
+                s+=2;continue;
+            }
+            if (!quoted && name_start((unsigned char)*s) && (s==buffer || !name_char((unsigned char)s[-1]))) {
+                const char *end=s+1;
+                while (name_char((unsigned char)*end)) ++end;
+                int index=object_name(names,s,(size_t)(end-s),0);
+                if (index>=0 && (names->names[index].defined || names->names[index].local) && !names->names[index].external) {
+                    char prefix[]=".__cA0.";prefix[4]=tag;prefix[5]=(char)('0'+unit);
+                    if (object_append(output,used,prefix,7)) return -1;
+                }
+                if (object_append(output,used,s,(size_t)(end-s))) return -1;
+                s=end;
+            } else {
+                if (object_append(output,used,s++,1)) return -1;
+            }
+        }
+        if (quoted || object_append(output,used,"\n",1)) return -1;
+    }
+    return 0;
+}
+int cs_copy_link_objects(unsigned char *data, size_t bytes, unsigned address_bits,
+                        const struct cs_copy_object *objects, unsigned count,
+                        char *assembly, size_t capacity,
+                        const char *entry, const uint32_t *arguments, unsigned argc,
+                        struct cs_copy_link_error *error)
+{
+    const char *message="invalid separate link input";
+    if (!objects || !count || count>8) goto fail;
+    if (count==1) return cs_copy_link_program(data,bytes,address_bits,objects[0].assembly,
+                                            objects[0].size,entry,arguments,argc,error);
+    struct object_names names[8];memset(names,0,sizeof(names));
+    size_t needed=0;
+    unsigned char occupied[256]={0};
+    message="unsupported binding or invalid object assembly";
+    for (unsigned i=0;i<count;++i) {
+        if (!objects[i].assembly || memchr(objects[i].assembly,0,objects[i].size) ||
+            object_scan(&names[i],&objects[i])) goto fail;
+        for (size_t j=0;j<objects[i].size && objects[i].size-j>=5;++j)
+            if (!memcmp(objects[i].assembly+j,".__c",4)) occupied[(unsigned char)objects[i].assembly[j+4]]=1;
+    }
+    const char *tags="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    unsigned tag=0;
+    while (tags[tag] && occupied[(unsigned char)tags[tag]]) ++tag;
+    if (!tags[tag]) goto fail;
+    for (unsigned i=0;i<count;++i)
+        if (object_rewrite(&objects[i],&names[i],i,tags[tag],NULL,&needed)) goto fail;
+    message="separate link scratch buffer too small";
+    if (!assembly || needed>=capacity) goto fail;
+    size_t used=0;
+    for (unsigned i=0;i<count;++i)
+        if (object_rewrite(&objects[i],&names[i],i,tags[tag],assembly,&used)) goto fail;
+    assembly[used]=0;
+    return cs_copy_link_program(data,bytes,address_bits,assembly,used,entry,arguments,argc,error);
+fail:
+    if (error) *error=(struct cs_copy_link_error){0,message};
+    return -1;
+}

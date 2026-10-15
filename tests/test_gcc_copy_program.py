@@ -28,7 +28,7 @@ def finish_guest(root,evidence,*,resume=False,max_parts=512,timeout=900):
     guest_emulator=ROOT/"build/bin"/profiles[manifest["space_bytes"]]
     execution=execute_segments(guest_emulator,root/"linker",root/"in.bin",
         space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,
-        ticks=100000,timeout=timeout,compression="zstd",resume=resume,max_parts=max_parts)
+        ticks=evidence.get("segment_ticks",100000),timeout=timeout,compression="zstd",resume=resume,max_parts=max_parts)
     assert (root/"linker/program.in").read_bytes()==expected
     raw=(root/"linker/space.bin").read_bytes()
     def word(at):return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
@@ -59,8 +59,11 @@ def main():
     parser.add_argument("--resume",action="store_true",help="continue pending guest generation from frozen artifacts")
     parser.add_argument("--max-parts",type=int,default=512)
     parser.add_argument("--guest-timeout",type=float,default=900)
+    parser.add_argument("--segment-ticks",type=int,default=100000)
+    parser.add_argument("--objects",action="store_true",help="test fixture accepts NUL-separated assembly units")
     args=parser.parse_args();root=args.artifacts.resolve()
     if args.max_parts<1:parser.error("--max-parts must be positive")
+    if args.segment_ticks<1:parser.error("--segment-ticks must be positive")
     if args.resume:
         if args.native_only or args.assembly:parser.error("resume uses the frozen guest case")
         evidence=json.loads((root/"evidence.json").read_text())
@@ -77,6 +80,7 @@ def main():
     sources=[root/"sources"/source.relative_to(ROOT) for source in paths if source.suffix==".c"]
     bits=(args.result_space_bytes*8).bit_length()-1
     flags=["-DCS_COPY_PROGRAM","-DCS_COPY_RESULT_ADDRESS_BITS="+str(bits),"-I"+str(root/"sources/runtime/gcc")]
+    if args.objects:flags.append("-DCS_COPY_OBJECTS")
     command=["gcc","-O2","-Wall","-Wextra","-Werror"]+flags+[str(s) for s in sources]+["-o",str(root/"native")]
     (root/"native-command.json").write_text(json.dumps(command)+"\n")
     result=subprocess.run(command,capture_output=True);assert result.returncode==0,result.stderr
@@ -181,9 +185,11 @@ def main():
     for assembly in invalid:
         result=subprocess.run([str(root/"native")],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout
-    evidence={"scope":"call frames, function addresses and initial data sections; separate translation units still required","source_sha256":hashes,
+    evidence={"scope":"call frames, function addresses and initial data sections; objects mode supports initial separate linking",
+        "objects_mode":args.objects,"source_sha256":hashes,
         "result_space_bytes":args.result_space_bytes,"direct_cases":results,"rejected_cases":len(invalid)}
     evidence.update({"guest_case":args.guest_case,"guest_assembly_sha256":hashlib.sha256(incoming).hexdigest()})
+    evidence["segment_ticks"]=args.segment_ticks
     if not args.native_only:
         if not args.newlib:raise ValueError("--newlib required for guest generation")
         prefix=args.newlib.resolve()/"riscv64-unknown-elf"

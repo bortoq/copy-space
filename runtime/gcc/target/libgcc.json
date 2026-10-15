@@ -1,0 +1,35 @@
+{
+  "format": "copyspace-libgcc-catalog-v1",
+  "groups": [
+    {
+      "source": "libgcc/libgcc2.c",
+      "defines": [],
+      "units": [
+        "muldi3", "udivdi3", "divdi3", "umoddi3", "moddi3", "clz",
+        "ashldi3", "lshrdi3", "ashrdi3", "cmpdi2", "ucmpdi2", "negdi2",
+        "clzsi2", "clzdi2", "ctzsi2", "ctzdi2", "clrsbsi2", "clrsbdi2",
+        "ffssi2", "ffsdi2", "popcountsi2", "popcountdi2", "paritysi2", "paritydi2", "bswapsi2", "bswapdi2",
+        "divmoddi4", "udivmoddi4", "fixunssfsi", "fixunsdfsi", "fixsfdi", "fixdfdi",
+        "floatdisf", "floatdidf", "floatundisf", "floatundidf", "fixunssfdi", "fixunsdfdi"
+      ]
+    },
+    {
+      "source": "libgcc/fp-bit.c",
+      "defines": ["FLOAT", "FINE_GRAINED_LIBRARIES"],
+      "units": [
+        "addsub_sf", "mul_sf", "div_sf", "eq_sf", "fpcmp_parts_sf", "pack_sf", "unpack_sf",
+        "thenan_sf", "make_sf", "negate_sf", "sf_to_si", "si_to_sf", "compare_sf", "ne_sf",
+        "gt_sf", "ge_sf", "lt_sf", "le_sf", "unord_sf", "usi_to_sf", "sf_to_df"
+      ]
+    },
+    {
+      "source": "libgcc/fp-bit.c",
+      "defines": ["FINE_GRAINED_LIBRARIES"],
+      "units": [
+        "addsub_df", "mul_df", "div_df", "eq_df", "fpcmp_parts_df", "pack_df", "unpack_df",
+        "thenan_df", "make_df", "negate_df", "df_to_si", "si_to_df", "compare_df", "ne_df",
+        "gt_df", "ge_df", "lt_df", "le_df", "unord_df", "usi_to_df", "df_to_sf"
+      ]
+    }
+  ]
+}

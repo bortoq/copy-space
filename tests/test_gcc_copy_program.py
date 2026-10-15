@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--guest-case",type=int,default=0)
     parser.add_argument("--assembly",type=Path,help="also execute existing GCC output and use it for guest generation")
     parser.add_argument("--expected-result",type=lambda s:int(s,0),default=8)
+    parser.add_argument("--direct-timeout",type=float,default=300,help="include large snapshot I/O in direct execution limit")
     args=parser.parse_args();root=args.artifacts.resolve();root.mkdir(parents=True,exist_ok=False)
     paths=[ROOT/"tests/fixtures/gcc/copy_link.c"]+[ROOT/"runtime/gcc"/name for name in ("copy_link.c","copy_link.h","copy_emit.c","copy_emit.h")]
     hashes={}
@@ -61,7 +62,17 @@ def main():
         (b'.local shared\n.comm shared,12,16\n.text\nvalue:\ncopy.lda.l $r0,shared+8\ncopy.ret\n',0),
         (b'.data\nwide:\n.quad 0x123456789abcdef0\n.text\nvalue:\ncopy.lda.l $r0,wide+4\ncopy.ret\n',0x12345678),
         (b'.data\nwide:\n.quad -9223372036854775808\n.text\nvalue:\ncopy.lda.l $r0,wide+4\ncopy.ret\n',0x80000000),
-        (b'.data\nfirst:\n.byte 1,-1\n.short 0x2345\n.text\nvalue:\ncopy.lda.l $r0,first\ncopy.ret\n',0x2345ff01)]
+        (b'.data\nfirst:\n.byte 1,-1\n.short 0x2345\n.text\nvalue:\ncopy.lda.l $r0,first\ncopy.ret\n',0x2345ff01),
+        (b'.section .kernel.text,"ax",@progbits\nvalue:\ncopy.add $r0,$r1\ncopy.ret\n',7),
+        (b'.section .kernel.data,"aw",@progbits\nobject:\n.long 11\n.text\nvalue:\ncopy.lda.l $r0,object\ncopy.ret\n',11),
+        (b'.section .kernel.bss,"aw",@nobits\nobject:\n.zero 4\n.text\nvalue:\ncopy.lda.l $r0,object\ncopy.ret\n',0),
+        (b'.data\nfirst:\n.long 1\n.pushsection .rodata.extra,"a",@progbits\n.ascii "abcde"\n.popsection\nsecond:\n.long 2\n.text\nvalue:\ncopy.ldi.l $r0,second\ncopy.ldi.l $r1,first\ncopy.sub $r0,$r1\ncopy.ret\n',4),
+        (b'.section .alpha,"aw"\nfirst:\n.long 1\n.section .beta,"aw"\n.byte 9\n.previous\nsecond:\n.long 2\n.text\nvalue:\ncopy.ldi.l $r0,second\ncopy.ldi.l $r1,first\ncopy.sub $r0,$r1\ncopy.ret\n',4),
+        (b'.section .object,"aw"\nfirst:\n.long 1\n.text\nvalue:\ncopy.lda.l $r0,second\ncopy.ret\n.section .object\nsecond:\n.long 2\n',2),
+        (b'.section .alpha,"aw"\n.byte 1\n.pushsection .beta,"aw"\n.p2align 4\nwide:\n.long 9\n.popsection\n.byte 2\n.text\nvalue:\ncopy.ldi.l $r0,wide\ncopy.ret\n',272),
+        (b'.data\nobject:\n.long 9\n.set view,object\n.set forward,view\n.text\nvalue:\ncopy.lda.l $r0,forward\ncopy.ret\n',9),
+        (b'.set wrapper,helper\n.text\nvalue:\ncopy.jsra wrapper\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',7),
+        (b'.equ constant,11\n.text\nvalue:\ncopy.ldi.l $r0,constant\ncopy.ret\n',11)]
     if args.assembly:
         if not 0<=args.expected_result<=0xffffffff:raise ValueError("expected result must fit uint32")
         cases.append((args.assembly.read_bytes(),args.expected_result))
@@ -77,7 +88,7 @@ def main():
         (folder/"image.bin").write_bytes(result.stdout)
         command=[str(emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt"),"--dump-space",str(folder/"space.bin")]
         (folder/"command.json").write_text(json.dumps(command)+"\n")
-        checked=subprocess.run(command,capture_output=True,check=True,timeout=30)
+        checked=subprocess.run(command,capture_output=True,check=True,timeout=args.direct_timeout)
         (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==struct.pack("<I",value),(index,checked.stdout)
         raw=(folder/"space.bin").read_bytes()
         def word(at):return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
@@ -98,7 +109,13 @@ def main():
              b'.bss\nx:\n.long 1\n.text\nvalue:\ncopy.ret\n',
              b'.data\nx:\n.p2align 33\n.text\nvalue:\ncopy.ret\n',
              b'.data\nx:\n.string "unterminated\n.text\nvalue:\ncopy.ret\n',
-             b'.data\nx:\n.quad 18446744073709551616\n.text\nvalue:\ncopy.ret\n']
+             b'.data\nx:\n.quad 18446744073709551616\n.text\nvalue:\ncopy.ret\n',
+             b'.set a,b\n.set b,a\n.text\nvalue:\ncopy.ret\n',
+             b'.set a,missing\n.text\nvalue:\ncopy.ret\n',
+             b'.set a,target\n.data\na:\n.long 1\n.text\ntarget:\ncopy.ret\nvalue:\ncopy.ret\n',
+             b'.popsection\nvalue:\ncopy.ret\n',
+             b'.previous\nvalue:\ncopy.ret\n',
+             b'value:\ncopy.ret\n.pushsection .data\n']
     for assembly in invalid:
         result=subprocess.run([str(root/"native")],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout

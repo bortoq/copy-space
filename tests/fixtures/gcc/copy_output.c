@@ -17,7 +17,7 @@ int main(int argc,char **argv)
     assert(input>=3);
     char assembly[8192];
     int size=cs_gcc_fs_read(input,assembly,sizeof(assembly));
-    assert(size>0 && cs_gcc_fs_close(input)==0);
+    assert(size>=0 && cs_gcc_fs_close(input)==0);
     int fd=cs_gcc_fs_open("result.s",CS_FS_CREATE|CS_FS_WRITE|CS_FS_TRUNC);
     assert(fd>=3 && cs_gcc_fs_write(fd,assembly,(unsigned)size)==size && cs_gcc_fs_close(fd)==0);
 #ifdef __riscv

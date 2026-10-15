@@ -35,6 +35,8 @@ static const char *copy_entry="main";
 static uint32_t copy_arguments[6];
 static unsigned copy_argc;
 static uint32_t copy_memory_bytes=8192;
+static const char *copy_objects[7];
+static unsigned copy_objectc;
 static int copy_number(const char *number, uint32_t *result)
 {
     char *end;
@@ -53,10 +55,23 @@ static int lower_copy(const unsigned char *data, unsigned size)
     unsigned char *image=malloc(image_bytes);
     struct cs_copy_link_error error={0,"out of memory"};
     int failed=!image;
-    if (image) failed=copy_program ? cs_copy_link_program_memory(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
-        copy_memory_bytes,(const char *)data,size,copy_entry,copy_arguments,copy_argc,&error) :
-        cs_copy_link_leaf(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
-        (const char *)data,size,copy_entry,copy_arguments,copy_argc,&error);
+    if (image) {
+        if (copy_objectc) {
+            struct cs_copy_object objects[8]={{size ? (const char *)data : "",size}};
+            for (unsigned i=0;i<copy_objectc;++i) {
+                const unsigned char *source;unsigned bytes;
+                if (cs_gcc_fs_output(copy_objects[i],&source,&bytes)) {
+                    error.message="missing copy object file";failed=1;break;
+                }
+                objects[i+1]=(struct cs_copy_object){bytes ? (const char *)source : "",bytes};
+            }
+            if (!failed) failed=cs_copy_link_objects_alloc(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+                copy_memory_bytes,objects,copy_objectc+1,copy_entry,copy_arguments,copy_argc,&error);
+        } else failed=copy_program ? cs_copy_link_program_memory(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+            copy_memory_bytes,(const char *)data,size,copy_entry,copy_arguments,copy_argc,&error) :
+            cs_copy_link_leaf(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+            (const char *)data,size,copy_entry,copy_arguments,copy_argc,&error);
+    }
     if (!failed) {
         int fd=cs_gcc_fs_open(output_file,CS_FS_WRITE|CS_FS_TRUNC);
         if (fd<0) failed=1;
@@ -127,6 +142,9 @@ int __wrap_main(void)
                 if (!copy_program || copy_number(option+15,&copy_memory_bytes) ||
                     copy_memory_bytes<8192 || copy_memory_bytes>=CS_GCC_COPY_PROGRAM_BYTES ||
                     (copy_memory_bytes&(copy_memory_bytes-1))) return 125;
+            } else if (!strncmp(option,"--space-object=",15)) {
+                if (!copy_program || copy_objectc==7 || !option[15]) return 125;
+                copy_objects[copy_objectc++]=option+15;
             } else break;
             ++consumed;
         }

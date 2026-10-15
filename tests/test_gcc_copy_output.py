@@ -11,8 +11,10 @@ sys.path.insert(0,str(ROOT/"scripts/rv32i"))
 from build import build
 from space_segments import execute_segments
 
-def job(assembly,options):
-    files=b"\0CCFILES1"+struct.pack("<III",1,0,0)+struct.pack("<II",4,len(assembly))+b"in.s"+assembly
+def job(assembly,options,objects=()):
+    inputs=[(b'in.s',assembly)]+[(name.encode(),data) for name,data in objects]
+    files=b"\0CCFILES1"+struct.pack("<III",len(inputs),0,0)
+    files+=b''.join(struct.pack('<II',len(name),len(data))+name+data for name,data in inputs)
     argv=[b"cc1"]+[x.encode() for x in options]+[b"-S",b"in.s"]
     return b"GCCJOB1\0"+struct.pack("<II",len(argv),len(files))+b"".join(struct.pack("<I",len(a))+a for a in argv)+files
 

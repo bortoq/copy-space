@@ -7,7 +7,7 @@ cc1 in QEMU (GCCJOB1 carries the original bytes), and executes the resulting
 Space program with direct copies, checking every result against an
 independent Python reference.
 
-Guest archive linking caps selected units at eight including the explicit
+Guest archive linking caps selected units at twelve including the explicit
 object (runtime/gcc/copy_link.h), hence the helpers ride in small groups:
 shifts (six ops), bitops (clz/ctz/clrsb plus the clz table, seven members),
 ffs-a (ffs/popcount plus the clz table, five members) and ffs-b

@@ -162,9 +162,9 @@ def main():
                    archive([(f'u{i}/', b'') for i in range(65)]),
                    archive([('x/', b'.global helper; helper: copy.jsra absent; copy.ret\n')]),
                    archive([('x/', helper+b'.global value; value: copy.ret\n')])]
-        # A selected dependency chain beyond the eight-unit limit must fail before linking.
-        chain = [(f'u{i}/', (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.ret\n' if i<7 else
-                             '.global f7; f7: copy.ret\n').encode()) for i in range(8)]
+        # A selected dependency chain beyond the twelve-unit limit must fail before linking.
+        chain = [(f'u{i}/', (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.ret\n' if i<11 else
+                             '.global f11; f11: copy.ret\n').encode()) for i in range(12)]
         invalid.append(archive(chain))
         for i, library in enumerate(invalid):
             assembly = b'.global value; value: copy.jsra f0; copy.ret\n' if i == len(invalid)-1 else caller

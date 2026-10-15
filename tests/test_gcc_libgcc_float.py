@@ -1,6 +1,6 @@
 """Link original fp-bit single-float helpers and execute direct copies.
 
-The guest archive linker caps selected units at eight including the
+The guest archive linker caps selected units at twelve including the
 explicit object, so arithmetic (add/sub/mul/div) and compare/convert
 (eq/fix/floatsisf) ride in two sub-probes sharing one archive of
 fine-grained fp-bit sections plus integer helpers.

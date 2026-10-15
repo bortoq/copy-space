@@ -4,7 +4,7 @@ Takes comparison sections compiled by test_gcc_libgcc_units.py
 (compare/ne/gt/ge/lt/le/unord for SF and DF) plus fine-grained helpers
 (fpcmp_parts/unpack). Each sub-probe selects at most six library members
 plus the explicit object, staying within the guest archive-linker cap of
-eight selected units. Guards: validate inputs, check every subprocess/file
+twelve selected units. Guards: validate inputs, check every subprocess/file
 syscall, verify Python reference before asserting direct OUT. QEMU is
 diagnostic only. NaN inputs verify per-operation unordered branches:
 compare/ne/lt/le yield 1, gt/ge yield -1 (0xffffffff), unord yields 1;

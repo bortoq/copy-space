@@ -1,7 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <lib/string.c>
 #include <lib/ctype.c>
+#ifdef CS_GCC_TEST_EXTERNAL_LIBGCC
+extern u64 __muldi3(u64, u64);
+#else
 #include "muldi3.c"
+#endif
 
 _Static_assert(sizeof(void *) == 4 && sizeof(long) == 4 && sizeof(u64) == 8,
                "copyspace kernel ABI");

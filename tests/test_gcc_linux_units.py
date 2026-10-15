@@ -8,14 +8,18 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import struct
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'scripts/gcc'))
+from package_target_library import load_library
 
 
 def digest(path):
@@ -51,9 +55,15 @@ def main():
     parser.add_argument('--unit', choices=['string', 'ctype', 'sort', 'rbtree', 'bug'], default='string')
     parser.add_argument('--entry-probe', action='store_true',
                         help='compile ctype/sort/string with direct execution entries')
+    parser.add_argument('--target-library', type=Path,
+                        help='use the original runtime package instead of including the local multiplication helper')
+    parser.add_argument('--image', type=Path,
+                        help='prepared GCC image with that runtime installed; required with --target-library')
     args = parser.parse_args()
     if args.entry_probe and args.unit not in ('ctype', 'sort', 'string'):
         parser.error('--entry-probe requires ctype, sort or string')
+    if bool(args.target_library) != bool(args.image) or (args.target_library and not args.entry_probe):
+        parser.error('--target-library and --image require each other and --entry-probe')
     archive = args.linux_archive.resolve()
     archive_sha256 = 'b1a2562be56e42afb3f8489d4c2a7ac472ac23098f1ef1c1e40da601f54625eb'
     assert digest(archive) == archive_sha256, 'changed pinned Linux 6.12 archive'
@@ -65,6 +75,14 @@ def main():
     assert digest(elf) == original['elf_sha256'], 'changed diagnostic GCC'
     qemu = Path(command[0])
     assert digest(qemu) == original['qemu_sha256'], 'changed diagnostic QEMU'
+    target_library = image_manifest = None
+    if args.target_library:
+        target_library, target_receipt = load_library(args.target_library.resolve())
+        image_manifest = json.loads((args.image.resolve()/'image.json').read_text())
+        assert original['original_elf_sha256'] == image_manifest['elf_sha256']
+        assert image_manifest['target_library']['default']
+        assert image_manifest['target_library']['archive_sha256'] == target_receipt['archive_sha256']
+        assert digest(args.image.resolve()/'gcc.stream') == image_manifest['stream_sha256']
     root = args.artifacts.resolve()
     root.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(__file__, root/'run.py')
@@ -91,7 +109,9 @@ def main():
         words[-1] = str(source)
     if args.entry_probe:
         words[1:1] = ['-I'+str(linux)]
-        if args.unit == 'string':
+        if target_library:
+            words[1:1] = ['-DCS_GCC_TEST_EXTERNAL_LIBGCC']
+        elif args.unit == 'string':
             shutil.copyfile(ROOT/'runtime/gcc/target/muldi3.c', port/'muldi3.c')
     collector = []
     skip = False
@@ -191,9 +211,16 @@ def main():
         'inputs_sha256': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
         'job_sha256': digest(root/'job.bin'), 'exit': status, 'assembly_bytes': size,
         'assembly_sha256': digest(root/'result.s')}
+    if target_library:
+        assert 'port/muldi3.c' not in files
+        evidence.update(target_library_sha256=digest(target_library),
+                        stream_sha256=image_manifest['stream_sha256'], local_runtime_source_included=False)
     (root/'evidence.json').write_text(json.dumps(evidence, indent=2)+'\n')
     assert status == 0, (root/'stderr.bin').read_bytes()
     assert not outsize and size
+    if target_library and args.unit == 'string':
+        assert b'__muldi3' in assembly and not re.search(rb'(?m)^\s*__muldi3\s*:', assembly)
+        evidence['multiplication_is_external'] = True
     rejections = []
     if args.unit == 'bug':
         rejections = [
@@ -245,24 +272,80 @@ def main():
                             ('multiplication', 8), ('bit_operations', 32),
                             ('argument_home', 11), ('variadic', 15),
                             ('stack_arguments', 52), ('variadic_call', 42)]}
-        check_direct(root, assembly, evidence, cases[args.unit], large=args.unit == 'string')
+        check_direct(root, assembly, evidence, cases[args.unit], large=args.unit == 'string', library=target_library)
+        if target_library:
+            check_guest_link(root, argv, files, run, evidence, cases[args.unit], image_manifest,
+                             require_runtime=args.unit == 'string')
     print('OK actual copyspace GCC:', 'BUG fixture with original Linux headers' if args.unit == 'bug' else 'original Linux '+args.unit,
           ';', len(files), 'guest files;', len(assembly), 'assembly bytes; QEMU diagnostic only')
 
 
-def check_direct(root, assembly, evidence, cases, large=False):
+def check_guest_link(root, argv, files, run, evidence, cases, manifest, require_runtime=False):
+    """Compile the original inputs and lower with the installed runtime in QEMU."""
+    results = []
+    for entry, expected in cases:
+        folder = root/entry
+        service = ['--space-program=result.s', '--space-entry='+entry, '--space-memory=65536']
+        service += ['--space-arg='+str(n) for n in (3, 4, 5, 6, 7, 8)]
+        incoming = pack([argv[0]]+service+argv[2:], files)
+        (folder/'guest-job.bin').write_bytes(incoming)
+        (folder/'guest-command.json').write_text(json.dumps(run)+'\n')
+        compiled = subprocess.run(run, input=incoming, capture_output=True, timeout=300)
+        (folder/'guest-response.bin').write_bytes(compiled.stdout)
+        (folder/'guest-syscalls.txt').write_bytes(compiled.stderr)
+        packet = compiled.stdout
+        assert packet[:8] == b'GCCOUT1\0'
+        status, stdout, stderr, size = struct.unpack_from('<IIII', packet, 8)
+        assert compiled.returncode == status == 0 and not stdout and not stderr, packet[24:300]
+        assert len(packet) == 24+size and size == manifest['copy_program_bytes']
+        assert packet[24:] == (folder/'image.bin').read_bytes(), entry
+        results.append({'entry': entry, 'expected': expected, 'job_sha256': digest(folder/'guest-job.bin'),
+                        'image_sha256': digest(folder/'image.bin'), 'native_image_exact': True})
+        print('OK installed Linux runtime:', entry, 'image matches direct result', expected, flush=True)
+    evidence['guest_lowering_cases'] = results
+    if require_runtime:
+        folder = root/'without-runtime'
+        folder.mkdir()
+        service = ['--space-program=result.s', '--space-entry=value', '--space-memory=65536',
+                   '--space-arg=3', '--space-arg=4', '--space-no-libgcc']
+        incoming = pack([argv[0]]+service+argv[2:], files)
+        (folder/'job.bin').write_bytes(incoming)
+        compiled = subprocess.run(run, input=incoming, capture_output=True, timeout=300)
+        (folder/'response.bin').write_bytes(compiled.stdout)
+        (folder/'syscalls.txt').write_bytes(compiled.stderr)
+        assert compiled.stdout[:8] == b'GCCOUT1\0'
+        status, stdout, stderr, size = struct.unpack_from('<IIII', compiled.stdout, 8)
+        assert compiled.returncode == status == 126 and not stdout and not size and stderr
+        assert len(compiled.stdout) == 24+stderr and b'undefined' in compiled.stdout[24:]
+        evidence['disabled_runtime_exit'] = status
+    (root/'evidence.json').write_text(json.dumps(evidence, indent=2)+'\n')
+
+
+def check_direct(root, assembly, evidence, cases, large=False, library=None):
     """Execute generated code as direct copies; GCC itself ran in QEMU."""
     harness = root/'direct.c'
     harness.write_text('''#include "copy_link.h"
 #include <stdio.h>
 static unsigned char image[8388608];
 static char assembly[131072];
+static char archive[1048576];
 int main(int argc,char **argv) {
     size_t n=fread(assembly,1,sizeof(assembly),stdin);
     unsigned arguments[]={3,4,5,6,7,8}; struct cs_copy_link_error error;
-    if(argc!=2 || n==sizeof(assembly)) return 1;
-    if(cs_copy_link_program_memory(image,sizeof(image),31,65536,assembly,n,
-                                  argv[1],arguments,6,&error)) {
+    if((argc!=2 && argc!=3) || n==sizeof(assembly)) return 1;
+    int failed;
+    if(argc==3) {
+        FILE *input=fopen(argv[2],"rb");
+        if(!input) return 4;
+        size_t bytes=fread(archive,1,sizeof(archive),input);
+        int invalid=ferror(input) || bytes==sizeof(archive);
+        if(fclose(input) || invalid) return 5;
+        const struct cs_copy_object object={assembly,n};
+        failed=cs_copy_link_archive_alloc(image,sizeof(image),31,65536,&object,1,
+                                         archive,bytes,argv[1],arguments,6,&error);
+    } else failed=cs_copy_link_program_memory(image,sizeof(image),31,65536,assembly,n,
+                                              argv[1],arguments,6,&error);
+    if(failed) {
         fprintf(stderr,"%zu: %s\\n",error.line,error.message);return 2;
     }
     return fwrite(image,1,sizeof(image),stdout)==sizeof(image) ? 0 : 3;
@@ -287,6 +370,8 @@ int main(int argc,char **argv) {
         folder = root/entry
         folder.mkdir()
         link_command = [str(root/'direct-linker'), entry]
+        if library:
+            link_command.append(str(library))
         (folder/'link-command.json').write_text(json.dumps(link_command)+'\n')
         linked = subprocess.run(link_command, input=assembly,
                                 capture_output=True, timeout=60)

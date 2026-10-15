@@ -2,7 +2,8 @@
 #include "copy_emit.h"
 #include <string.h>
 
-enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
+enum { REG_BASE=32768, CONSTANT_BASE=24576,
+       CONSTANT_CAPACITY=(REG_BASE-CONSTANT_BASE)/32, ADD_TABLE=33792,
        SUB_TABLE=33808, AND_TABLE=33824, OR_TABLE=33828, XOR_TABLE=33832,
        TEMPORARY=33840, CARRY=33842, SHIFT_WORD=33856, SHIFT_COUNT=33888,
        SHIFT_PAIR=33894, SHIFT_ZERO=33896,
@@ -22,7 +23,7 @@ enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
-    uint32_t constants[12];
+    uint32_t constants[CONSTANT_CAPACITY];
     unsigned constant_count;
     struct { char name[64]; uint32_t address; int defined, data, alias, weak, missing_weak; } labels[32];
     struct { uint32_t layer, table, fallthrough; int label, inverted; size_t line; } jumps[64];
@@ -129,7 +130,7 @@ static int constant(struct context *ctx, uint32_t value, uint32_t *address)
     unsigned i;
     for (i=0;i<ctx->constant_count;++i) if (ctx->constants[i]==value) break;
     if (i==ctx->constant_count) {
-        if (i==12) return -1;
+        if (i==CONSTANT_CAPACITY) return -1;
         ctx->constants[i]=value;
         ++ctx->constant_count;
         if (cs_copy_constant(&ctx->program.image,CONSTANT_BASE+32*i,32,value)) return -1;

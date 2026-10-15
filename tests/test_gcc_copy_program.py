@@ -125,6 +125,11 @@ def main():
         (b'.weak optional\nvalue:\ncopy.jsra optional\ncopy.ret\n',None),
         (b'.weak optional\n.data\ncallback:\n.long optional\n.text\nvalue:\ncopy.lda.l $r0,callback\ncopy.ret\n',0),
         (b'.weak one,two\nvalue:\ncopy.ldi.l $r0,one\ncopy.ldi.l $r1,two\ncopy.or $r0,$r1\ncopy.ret\n',0)]
+    # 253 user constants plus three constants used by the return frame fill
+    # the pool exactly. Check accumulation across the whole pool's extent.
+    large=b'value:\n'+b''.join((f'copy.ldi.l $r2,{65536+i}\n'+('copy.add $r0,$r2\n' if i%16==0 else '')).encode() for i in range(253))+b'copy.ret\n'
+    cases.append((large,3+sum(65536+i for i in range(253) if i%16==0)))
+    cases.append((b'value:\n'+b'copy.ldi.l $r0,123456\n'*300+b'copy.ret\n',123456))
     if args.assembly:
         if not 0<=args.expected_result<=0xffffffff:raise ValueError("expected result must fit uint32")
         cases.append((args.assembly.read_bytes(),args.expected_result))
@@ -172,6 +177,7 @@ def main():
              b'value:\ncopy.ret\n.pushsection .data\n',
              b'.weak\nvalue:\ncopy.ret\n',
              b'.weak optional,\nvalue:\ncopy.ret\n']
+    invalid.append(b'value:\n'+b''.join(f'copy.ldi.l $r0,{65536+i}\n'.encode() for i in range(254))+b'copy.ret\n')
     for assembly in invalid:
         result=subprocess.run([str(root/"native")],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout

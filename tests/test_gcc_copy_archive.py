@@ -65,8 +65,8 @@ def main():
             if executable.startswith('sanitized'):
                 command += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie']
             if executable.endswith('-wide'):
-                command += ['-DCS_GCC_COPY_PROGRAM_BYTES=1048576', '-DCS_COPY_LABEL_CAPACITY=128',
-                            '-DCS_COPY_JUMP_CAPACITY=256', '-DCS_COPY_CALL_CAPACITY=64']
+                command += ['-DCS_GCC_COPY_PROGRAM_BYTES=2097152', '-DCS_COPY_LABEL_CAPACITY=512',
+                            '-DCS_COPY_JUMP_CAPACITY=1024', '-DCS_COPY_CALL_CAPACITY=128']
             command += list(map(str, sources))+['-o', str(root/executable)]
             (root/(executable+'-command.json')).write_text(json.dumps(command)+'\n')
             subprocess.run(command, check=True, capture_output=True)
@@ -101,7 +101,7 @@ def main():
             ('bsd', caller, [('#1/20', b'long-helper-name.s\0\0'+helper)], [helper], 5),
             ('bsd-index', caller, [('#1/12', b'__.SYMDEF\0\0\0'+b'\0index'), ('x/', helper)], [helper], 5),
             ('empty-member', caller, [('empty.s/', b''), ('helper.s/', helper)], [helper], 5),
-            ('maximum-members', caller, [(f'u{i}/', b'') for i in range(63)]+[('helper.s/', helper)], [helper], 5),
+            ('maximum-members', caller, [(f'u{i}/', b'') for i in range(255)]+[('helper.s/', helper)], [helper], 5),
             ('cycle', caller, [('base.s/', b'.global base; base: copy.ret\n.data; .long helper\n'),
                                ('helper.s/', dependency)],
              [dependency, b'.global base; base: copy.ret\n.data; .long helper\n'], 5),
@@ -115,7 +115,7 @@ def main():
                       chain[::-1], [unit for _, unit in chain], 10))
         alias_unit = b'.global helper; .set helper,private; private: copy.inc $r0,2; copy.ret\n'
         cases.append(('alias', caller, [('alias.s/', alias_unit)], [alias_unit], 5))
-        for total in (12, 16):
+        for total in (12, 16, 64):
             units = []
             for i in range(total-1):
                 body = (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.inc $r0,1; copy.ret\n' if i<total-2 else
@@ -130,11 +130,11 @@ def main():
             library = archive(members)
             incoming = job(assembly, options+['--space-library=lib/libgcc.a'], [('lib/libgcc.a', library)])
             (folder/'job.bin').write_bytes(incoming)
-            wide = name == 'late-locals-16'
+            wide = name in ('late-locals-16', 'late-locals-64')
             result = subprocess.run([str(root/('native-wide' if wide else 'native'))], input=incoming, capture_output=True, check=True)
             assert not result.stderr
             code, stdout, stderr, image = decode(result.stdout)
-            assert not code and not stdout and not stderr and len(image) == (1048576 if wide else 262144)
+            assert not code and not stdout and not stderr and len(image) == (2097152 if wide else 262144)
             if len(extracted) <= 7:
                 explicit_options = options+[f'--space-object=unit{i}.s' for i in range(len(extracted))]
                 explicit = subprocess.run([str(root/'native')], input=job(assembly, explicit_options,
@@ -172,12 +172,12 @@ def main():
                    valid[:56]+b'9999999999'+valid[66:], valid[:56]+b'-1        '+valid[66:],
                    valid[:56]+b'1x        '+valid[66:], archive([('x/', b'\0')]),
                    archive([('#1/99', b'short')]), archive([('x/', b'.weakref alias,other\n')]),
-                   archive([(f'u{i}/', b'') for i in range(65)]),
+                   archive([(f'u{i}/', b'') for i in range(257)]),
                    archive([('x/', b'.global helper; helper: copy.jsra absent; copy.ret\n')]),
                    archive([('x/', helper+b'.global value; value: copy.ret\n')])]
-        # A selected dependency chain beyond the sixteen-unit limit must fail before linking.
-        chain = [(f'u{i}/', (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.ret\n' if i<15 else
-                             '.global f15; f15: copy.ret\n').encode()) for i in range(16)]
+        # A selected dependency chain beyond the sixty-four-unit limit must fail before linking.
+        chain = [(f'u{i}/', (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.ret\n' if i<63 else
+                             '.global f63; f63: copy.ret\n').encode()) for i in range(64)]
         invalid.append(archive(chain))
         for i, library in enumerate(invalid):
             assembly = b'.global value; value: copy.jsra f0; copy.ret\n' if i == len(invalid)-1 else caller
@@ -220,7 +220,7 @@ def main():
         (root/'allocation-command.json').write_text(json.dumps(command)+'\n')
         subprocess.run(command, capture_output=True, check=True)
         packet = struct.pack('<I', len(caller))+caller+archive([('helper.s/', helper)])
-        for fail in range(6):
+        for fail in range(7):
             env = {**os.environ, 'ASAN_OPTIONS': 'detect_leaks=1'}
             if fail:
                 env['CS_COPY_TEST_ALLOC_FAIL'] = str(fail)
@@ -233,7 +233,7 @@ def main():
                 assert checked.stdout == decode((root/'extract/response.bin').read_bytes())[3]
         names.append('tests/fixtures/gcc/copy_link.c')
         evidence = {'scope': __doc__, 'sources_sha256': {n: hashlib.sha256((root/'sources'/n).read_bytes()).hexdigest() for n in names},
-                    'direct_cases': results, 'rejected_archives': len(invalid), 'rejected_options': 3, 'missing_library': True, 'allocation_failures_checked': 5}
+                    'direct_cases': results, 'rejected_archives': len(invalid), 'rejected_options': 3, 'missing_library': True, 'allocation_failures_checked': 6}
         (root/'evidence.json').write_text(json.dumps(evidence, indent=2)+'\n')
     if args.guest:
         if args.resume:

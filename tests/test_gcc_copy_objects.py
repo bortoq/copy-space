@@ -48,7 +48,7 @@ void __wrap_free(void *p) {
 }
 __attribute__((destructor)) static void check(void) { if(active) abort(); }
 ''')
-        command[1:1] = ['-DCS_COPY_OBJECT_ALLOC', str(checks), '-Wl,--wrap=malloc', '-Wl,--wrap=free']
+        command[1:1] = ['-DCS_COPY_OBJECT_ALLOC', '-fno-builtin-malloc', str(checks), '-Wl,--wrap=malloc', '-Wl,--wrap=free']
     if args.sanitize:
         command[1:1] = ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie']
     (root / 'native-command.json').write_text(json.dumps(command) + '\n')
@@ -193,14 +193,14 @@ __attribute__((destructor)) static void check(void) { if(active) abort(); }
         else:
             assert result.returncode == 0 and result.stdout == (root / '0/image.bin').read_bytes()
     if args.allocate:
-        for allocation in (1, 2, 3):
+        for allocation in (1, 2, 3, 4):
             result = subprocess.run([str(root/'native')], input=b'\0'.join(cases[0][0]), capture_output=True,
                 env={**os.environ, 'CS_COPY_TEST_ALLOC_FAIL': str(allocation)})
             (root/('allocation-'+str(allocation)+'.stderr')).write_bytes(result.stderr)
             assert result.returncode == 2 and not result.stdout and b'out of memory' in result.stderr
     (root / 'evidence.json').write_text(json.dumps({'scope': 'Separate assembly linking prepared natively; output executed directly as copies. Guest generation not yet verified.',
         'source_sha256': hashes, 'result_space_bytes': args.result_space_bytes, 'direct_cases': results, 'rejected_cases': len(invalid),
-        'automatic_scratch': args.allocate, 'allocation_failures_checked': 3 if args.allocate else 0,
+        'automatic_scratch': args.allocate, 'allocation_failures_checked': 4 if args.allocate else 0,
         'scratch_exact_fit_bytes': None if args.allocate else needed + 1,
         'scratch_one_byte_short_rejected': not args.allocate}, indent=2) + '\n')
     print('OK separate linking:', len(results), 'programs,', len(invalid), 'rejected inputs')

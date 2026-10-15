@@ -1424,7 +1424,8 @@ static int object_winner(struct object_names *units, unsigned count, const char 
 static int object_decimal(char *, size_t *, uint32_t);
 static int object_numeric_name(char *output, size_t *used, unsigned unit, char tag, size_t offset)
 {
-    char prefix[]=".L.__cA0.N";prefix[6]=tag;prefix[7]="0123456789abcdef"[unit];
+    char prefix[]=".L.__cA0.N";prefix[6]=tag;
+    prefix[7]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$"[unit];
     if (offset>UINT32_MAX) return -1;
     return object_append(output,used,prefix,10) || object_decimal(output,used,(uint32_t)offset) ? -1 : 0;
 }
@@ -1488,7 +1489,8 @@ static int object_rewrite(const struct cs_copy_object *object, struct object_nam
                     discarded=winner!=(int)unit;
                 }
                 if (index>=0 && (((names->names[index].defined || names->names[index].local) && !names->names[index].external) || discarded)) {
-                    char prefix[]=".__cA0.";prefix[4]=tag;prefix[5]="0123456789abcdef"[unit];
+                    char prefix[]=".__cA0.";prefix[4]=tag;
+                    prefix[5]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$"[unit];
                     if (!strncmp(names->names[index].name,".L",2)) {
                         if (object_append(output,used,".L",2)) return -1;
                         s+=2;
@@ -1570,8 +1572,9 @@ static int link_objects(unsigned char *data, size_t bytes, unsigned address_bits
                         struct cs_copy_link_error *error)
 {
     char *buffer=NULL, *owned=NULL;
+    struct object_names *names=NULL;
     const char *message="invalid separate link input";
-    if (!objects || !count || count>16) goto fail;
+    if (!objects || !count || count>CS_COPY_MAX_OBJECTS) goto fail;
     if (count==1) return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,objects[0].assembly,
                                             objects[0].size,entry,arguments,argc,error);
     size_t buffer_capacity=1;
@@ -1583,7 +1586,10 @@ static int link_objects(unsigned char *data, size_t bytes, unsigned address_bits
     }
     message="out of memory for assembly operator";
     if (!(buffer=malloc(buffer_capacity))) goto fail;
-    struct object_names names[16];memset(names,0,sizeof(names));
+    message="out of memory for separate link symbols";
+    if (sizeof(*names)>SIZE_MAX/count) goto fail;
+    if (!(names=malloc(count*sizeof(*names)))) goto fail;
+    memset(names,0,count*sizeof(*names));
     size_t needed=0;
     unsigned char occupied[256]={0};
     message="unsupported binding or invalid object assembly";
@@ -1613,10 +1619,12 @@ static int link_objects(unsigned char *data, size_t bytes, unsigned address_bits
     if (object_commons(names,count,assembly,&used) || object_weak_imports(names,count,assembly,&used)) goto fail;
     assembly[used]=0;
     free(buffer);
+    free(names);
     int result=cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,assembly,used,entry,arguments,argc,error);
     free(owned);
     return result;
 fail:
+    free(names);
     free(owned);
     free(buffer);
     if (error) *error=(struct cs_copy_link_error){0,message};
@@ -1680,7 +1688,7 @@ static int archive_members(const char *archive, size_t size,
             if (filename>=9 && !memcmp(archive+at,"__.SYMDEF",9)) metadata=1;
         } else if (name_size>=9 && !memcmp(header,"__.SYMDEF",9)) metadata=1;
         if (!metadata) {
-            if (*count==64) return -1;
+            if (*count==CS_COPY_MAX_ARCHIVE_MEMBERS) return -1;
             members[(*count)++]=(struct cs_copy_object){archive+at+filename,bytes-filename};
         }
         at+=bytes;
@@ -1691,27 +1699,30 @@ static int archive_members(const char *archive, size_t size,
     return 0;
 }
 
-static int archive_needed(struct object_names *units, unsigned count,
-                           struct object_names *candidate, const char *entry)
+/* Closure needs only the global definitions and strong references. Preserve
+   per-unit binding details for the final rewrite, after selection is complete. */
+static int archive_requirements(struct object_names *required, struct object_names *unit,
+                                 const char *entry, int first)
 {
-    int entry_defined=0;
-    for (unsigned u=0;u<count;++u) {
-        int index=object_name(&units[u],entry,strlen(entry),0);
-        if (index>=0 && units[u].names[index].defined &&
-            (units[u].names[index].external || u==0)) entry_defined=1;
+    for (unsigned i=0;i<unit->count;++i) {
+        int defined=unit->names[i].defined;
+        int referenced=unit->names[i].referenced && !unit->names[i].weak;
+        int root_entry=first && defined && !strcmp(unit->names[i].name,entry);
+        if (!root_entry && (!unit->names[i].external || (!defined && !referenced))) continue;
+        int j=object_name(required,unit->names[i].name,strlen(unit->names[i].name),1);
+        if (j<0) return -1;
+        required->names[j].defined|=defined;
+        required->names[j].referenced|=referenced;
     }
+    return 0;
+}
+
+static int archive_needed(struct object_names *required, struct object_names *candidate)
+{
     for (unsigned i=0;i<candidate->count;++i) {
         if (!candidate->names[i].external || !candidate->names[i].defined) continue;
-        const char *name=candidate->names[i].name;
-        if (!entry_defined && !strcmp(name,entry)) return 1;
-        unsigned rank;int strong_reference;
-        object_winner(units,count,name,&rank,&strong_reference);
-        if (rank) continue;
-        for (unsigned u=0;u<count;++u) {
-            int j=object_name(&units[u],name,strlen(name),0);
-            if (j>=0 && units[u].names[j].external && units[u].names[j].referenced && !units[u].names[j].weak &&
-                !units[u].names[j].local) return 1;
-        }
+        int j=object_name(required,candidate->names[i].name,strlen(candidate->names[i].name),0);
+        if (j>=0 && required->names[j].referenced && !required->names[j].defined) return 1;
     }
     return 0;
 }
@@ -1723,10 +1734,10 @@ int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned addre
                         struct cs_copy_link_error *error)
 {
     const char *message="invalid copy archive input";
-    struct cs_copy_object members[64],selected[16];unsigned member_count;
+    struct cs_copy_object members[CS_COPY_MAX_ARCHIVE_MEMBERS],selected[CS_COPY_MAX_OBJECTS];unsigned member_count;
     struct object_names *names=NULL;
     char *buffer=NULL;
-    if (!objects || !count || count>16 || !entry || !*entry ||
+    if (!objects || !count || count>CS_COPY_MAX_OBJECTS || !entry || !*entry ||
         archive_members(archive,archive_size,members,&member_count)) goto fail;
     size_t capacity=1;
     for (unsigned i=0;i<count+member_count;++i) {
@@ -1737,27 +1748,33 @@ int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned addre
         if (n>capacity) capacity=n;
     }
     message="out of memory for archive symbols";
-    names=malloc(17*sizeof(*names));
+    names=malloc(2*sizeof(*names));
     buffer=malloc(capacity);
     if (!names || !buffer) goto fail;
-    memset(names,0,17*sizeof(*names));
+    memset(names,0,2*sizeof(*names));
     message="unsupported binding or invalid archive assembly";
+    int entry_index=object_name(&names[0],entry,strlen(entry),1);
+    if (entry_index<0) goto fail;
+    names[0].names[entry_index].referenced=1;
     for (unsigned i=0;i<count;++i) {
         selected[i]=objects[i];
-        if (object_scan(&names[i],&objects[i],buffer)) goto fail;
+        memset(&names[1],0,sizeof(*names));
+        if (object_scan(&names[1],&objects[i],buffer) ||
+            archive_requirements(&names[0],&names[1],entry,i==0)) goto fail;
     }
-    unsigned char extracted[64]={0};
+    unsigned char extracted[CS_COPY_MAX_ARCHIVE_MEMBERS]={0};
     int changed;
     do {
         changed=0;
         for (unsigned m=0;m<member_count;++m) {
             if (extracted[m]) continue;
-            memset(&names[16],0,sizeof(*names));
-            if (object_scan(&names[16],&members[m],buffer)) goto fail;
-            if (!archive_needed(names,count,&names[16],entry)) continue;
+            memset(&names[1],0,sizeof(*names));
+            if (object_scan(&names[1],&members[m],buffer)) goto fail;
+            if (!archive_needed(&names[0],&names[1])) continue;
             message="too many selected copy archive units";
-            if (count==16) goto fail;
-            selected[count]=members[m];names[count++]=names[16];
+            if (count==CS_COPY_MAX_OBJECTS) goto fail;
+            selected[count++]=members[m];
+            if (archive_requirements(&names[0],&names[1],entry,0)) goto fail;
             extracted[m]=1;changed=1;
             message="unsupported binding or invalid archive assembly";
         }

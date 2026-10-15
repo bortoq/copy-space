@@ -44,7 +44,8 @@ def main():
         'compare_sf', 'ne_sf', 'gt_sf', 'ge_sf', 'lt_sf', 'le_sf', 'unord_sf', 'usi_to_sf',
         'addsub_df', 'mul_df', 'div_df', 'eq_df', 'fpcmp_parts_df', 'pack_df', 'unpack_df',
         'thenan_df', 'make_df', 'negate_df', 'df_to_si', 'si_to_df', 'sf_to_df', 'df_to_sf',
-        'compare_df', 'ne_df', 'gt_df', 'ge_df', 'lt_df', 'le_df', 'unord_df', 'usi_to_df'])
+        'compare_df', 'ne_df', 'gt_df', 'ge_df', 'lt_df', 'le_df', 'unord_df', 'usi_to_df',
+        'fixunssfsi', 'fixunsdfsi', 'fixsfdi', 'fixdfdi', 'floatdisf', 'floatdidf', 'floatundisf', 'floatundidf'])
     parser.add_argument('--link-probe', action='store_true', help='link five original arithmetic helpers from an archive and execute direct copies')
     parser.add_argument('--source-file', default='libgcc/libgcc2.c',
                         help='C file inside the pinned GCC tree, e.g. libgcc/fp-bit.c')

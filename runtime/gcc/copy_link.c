@@ -1424,7 +1424,7 @@ static int object_winner(struct object_names *units, unsigned count, const char 
 static int object_decimal(char *, size_t *, uint32_t);
 static int object_numeric_name(char *output, size_t *used, unsigned unit, char tag, size_t offset)
 {
-    char prefix[]=".L.__cA0.N";prefix[6]=tag;prefix[7]=(char)('0'+unit);
+    char prefix[]=".L.__cA0.N";prefix[6]=tag;prefix[7]="0123456789abcdef"[unit];
     if (offset>UINT32_MAX) return -1;
     return object_append(output,used,prefix,10) || object_decimal(output,used,(uint32_t)offset) ? -1 : 0;
 }
@@ -1488,7 +1488,7 @@ static int object_rewrite(const struct cs_copy_object *object, struct object_nam
                     discarded=winner!=(int)unit;
                 }
                 if (index>=0 && (((names->names[index].defined || names->names[index].local) && !names->names[index].external) || discarded)) {
-                    char prefix[]=".__cA0.";prefix[4]=tag;prefix[5]=(char)('0'+unit);
+                    char prefix[]=".__cA0.";prefix[4]=tag;prefix[5]="0123456789abcdef"[unit];
                     if (!strncmp(names->names[index].name,".L",2)) {
                         if (object_append(output,used,".L",2)) return -1;
                         s+=2;
@@ -1571,7 +1571,7 @@ static int link_objects(unsigned char *data, size_t bytes, unsigned address_bits
 {
     char *buffer=NULL, *owned=NULL;
     const char *message="invalid separate link input";
-    if (!objects || !count || count>12) goto fail;
+    if (!objects || !count || count>16) goto fail;
     if (count==1) return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,objects[0].assembly,
                                             objects[0].size,entry,arguments,argc,error);
     size_t buffer_capacity=1;
@@ -1583,7 +1583,7 @@ static int link_objects(unsigned char *data, size_t bytes, unsigned address_bits
     }
     message="out of memory for assembly operator";
     if (!(buffer=malloc(buffer_capacity))) goto fail;
-    struct object_names names[12];memset(names,0,sizeof(names));
+    struct object_names names[16];memset(names,0,sizeof(names));
     size_t needed=0;
     unsigned char occupied[256]={0};
     message="unsupported binding or invalid object assembly";
@@ -1723,10 +1723,10 @@ int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned addre
                         struct cs_copy_link_error *error)
 {
     const char *message="invalid copy archive input";
-    struct cs_copy_object members[64],selected[12];unsigned member_count;
+    struct cs_copy_object members[64],selected[16];unsigned member_count;
     struct object_names *names=NULL;
     char *buffer=NULL;
-    if (!objects || !count || count>12 || !entry || !*entry ||
+    if (!objects || !count || count>16 || !entry || !*entry ||
         archive_members(archive,archive_size,members,&member_count)) goto fail;
     size_t capacity=1;
     for (unsigned i=0;i<count+member_count;++i) {
@@ -1737,10 +1737,10 @@ int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned addre
         if (n>capacity) capacity=n;
     }
     message="out of memory for archive symbols";
-    names=malloc(13*sizeof(*names));
+    names=malloc(17*sizeof(*names));
     buffer=malloc(capacity);
     if (!names || !buffer) goto fail;
-    memset(names,0,13*sizeof(*names));
+    memset(names,0,17*sizeof(*names));
     message="unsupported binding or invalid archive assembly";
     for (unsigned i=0;i<count;++i) {
         selected[i]=objects[i];
@@ -1752,12 +1752,12 @@ int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned addre
         changed=0;
         for (unsigned m=0;m<member_count;++m) {
             if (extracted[m]) continue;
-            memset(&names[12],0,sizeof(*names));
-            if (object_scan(&names[12],&members[m],buffer)) goto fail;
-            if (!archive_needed(names,count,&names[12],entry)) continue;
+            memset(&names[16],0,sizeof(*names));
+            if (object_scan(&names[16],&members[m],buffer)) goto fail;
+            if (!archive_needed(names,count,&names[16],entry)) continue;
             message="too many selected copy archive units";
-            if (count==12) goto fail;
-            selected[count]=members[m];names[count++]=names[12];
+            if (count==16) goto fail;
+            selected[count]=members[m];names[count++]=names[16];
             extracted[m]=1;changed=1;
             message="unsupported binding or invalid archive assembly";
         }

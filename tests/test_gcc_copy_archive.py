@@ -60,10 +60,13 @@ def main():
         sources = [root/'sources'/n for n in names if n.endswith('.c') and not n.endswith(('syscalls.c', 'runtime.c'))]
         flags = ['-DCS_GCC_FRAMED_OUTPUT', '-DCS_GCC_COPY_OUTPUT', '-Wl,--wrap=main',
                  '-I'+str(root/'sources/runtime/gcc'), '-I'+str(root/'sources/runtime/rv32i')]
-        for executable in ('native', 'sanitized'):
+        for executable in ('native', 'sanitized', 'native-wide', 'sanitized-wide'):
             command = ['gcc', '-O2', '-Wall', '-Wextra', '-Werror']+flags
-            if executable == 'sanitized':
+            if executable.startswith('sanitized'):
                 command += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie']
+            if executable.endswith('-wide'):
+                command += ['-DCS_GCC_COPY_PROGRAM_BYTES=1048576', '-DCS_COPY_LABEL_CAPACITY=128',
+                            '-DCS_COPY_JUMP_CAPACITY=256', '-DCS_COPY_CALL_CAPACITY=64']
             command += list(map(str, sources))+['-o', str(root/executable)]
             (root/(executable+'-command.json')).write_text(json.dumps(command)+'\n')
             subprocess.run(command, check=True, capture_output=True)
@@ -112,6 +115,14 @@ def main():
                       chain[::-1], [unit for _, unit in chain], 10))
         alias_unit = b'.global helper; .set helper,private; private: copy.inc $r0,2; copy.ret\n'
         cases.append(('alias', caller, [('alias.s/', alias_unit)], [alias_unit], 5))
+        for total in (12, 16):
+            units = []
+            for i in range(total-1):
+                body = (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.inc $r0,1; copy.ret\n' if i<total-2 else
+                        f'.global f{i}; f{i}: copy.jmpa 1f; 1: copy.jmpa private; private: copy.inc $r0,1; copy.ret\n')
+                units.append((f'f{i}.s/', body.encode()))
+            cases.append((f'late-locals-{total}', b'.global value; value: copy.jsra f0; copy.ret\n',
+                          units, [unit for _, unit in units], total+2))
         results = []
         for name, assembly, members, extracted, expected in cases:
             folder = root/name
@@ -119,15 +130,17 @@ def main():
             library = archive(members)
             incoming = job(assembly, options+['--space-library=lib/libgcc.a'], [('lib/libgcc.a', library)])
             (folder/'job.bin').write_bytes(incoming)
-            result = subprocess.run([str(root/'native')], input=incoming, capture_output=True, check=True)
+            wide = name == 'late-locals-16'
+            result = subprocess.run([str(root/('native-wide' if wide else 'native'))], input=incoming, capture_output=True, check=True)
             assert not result.stderr
             code, stdout, stderr, image = decode(result.stdout)
-            assert not code and not stdout and not stderr and len(image) == 262144
-            explicit_options = options+[f'--space-object=unit{i}.s' for i in range(len(extracted))]
-            explicit = subprocess.run([str(root/'native')], input=job(assembly, explicit_options,
-                [(f'unit{i}.s', unit) for i, unit in enumerate(extracted)]), capture_output=True, check=True)
-            assert explicit.stdout == result.stdout, name
-            sanitized = subprocess.run([str(root/'sanitized')], input=incoming, capture_output=True,
+            assert not code and not stdout and not stderr and len(image) == (1048576 if wide else 262144)
+            if len(extracted) <= 7:
+                explicit_options = options+[f'--space-object=unit{i}.s' for i in range(len(extracted))]
+                explicit = subprocess.run([str(root/'native')], input=job(assembly, explicit_options,
+                    [(f'unit{i}.s', unit) for i, unit in enumerate(extracted)]), capture_output=True, check=True)
+                assert explicit.stdout == result.stdout, name
+            sanitized = subprocess.run([str(root/('sanitized-wide' if wide else 'sanitized'))], input=incoming, capture_output=True,
                 env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=0'})
             assert sanitized.returncode == 0 and not sanitized.stderr and sanitized.stdout == result.stdout, sanitized.stderr
             (folder/'response.bin').write_bytes(result.stdout)
@@ -162,9 +175,9 @@ def main():
                    archive([(f'u{i}/', b'') for i in range(65)]),
                    archive([('x/', b'.global helper; helper: copy.jsra absent; copy.ret\n')]),
                    archive([('x/', helper+b'.global value; value: copy.ret\n')])]
-        # A selected dependency chain beyond the twelve-unit limit must fail before linking.
-        chain = [(f'u{i}/', (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.ret\n' if i<11 else
-                             '.global f11; f11: copy.ret\n').encode()) for i in range(12)]
+        # A selected dependency chain beyond the sixteen-unit limit must fail before linking.
+        chain = [(f'u{i}/', (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.ret\n' if i<15 else
+                             '.global f15; f15: copy.ret\n').encode()) for i in range(16)]
         invalid.append(archive(chain))
         for i, library in enumerate(invalid):
             assembly = b'.global value; value: copy.jsra f0; copy.ret\n' if i == len(invalid)-1 else caller

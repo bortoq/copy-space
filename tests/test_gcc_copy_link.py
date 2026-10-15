@@ -172,6 +172,11 @@ def main():
         (b'copy.ldi.l $sp,2\ncopy.push $sp,$r0\n',None,suffix),
         (b'copy.pop $sp,$r0\n',None,suffix),
         (b'copy.ldi.l $sp,8190\ncopy.pop $sp,$r0\n',None,suffix)])
+    cases.extend([
+        (b'copy.trap\n', None, b''),
+        (b'copy.cmp $r0,$r1\ncopy.branch.eq .Lbad\ncopy.add $r0,$r1\n'
+         b'copy.ret\n.Lbad:\ncopy.trap\n', 7, b''),
+        (b'copy.cmp $r0,$r0\ncopy.branch.eq .Lbad\ncopy.ret\n.Lbad:\ncopy.trap\n', None, b'')])
     results=[]
     for index,(body,value,tail) in enumerate(cases):
         folder=root/str(index);folder.mkdir()
@@ -180,11 +185,12 @@ def main():
         result=subprocess.run([str(native)],input=assembly,capture_output=True,check=True)
         assert len(result.stdout)==65536
         (folder/"image.bin").write_bytes(result.stdout)
-        command=[str(result_emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
+        command=[str(result_emulator),"--ticks","100000","--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
         (folder/"command.json").write_text(json.dumps(command)+"\n")
         checked=subprocess.run(command,capture_output=True,check=True,timeout=10)
         (folder/"out.bin").write_bytes(checked.stdout)
         assert checked.stdout==(b"" if value is None else struct.pack("<I",value)),checked.stdout
+        assert not checked.stderr and (folder/"trace.txt").read_bytes().endswith(b' idle\n')
         results.append({"image_sha256":hashlib.sha256(result.stdout).hexdigest(),"output_hex":checked.stdout.hex()})
         if index==args.guest_case: incoming,expected,expected_value=assembly,result.stdout,value
     if not 0<=args.guest_case<len(cases):

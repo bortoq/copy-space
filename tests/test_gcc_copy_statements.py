@@ -82,7 +82,13 @@ __attribute__((destructor)) static void check(void) { if(active) abort(); }
         (b'.data; text: .ascii "1f;1b#1:"; .text; value: '
          b'copy.lda.b $r0,text; copy.ret\n', 49),
         (b'value: copy.jmpa 1f; .L.__cA0.N0: copy.ldi.l $r0,99; '
-         b'1: copy.ldi.l $r0,13; copy.ret\n', 13)]
+         b'1: copy.ldi.l $r0,13; copy.ret\n', 13),
+        (b'value: copy.trap\n', None),
+        (b'value: copy.cmp $r0,$r1; copy.branch.eq .Lbad; copy.add $r0,$r1; '
+         b'copy.ret; .Lbad: copy.trap\n', 7),
+        (b'value: copy.cmp $r0,$r0; copy.branch.eq .Lbad; copy.ret; .Lbad: copy.trap\n', None),
+        (b'value: copy.jsra helper; copy.ret; helper: copy.trap\n', None),
+        (b'value: copy.jmpa 1f; 1: copy.trap\n', None)]
     evidence = []
     for objects in (False, True):
         folder = root/('objects' if objects else 'program')
@@ -116,7 +122,10 @@ __attribute__((destructor)) static void check(void) { if(active) abort(); }
             (case/'command.json').write_text(json.dumps(command)+'\n')
             result = subprocess.run(command, capture_output=True, check=True, timeout=60)
             (case/'out.bin').write_bytes(result.stdout)
-            assert not result.stderr and result.stdout == struct.pack('<I', expected)
+            assert not result.stderr and result.stdout == (b'' if expected is None else struct.pack('<I', expected))
+            with (case/'trace.txt').open('rb') as trace:
+                trace.seek(max(0, (case/'trace.txt').stat().st_size-80))
+                assert trace.read().endswith(b' idle\n')
             evidence.append({'mode': folder.name, 'case': index, 'result': expected,
                              'image_sha256': hashlib.sha256(image).hexdigest()})
         invalid = b'# first line\n.text; value: copy.unsupported $r0,$r1; copy.ret\n'

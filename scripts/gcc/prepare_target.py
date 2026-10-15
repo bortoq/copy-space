@@ -26,6 +26,7 @@ def derive(name, text):
         text = text.replace('"nop")', '"copy.nop")').replace('"ret")', '"copy.ret")')
         text = re.sub(r"(?<![\w.])([a-z]+(?:\.[a-z]+)?)(?=\\\\t)", r"copy.\1", text)
         text = text.replace('"<mul>.x', '"copy.<mul>.x')
+        text += '\n(define_insn "trap"\n  [(trap_if (const_int 1) (const_int 0))]\n  ""\n  "copy.trap")\n'
     if name == "moxie.cc":
         text=replace_once(text, '"%ld(%s)"', 'HOST_WIDE_INT_PRINT_DEC "(%s)"')
         text=replace_once(text, '"+%ld(%s)"', '"+" HOST_WIDE_INT_PRINT_DEC "(%s)"')

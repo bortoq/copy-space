@@ -28,11 +28,12 @@ def direct(image, folder, expected, memory_bytes):
     (folder/'command.json').write_text(json.dumps(command)+'\n')
     result = subprocess.run(command, capture_output=True, check=True, timeout=120)
     (folder/'out.bin').write_bytes(result.stdout)
-    assert not result.stderr and result.stdout == struct.pack('<I', expected)
+    assert not result.stderr and result.stdout == (b'' if expected is None else struct.pack('<I', expected))
     raw = (folder/'space.bin').read_bytes()
     def word(at):
         return sum(((raw[(at+i)//8] >> (7-(at+i)%8)) & 1) << i for i in range(32))
-    assert word(32768) == word(32800) == memory_bytes
+    if expected is not None:
+        assert word(32768) == word(32800) == memory_bytes
     assert (folder/'trace.txt').read_bytes().endswith(b' idle\n')
 
 
@@ -41,6 +42,7 @@ def main():
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--assembly', type=Path)
     parser.add_argument('--expected-result', type=lambda value: int(value, 0), default=7)
+    parser.add_argument('--expect-trap', action='store_true', help='expect idle termination without OUT')
     parser.add_argument('--memory-bytes', type=int, default=65536)
     parser.add_argument('--compiler')
     parser.add_argument('--newlib', type=Path)
@@ -49,6 +51,8 @@ def main():
     parser.add_argument('--segment-ticks', type=int, default=1000000)
     parser.add_argument('--timeout', type=float, default=1800)
     args = parser.parse_args()
+    if args.expect_trap:
+        args.expected_result = None
     if args.segment_ticks < 1:
         parser.error('--segment-ticks must be positive')
     root = args.artifacts.resolve()

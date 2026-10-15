@@ -1022,7 +1022,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     char *buffer=NULL;
     const char *message="invalid link input";
     size_t line=0, offset=0, physical_line=1;
-    int entered=0, returned=0, terminated=0;
+    int entered=0, returned=0, terminated=0, trapped=0;
     if (!data || bytes<32768 || bytes>UINT32_MAX/8 || !assembly || !entry || !*entry ||
         argc>6 || (argc && !arguments) || memchr(assembly,0,size)) goto fail;
     message="out of memory for assembly operator";
@@ -1112,6 +1112,12 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         }
         message="operation outside leaf body";
         if (!entered || terminated || (program_mode && ctx.section)) goto fail;
+        if (!strcmp(s,"copy.trap")) {
+            message="copy image capacity exceeded";
+            if (ctx.memory_fault<0) ctx.memory_fault=internal_label(&ctx);
+            if (ctx.memory_fault<0 || jump(&ctx,ctx.memory_fault,line)) goto fail;
+            trapped=1; terminated=1; continue;
+        }
         if (!strcmp(s,"copy.ret")) {
             message="copy image capacity exceeded";
             if (jump(&ctx,program_mode ? ctx.return_handler : -2,line)) goto fail;
@@ -1152,7 +1158,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         if (message) goto fail;
     }
     message="missing leaf entry or return";
-    if (!entered || !returned) goto fail;
+    if (!entered || (!returned && !trapped)) goto fail;
     message="invalid section layout or unresolved alias";
     if (program_mode && (ctx.section_depth || layout_data(&ctx))) goto fail;
     if (program_mode && (!ctx.labels[entry_label].defined || ctx.labels[entry_label].data)) goto fail;

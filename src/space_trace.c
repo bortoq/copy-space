@@ -11,3 +11,15 @@ void space_trace_event(uint64_t tick, const space_event *event, void *context)
     fprintf(trace, "copy %llu %u %u %u %u\n", (unsigned long long)tick,
             event->slot, event->n, event->dst, event->src);
 }
+
+void space_trace_channel_event(uint64_t tick, const space_event *event, void *context)
+{
+  space_channel_trace *trace = context;
+  if(event->channel)
+  {
+    ++trace->channels;
+    space_trace_event(tick, event, trace->file);
+  }
+  else
+    ++trace->copies;
+}

@@ -9,6 +9,8 @@ int main(int argc, char **argv)
   const char *dump_path = NULL;
   const char *trace_path = NULL;
   FILE *trace = NULL;
+  int channels_only = 0;
+  space_channel_trace channel_trace = {NULL, 0, 0};
   uint64_t ticks = 0;
   const uint64_t *limit = NULL;
   int i;
@@ -19,7 +21,16 @@ int main(int argc, char **argv)
     else if(strcmp(argv[i], "--dump-space") == 0 && i + 1 < argc)
       dump_path = argv[++i];
     else if(strcmp(argv[i], "--trace") == 0 && i + 1 < argc)
+    {
+      if(trace_path && channels_only) { fprintf(stderr, "choose one trace mode\n"); return 1; }
       trace_path = argv[++i];
+    }
+    else if(strcmp(argv[i], "--trace-channels") == 0 && i + 1 < argc)
+    {
+      if(trace_path && !channels_only) { fprintf(stderr, "choose one trace mode\n"); return 1; }
+      trace_path = argv[++i];
+      channels_only = 1;
+    }
     else if(strcmp(argv[i], "--ticks") == 0 && i + 1 < argc)
     {
       if(space_parse_ticks(argv[++i], &ticks) != 0)
@@ -31,7 +42,7 @@ int main(int argc, char **argv)
     }
     else
     {
-      fprintf(stderr, "usage: space [--core FILE] [--ticks N] [--dump-space FILE] [--trace FILE]\n");
+      fprintf(stderr, "usage: space [--core FILE] [--ticks N] [--dump-space FILE] [--trace FILE | --trace-channels FILE]\n");
       return 1;
     }
   }
@@ -50,10 +61,16 @@ int main(int argc, char **argv)
     }
   }
   setvbuf(stdout, NULL, _IONBF, 0);
-  result = space_run(stdin, stdout, limit, trace ? space_trace_event : NULL, trace);
+  channel_trace.file = trace;
+  result = space_run(stdin, stdout, limit,
+                     trace ? (channels_only ? space_trace_channel_event : space_trace_event) : NULL,
+                     channels_only ? (void *)&channel_trace : (void *)trace);
   if(trace)
   {
     int failed;
+    if(channels_only)
+      fprintf(trace, "counts %llu %llu\n", (unsigned long long)channel_trace.copies,
+              (unsigned long long)channel_trace.channels);
     fprintf(trace, "stop %llu %s\n", (unsigned long long)result.ticks,
             space_stop_name(result.reason));
     failed = ferror(trace);

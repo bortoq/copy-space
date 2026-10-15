@@ -26,7 +26,15 @@ def main():
     parser.add_argument("--newlib",type=Path,help="guest assembler C runtime for copy-compile")
     parser.add_argument("--resume",action="store_true")
     parser.add_argument("--timeout",type=float,default=300)
+    parser.add_argument("--trace-channels",action="store_true")
+    parser.add_argument("--segment-ticks",type=int,default=100000)
+    parser.add_argument("--execution-name",default="space")
+    parser.add_argument("--checkpoint-from",type=Path)
     args=parser.parse_args()
+    if args.segment_ticks<1:parser.error("--segment-ticks must be positive")
+    if args.resume and args.checkpoint_from:parser.error("choose resume or checkpoint-from")
+    if args.execution_name in ("", ".", "..") or Path(args.execution_name).name!=args.execution_name:parser.error("execution-name must be a folder name")
+    reuse=args.resume or args.checkpoint_from is not None
     image=args.image.resolve(); manifest=json.loads((image/"image.json").read_text())
     if args.mode=="copy-compile":
         if not args.newlib or manifest.get("target")!="copyspace-unknown-elf" or not manifest.get("framed_output"):
@@ -39,13 +47,13 @@ def main():
     emulator=args.emulator.resolve() if args.emulator else ROOT/"build/bin"/profiles[manifest["space_bytes"]]
     if not emulator.is_file(): raise ValueError("build matching emulator: "+str(emulator))
     if digest(image/"gcc.stream")!=manifest["stream_sha256"]: raise ValueError("image changed")
-    root=args.artifacts.resolve(); root.mkdir(parents=True,exist_ok=args.resume)
+    root=args.artifacts.resolve(); root.mkdir(parents=True,exist_ok=reuse)
     configuration={"image_sha256":manifest["stream_sha256"],"mode":args.mode}
-    if args.resume:
+    if reuse:
         assert json.loads((root/"test-configuration.json").read_text())==configuration, "changed test image/mode"
     else:
         (root/"test-configuration.json").write_text(json.dumps(configuration)+"\n")
-    if not args.resume:
+    if not reuse:
         files=[(b"main.c",b'#include "value.h"\n#define BASE 3\nunsigned value(void) { return BASE + VALUE; }\n'),
                (b"include/value.h",b"#define VALUE 4\n")]
         oracle=b"unsigned value(void) { return 3 + 4; }\n"
@@ -94,11 +102,13 @@ def main():
             while block:=source.read(1024*1024): target.write(block)
             target.write(job)
     print("Executing actual cc1 through primitive Space:",args.mode,flush=True)
-    execution=execute_segments(emulator,root/"space",root/"in.bin",
+    execution_folder=root/args.execution_name
+    execution=execute_segments(emulator,execution_folder,root/"in.bin",
         space_bytes=manifest["space_bytes"],layer_bytes=manifest["layer_bits"]//8,
-        ticks=100000,timeout=args.timeout,compression="zstd",resume=args.resume)
-    output=(root/"space/program.in").read_bytes()
-    raw=(root/"space/space.bin").read_bytes()
+        ticks=args.segment_ticks,timeout=args.timeout,compression="zstd",resume=args.resume,
+        channels_only=args.trace_channels,fork_from=args.checkpoint_from)
+    output=(execution_folder/"program.in").read_bytes()
+    raw=(execution_folder/"space.bin").read_bytes()
     def word(at,buffer=raw):
         return sum(((buffer[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
     status,code=word(132128),word(132160)

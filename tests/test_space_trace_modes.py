@@ -57,6 +57,7 @@ def main():
         del image
         results = []
         full_state = None
+        full_trace = None
         for name, reduced in (('baseline',False),('full',False),('channels',True)):
             mode = folder / name
             mode.mkdir()
@@ -75,6 +76,10 @@ def main():
             else:
                 full_state = raw
             trace = (mode / 'trace.txt').read_bytes()
+            if name == 'baseline':
+                full_trace = trace
+            elif name == 'full':
+                assert trace == full_trace
             with gzip.open(mode / 'trace.txt.gz', 'wb') as f:
                 f.write(trace)
             (mode / 'trace.txt').unlink()

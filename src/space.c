@@ -41,12 +41,19 @@ int space_init(const void *image, size_t bytes)
 static inline size get_argument(size src, size n)
 {
   size value = 0;
-  size i;
-  for(i = 0; i < n; ++i)
+  size i = 0;
+  while(i < n)
   {
-    unsigned char byte = (unsigned char)space[(src + i) >> 3];
-    unsigned shift = 7u - (unsigned)((src + i) & 7u);
-    value |= (size)(((byte >> shift) & 1u) << i);
+    unsigned byte = (unsigned char)space[(src + i) >> 3];
+    unsigned offset = (unsigned)((src + i) & 7u);
+    unsigned take = 8u - offset;
+    if(take > n - i)
+      take = n - i;
+    byte = ((byte & 0x55u) << 1) | ((byte >> 1) & 0x55u);
+    byte = ((byte & 0x33u) << 2) | ((byte >> 2) & 0x33u);
+    byte = (byte << 4) | (byte >> 4);
+    value |= (size)((byte >> offset) & ((1u << take) - 1u)) << i;
+    i += take;
   }
   return value;
 }

@@ -73,6 +73,38 @@ def main():
                 b'.comm shared,8,4\n'], 8)]
     cases.append(([b'.comm shared,0,1\n.comm shared,12,32\n.comm after,4,4\n.global value\nvalue:\ncopy.ldi.l $r0,after\ncopy.ldi.l $r1,shared\ncopy.sub $r0,$r1\ncopy.ret\n',
                    b'.comm shared,8,4\n'], 12))
+    caller = b'.global value\nvalue:\ncopy.jsra helper\ncopy.ret\n'
+    weak = b'.weak helper\nhelper:\ncopy.inc $r0,10\ncopy.ret\n'
+    another = b'.weak helper\nhelper:\ncopy.inc $r0,20\ncopy.ret\n'
+    strong = b'.global helper\nhelper:\ncopy.inc $r0,100\ncopy.ret\n'
+    alias = weak + b'.global alias\n.set alias,helper\n'
+    weak_data = b'.weak shared\n.data\nshared:\n.long 11\n'
+    load = b'.global value\nvalue:\ncopy.lda.l $r0,shared\ncopy.ret\n'
+    common = b'.comm shared,4,4\n'
+    strong_data = b'.global shared\n.data\nshared:\n.long 37\n'
+    cases += [([weak, strong, caller], 103), ([strong, weak, caller], 103),
+              ([weak, another, caller], 13), ([another, weak, caller], 23),
+              ([weak, caller], 13),
+              ([weak, b'.global value\nvalue:\ncopy.ldi.l $r2,helper\ncopy.jsr $r2\ncopy.ret\n'], 13),
+              ([weak, strong, b'.global value\nvalue:\ncopy.ldi.l $r2,helper\ncopy.jsr $r2\ncopy.ret\n'], 103),
+              ([weak + b'.data\n.global pointer\npointer:\n.long helper\n', strong,
+                b'.global value\nvalue:\ncopy.lda.l $r2,pointer\ncopy.jsr $r2\ncopy.ret\n'], 103),
+              ([alias, strong, b'.global value\nvalue:\ncopy.jsra alias\ncopy.ret\n'], 13),
+              ([weak_data, common, load], 0), ([common, weak_data, load], 0),
+              ([weak_data, strong_data, load], 37), ([strong_data, weak_data, load], 37),
+              ([weak_data + b'.global original\n.set original,shared\n', strong_data,
+                b'.global value\nvalue:\ncopy.lda.l $r0,original\ncopy.lda.l $r1,shared\ncopy.add $r0,$r1\ncopy.ret\n'], 48),
+              ([b'.weak missing\n.global value\nvalue:\ncopy.ret\n', b'.text\n'], 3),
+              ([b'.weak optional\n.global value\nvalue:\ncopy.ldi.l $r0,optional\ncopy.ret\n', b'.weak optional\n'], 0),
+              ([b'optional:\ncopy.ret\n', b'.weak optional\n.global value\nvalue:\ncopy.ldi.l $r0,optional\ncopy.ret\n'], 0),
+              ([b'.weak optional\n.global value\nvalue:\ncopy.jsra optional\ncopy.ret\n', b'.text\n'], None),
+              ([b'.weak optional\n.set alias,optional\n.global value\nvalue:\ncopy.jsra alias\ncopy.ret\n', b'.text\n'], None),
+              ([b'.weak optional\n.data\npointer:\n.long optional\n.text\n.global value\nvalue:\ncopy.lda.l $r0,pointer\ncopy.ret\n', b'.weak optional\n.data\npointer:\n.long optional\n'], 0),
+              ([b'.weak optional\n.global value\nvalue:\ncopy.ldi.l $r2,optional\ncopy.ldi.l $r3,0\ncopy.cmp $r2,$r3\ncopy.branch.eq .Lnone\ncopy.jsra optional\ncopy.ret\n.Lnone:\ncopy.add $r0,$r1\ncopy.ret\n', b'.text\n'], 7)]
+    cases.append(([b'.global value\nvalue:\ncopy.cmp $r0,$r1\ncopy.branch.eq .Lequal\n.Lnext:\ncopy.branch.ltu .Lless\ncopy.ldi.l $r0,9\ncopy.ret\n.Lless:\ncopy.ldi.l $r0,7\ncopy.ret\n.Lequal:\ncopy.ldi.l $r0,1\ncopy.ret\n', b'.text\n'], 7))
+    cases += [([b'.weak $r0\n.global value\nvalue:\ncopy.ldi.l $r0,$r0\ncopy.ret\n', b'.text\n'], 0),
+              ([b'.weak $r0\n$r0:\ncopy.inc $r0,1\ncopy.ret\n', b'.global $r0\n$r0:\ncopy.inc $r0,2\ncopy.ret\n',
+                b'.global value\nvalue:\ncopy.jsra $r0\ncopy.ret\n'], 5)]
     if args.assembly:
         if args.expected_result is None or not 0 <= args.expected_result <= 0xffffffff:
             parser.error('--assembly requires a uint32 --expected-result')
@@ -94,13 +126,12 @@ def main():
         (folder / 'command.json').write_text(json.dumps(command) + '\n')
         checked = subprocess.run(command, capture_output=True, check=True, timeout=60)
         (folder / 'out.bin').write_bytes(checked.stdout)
-        assert checked.stdout == struct.pack('<I', expected), (index, checked.stdout)
+        assert checked.stdout == (b'' if expected is None else struct.pack('<I', expected)), (index, checked.stdout)
         results.append({'units': len(units), 'result': expected, 'image_sha256': hashlib.sha256(result.stdout).hexdigest()})
     invalid = [
         [b'.global value\nvalue:\ncopy.jsra missing\ncopy.ret\n', b'.text\n'],
         [b'.global value\nvalue:\ncopy.ret\n', b'.global value\nvalue:\ncopy.ret\n'],
         [b'.global value\n.local missing\nvalue:\ncopy.jsra missing\ncopy.ret\n', b'.global missing\nmissing:\ncopy.ret\n'],
-        [b'.weak missing\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
         [b'.global value\nvalue:\ncopy.ret\n.pushsection .data\n', b'.popsection\n'],
         [b'.global value,\nvalue:\ncopy.ret\n', b'.text\n'],
         [b'.local value\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
@@ -111,6 +142,16 @@ def main():
         [b'.comm shared,4,0\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
         [b'.comm shared,4,4,8\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
         [b'.comm shared,4294967296,4\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
+        [b'.weak optional\n', b'.global value\nvalue:\ncopy.ldi.l $r0,optional\ncopy.ret\n'],
+        [b'.weak optional\n.global value\nvalue:\ncopy.ret\n', b'.data\npointer:\n.long optional\n'],
+        [b'.weak item\n.comm item,4,4\n.global value\nvalue:\ncopy.ret\n', b'.text\n'],
+        [b'.weak helper\n.local helper\nhelper:\ncopy.ret\n', caller],
+        [b'.weak helper\nhelper:\ncopy.jsra missing\ncopy.ret\n', strong, caller],
+        [b'.global optional\n', b'.weak optional\n.global value\nvalue:\ncopy.ldi.l $r0,optional\ncopy.ret\n'],
+        [b'.global value\nvalue:\ncopy.cmp $r0,$r1\ncopy.ret\n', b'.global helper\nhelper:\ncopy.branch.eq .Lhit\ncopy.ret\n.Lhit:\ncopy.ret\n'],
+        [b'.weak $r0\n', b'.global value\nvalue:\ncopy.ldi.l $r1,$r0\ncopy.ret\n'],
+        [b'.weak $r0\n', b'.global value\nvalue:\ncopy.jsra $r0\ncopy.ret\n'],
+        [b'.weak $fp\n', b'.global value\nvalue:\ncopy.lda.l $r0,$fp\ncopy.ret\n'],
     ]
     for index, units in enumerate(invalid):
         incoming = b'\0'.join(units)

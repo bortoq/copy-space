@@ -12,7 +12,7 @@ int cs_copy_link_program(unsigned char *, size_t, unsigned, const char *, size_t
                        const char *, const uint32_t *, unsigned,
                        struct cs_copy_link_error *);
 struct cs_copy_object { const char *assembly; size_t size; };
-/* Strong externals/scoped locals. Scratch must hold rewritten text + NUL;
+/* Scoped locals and strong/common/weak resolution. Scratch holds text + NUL;
    it must not overlap the inputs or image. One input uses program linking. */
 int cs_copy_link_objects(unsigned char *, size_t, unsigned,
                         const struct cs_copy_object *, unsigned,

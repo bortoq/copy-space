@@ -133,7 +133,8 @@ unsigned bit_operations(unsigned a, unsigned b)
     for (unsigned i = 0; i < 32; ++i) {
         volatile unsigned long word = 1UL << i;
         if (__ffs(word) != i || __fls(word) != i || ffs(word) != i + 1 ||
-            fls(word) != i + 1 || fls64((u64)word << 32) != i + 33)
+            fls(word) != i + 1 || fls64((u64)word << 32) != i + 33 ||
+            ffz(~word) != i)
             return 1110 + i;
     }
     if (ffs(0) || fls(0) || fls64(0))

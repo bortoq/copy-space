@@ -91,17 +91,9 @@ static int lower_copy(const unsigned char *data, unsigned size)
             (const char *)data,size,copy_entry,copy_arguments,copy_argc,&error);
     }
     if (!failed) {
-        int fd=cs_gcc_fs_open(output_file,CS_FS_WRITE|CS_FS_TRUNC);
-        if (fd<0) failed=1;
-        else {
-            unsigned written=0;
-            while (written<image_bytes) {
-                int count=cs_gcc_fs_write(fd,image+written,image_bytes-written);
-                if (count<=0 || (unsigned)count>image_bytes-written) { failed=1; break; }
-                written+=(unsigned)count;
-            }
-            if (cs_gcc_fs_close(fd)) failed=1;
-        }
+        failed=cs_gcc_fs_replace_owned(output_file,image,image_bytes);
+        if (!failed) image=NULL;
+        else error.message="output replacement failed";
     }
     free(image);
     if (failed) {

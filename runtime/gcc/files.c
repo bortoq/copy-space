@@ -231,6 +231,20 @@ int cs_gcc_fs_output(const char *path, const unsigned char **data, unsigned *siz
     *data=object->data; *size=object->size; return 0;
 }
 
+int cs_gcc_fs_replace_owned(const char *path, unsigned char *data, unsigned size)
+{
+    if (size>INT_MAX) return failure(EFBIG);
+    if (size && !data) return failure(EFAULT);
+    char name[PATH_BYTES]; if (normalize(path,name)) return -1;
+    file *object=lookup(name); if (!object) return failure(ENOENT);
+    if (object->readonly) return failure(EACCES);
+    if (object->references) return failure(EBUSY);
+    if (data && data==object->data) return failure(EINVAL);
+    free(object->data);
+    object->data=data; object->size=size; object->capacity=size;
+    return 0;
+}
+
 int cs_gcc_fs_directory_open(const char *path)
 {
     unsigned size,inode; int directory;

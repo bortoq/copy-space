@@ -68,6 +68,25 @@ int main(void)
     other=cs_gcc_fs_open("result",CS_FS_WRITE|CS_FS_TRUNC);
     CHECK(other>=3 && cs_gcc_fs_close(other)==0);
     CHECK(cs_gcc_fs_output("result",&output,&size)==0 && size==0);
+    unsigned char *owned=malloc(4);
+    CHECK(owned); memcpy(owned,"take",4);
+    CHECK(cs_gcc_fs_replace_owned("missing",owned,4)==-1 && errno==ENOENT);
+    CHECK(cs_gcc_fs_replace_owned("main.c",owned,4)==-1 && errno==EACCES);
+    CHECK(cs_gcc_fs_replace_owned("result",NULL,4)==-1 && errno==EFAULT);
+    CHECK(cs_gcc_fs_replace_owned("result",owned,UINT_MAX)==-1 && errno==EFBIG);
+    other=cs_gcc_fs_open("result",CS_FS_READ);
+    CHECK(other>=3);
+    CHECK(cs_gcc_fs_replace_owned("result",owned,4)==-1 && errno==EBUSY);
+    CHECK(cs_gcc_fs_close(other)==0);
+    CHECK(cs_gcc_fs_replace_owned("./result",owned,4)==0);
+    CHECK(cs_gcc_fs_output("result",&output,&size)==0 && output==owned && size==4);
+    CHECK(cs_gcc_fs_replace_owned("result",owned,4)==-1 && errno==EINVAL);
+    other=cs_gcc_fs_open("result",CS_FS_READ|CS_FS_WRITE);
+    CHECK(other>=3 && cs_gcc_fs_read(other,data,16)==4 && !memcmp(data,"take",4));
+    CHECK(cs_gcc_fs_write(other,"!",1)==1 && cs_gcc_fs_close(other)==0);
+    CHECK(cs_gcc_fs_output("result",&output,&size)==0 && size==5 && !memcmp(output,"take!",5));
+    CHECK(cs_gcc_fs_replace_owned("result",NULL,0)==0);
+    CHECK(cs_gcc_fs_output("result",&output,&size)==0 && !output && size==0);
     int handles[61];
     for (unsigned i=0;i<61;++i) { handles[i]=cs_gcc_fs_open("main.c",CS_FS_READ); CHECK(handles[i]>=3); }
     CHECK(cs_gcc_fs_open("main.c",CS_FS_READ)==-1 && errno==EMFILE);

@@ -14,6 +14,9 @@ int cs_gcc_fs_stat(const char *path, unsigned *size, int *directory, unsigned *i
 int cs_gcc_fs_fstat(int fd, unsigned *size, unsigned *inode);
 int cs_gcc_fs_unlink(const char *path);
 int cs_gcc_fs_output(const char *path, const unsigned char **data, unsigned *size);
+/* Replace a closed writable file without copying. On success the filesystem
+   owns the malloc-allocated buffer; on failure ownership stays with the caller. */
+int cs_gcc_fs_replace_owned(const char *path, unsigned char *data, unsigned size);
 int cs_gcc_fs_directory_open(const char *path);
 int cs_gcc_fs_access(const char *path, int write, int execute);
 void cs_gcc_fs_directory_close(void);

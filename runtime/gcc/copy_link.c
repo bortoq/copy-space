@@ -30,6 +30,8 @@ struct context {
     unsigned label_count, jump_count;
     int compared;
     uint32_t data_begin;
+    uint32_t memory_bytes;
+    unsigned memory_address_bits;
     int memory_fault;
     int return_handler;
     unsigned call_count;
@@ -693,14 +695,14 @@ static const char *memory_access(struct context *ctx, int store, unsigned width,
     }
     uint32_t limit;
     int compared=ctx->compared;
-    if (constant(ctx,8192-width/8,&limit) ||
+    if (constant(ctx,ctx->memory_bytes-width/8,&limit) ||
         cs_copy_program_emit(p,5,MEM_FLAGS,CMP_EQ) || compare32(ctx,MEM_ADDRESS,limit) ||
         cs_copy_program_emit(p,1,MEM_VALID,CMP_LEU) ||
         cs_copy_program_emit(p,5,CMP_EQ,MEM_FLAGS) ||
         conditional_jump(ctx,ctx->memory_fault,MEM_VALID,1,0)) return "copy image capacity exceeded";
     ctx->compared=compared;
     if (cs_copy_constant(&p->image,MEM_BIT_ADDRESS,p->image.address_bits,ctx->data_begin) ||
-        cs_copy_program_emit(p,13,MEM_BIT_ADDRESS+3,MEM_ADDRESS)) return "copy image capacity exceeded";
+        cs_copy_program_emit(p,ctx->memory_address_bits,MEM_BIT_ADDRESS+3,MEM_ADDRESS)) return "copy image capacity exceeded";
     if (!store && width<32) {
         uint32_t zero;
         if (constant(ctx,0,&zero) || cs_copy_program_emit(p,32-width,value+width,zero)) return "copy image capacity exceeded";
@@ -877,7 +879,7 @@ static const char *instruction(struct context *ctx, char *s)
 static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
                        const char *assembly, size_t size, const char *entry,
                        const uint32_t *arguments, unsigned argc,
-                       struct cs_copy_link_error *error, int program_mode)
+                       struct cs_copy_link_error *error, int program_mode, uint32_t memory_bytes)
 {
     struct context ctx;
     const char *message="invalid link input";
@@ -887,6 +889,10 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         argc>6 || (argc && !arguments) || memchr(assembly,0,size)) goto fail;
     memset(data,0,bytes);
     memset(&ctx,0,sizeof(ctx));
+    message="invalid data/stack memory size";
+    if (memory_bytes<8192 || (memory_bytes&(memory_bytes-1))) goto fail;
+    ctx.memory_bytes=memory_bytes;
+    for (uint32_t n=memory_bytes; n>1; n>>=1) ++ctx.memory_address_bits;
     ctx.memory_fault=-1;
     ctx.program_mode=program_mode;
     ctx.data_cursor=256;
@@ -896,23 +902,25 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         cs_copy_constant(&ctx.program.image,XOR_TABLE,4,6) ||
         cs_copy_constant(&ctx.program.image,AND_TABLE,4,8) ||
         cs_copy_constant(&ctx.program.image,OR_TABLE,4,14)) goto fail;
-    if (cs_copy_constant(&ctx.program.image,REG_BASE,32,8192) ||
-        cs_copy_constant(&ctx.program.image,REG_BASE+32,32,8192)) goto fail;
+    if (cs_copy_constant(&ctx.program.image,REG_BASE,32,memory_bytes) ||
+        cs_copy_constant(&ctx.program.image,REG_BASE+32,32,memory_bytes)) goto fail;
     for (unsigned i=0;i<argc;++i)
         if (cs_copy_constant(&ctx.program.image,REG_BASE+32*(i+2),32,arguments[i])) goto fail;
     int entry_label=-1;
     if (program_mode) {
         if (bytes<262144 || ((bytes*8)&65535)) goto fail;
-        ctx.data_begin=(uint32_t)(bytes*8)-65536;
+        message="memory requires an aligned image with room for code";
+        if (memory_bytes>=bytes || (bytes&(memory_bytes-1)) || bytes-memory_bytes<8192) goto fail;
+        ctx.data_begin=(uint32_t)((bytes-memory_bytes)*8);
         ctx.program.code_limit=ctx.data_begin;
         if (select_section(&ctx,".text",0)) goto fail;
         entry_label=label(&ctx,entry);
         ctx.return_handler=internal_label(&ctx);
         ctx.memory_fault=internal_label(&ctx);
         if (entry_label<0 || ctx.return_handler<0 || ctx.memory_fault<0 ||
-            cs_copy_constant(&ctx.program.image,REG_BASE,32,8180) ||
-            cs_copy_constant(&ctx.program.image,REG_BASE+32,32,8180) ||
-            cs_copy_constant(&ctx.program.image,ctx.data_begin+8180*8,32,8192) ||
+            cs_copy_constant(&ctx.program.image,REG_BASE,32,memory_bytes-12) ||
+            cs_copy_constant(&ctx.program.image,REG_BASE+32,32,memory_bytes-12) ||
+            cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-12)*8,32,memory_bytes) ||
             jump(&ctx,entry_label,0)) goto fail;
     }
     while (offset<size) {
@@ -1019,7 +1027,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     }
     if (cs_copy_program_next(&ctx.program)) goto fail;
     uint32_t report=ctx.program.image.layer;
-    if (program_mode && cs_copy_constant(&ctx.program.image,ctx.data_begin+8184*8,32,report)) goto fail;
+    if (program_mode && cs_copy_constant(&ctx.program.image,ctx.data_begin+(memory_bytes-8)*8,32,report)) goto fail;
     for (unsigned i=0;i<ctx.symbol_count;++i) {
         int index=ctx.symbols[i].label;
         message="undefined copy symbol";
@@ -1070,14 +1078,21 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
                      const char *assembly, size_t size, const char *entry,
                      const uint32_t *arguments, unsigned argc, struct cs_copy_link_error *error)
 {
-    return link_image(data,bytes,address_bits,assembly,size,entry,arguments,argc,error,0);
+    return link_image(data,bytes,address_bits,assembly,size,entry,arguments,argc,error,0,8192);
 }
 
 int cs_copy_link_program(unsigned char *data, size_t bytes, unsigned address_bits,
                         const char *assembly, size_t size, const char *entry,
                         const uint32_t *arguments, unsigned argc, struct cs_copy_link_error *error)
 {
-    return link_image(data,bytes,address_bits,assembly,size,entry,arguments,argc,error,1);
+    return cs_copy_link_program_memory(data,bytes,address_bits,8192,assembly,size,entry,arguments,argc,error);
+}
+
+int cs_copy_link_program_memory(unsigned char *data, size_t bytes, unsigned address_bits,
+                        uint32_t memory_bytes, const char *assembly, size_t size, const char *entry,
+                        const uint32_t *arguments, unsigned argc, struct cs_copy_link_error *error)
+{
+    return link_image(data,bytes,address_bits,assembly,size,entry,arguments,argc,error,1,memory_bytes);
 }
 
 struct object_names {
@@ -1366,9 +1381,19 @@ int cs_copy_link_objects(unsigned char *data, size_t bytes, unsigned address_bit
                         const char *entry, const uint32_t *arguments, unsigned argc,
                         struct cs_copy_link_error *error)
 {
+    return cs_copy_link_objects_memory(data,bytes,address_bits,8192,objects,count,
+                                       assembly,capacity,entry,arguments,argc,error);
+}
+
+int cs_copy_link_objects_memory(unsigned char *data, size_t bytes, unsigned address_bits,
+                        uint32_t memory_bytes, const struct cs_copy_object *objects, unsigned count,
+                        char *assembly, size_t capacity,
+                        const char *entry, const uint32_t *arguments, unsigned argc,
+                        struct cs_copy_link_error *error)
+{
     const char *message="invalid separate link input";
     if (!objects || !count || count>8) goto fail;
-    if (count==1) return cs_copy_link_program(data,bytes,address_bits,objects[0].assembly,
+    if (count==1) return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,objects[0].assembly,
                                             objects[0].size,entry,arguments,argc,error);
     struct object_names names[8];memset(names,0,sizeof(names));
     size_t needed=0;
@@ -1394,7 +1419,7 @@ int cs_copy_link_objects(unsigned char *data, size_t bytes, unsigned address_bit
         if (object_rewrite(&objects[i],names,count,i,tags[tag],assembly,&used)) goto fail;
     if (object_commons(names,count,assembly,&used) || object_weak_imports(names,count,assembly,&used)) goto fail;
     assembly[used]=0;
-    return cs_copy_link_program(data,bytes,address_bits,assembly,used,entry,arguments,argc,error);
+    return cs_copy_link_program_memory(data,bytes,address_bits,memory_bytes,assembly,used,entry,arguments,argc,error);
 fail:
     if (error) *error=(struct cs_copy_link_error){0,message};
     return -1;

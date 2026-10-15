@@ -27,12 +27,28 @@ static int copy_program;
 static const char *copy_entry="main";
 static uint32_t copy_arguments[6];
 static unsigned copy_argc;
+static uint32_t copy_memory_bytes=8192;
+static int copy_number(const char *number, uint32_t *result)
+{
+    char *end;
+    if (!*number || *number=='-' || *number=='+' ||
+        *number==' ' || *number=='\t' || *number=='\r' || *number=='\n' ||
+        *number=='\v' || *number=='\f') return -1;
+    errno=0;
+    unsigned long value=strtoul(number,&end,0);
+    if (errno || *end || value>UINT32_MAX) return -1;
+    *result=(uint32_t)value;
+    return 0;
+}
 static int lower_copy(const unsigned char *data, unsigned size)
 {
     unsigned image_bytes=copy_program ? 262144 : 65536;
     unsigned char *image=malloc(image_bytes);
     struct cs_copy_link_error error={0,"out of memory"};
-    int failed=!image || (copy_program ? cs_copy_link_program : cs_copy_link_leaf)(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+    int failed=!image;
+    if (image) failed=copy_program ? cs_copy_link_program_memory(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+        copy_memory_bytes,(const char *)data,size,copy_entry,copy_arguments,copy_argc,&error) :
+        cs_copy_link_leaf(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
         (const char *)data,size,copy_entry,copy_arguments,copy_argc,&error);
     if (!failed) {
         int fd=cs_gcc_fs_open(output_file,CS_FS_WRITE|CS_FS_TRUNC);
@@ -98,15 +114,12 @@ int __wrap_main(void)
                 copy_entry=option+14;
                 if (!*copy_entry) return 125;
             } else if (!strncmp(option,"--space-arg=",12)) {
-                char *end;
-                const char *number=option+12;
-                if (copy_argc==6 || !*number || *number=='-' || *number=='+' ||
-                    *number==' ' || *number=='\t' || *number=='\r' || *number=='\n' ||
-                    *number=='\v' || *number=='\f') return 125;
-                errno=0;
-                unsigned long value=strtoul(number,&end,0);
-                if (errno || *end || value>UINT32_MAX) return 125;
-                copy_arguments[copy_argc++]=(uint32_t)value;
+                if (copy_argc==6 || copy_number(option+12,&copy_arguments[copy_argc])) return 125;
+                ++copy_argc;
+            } else if (!strncmp(option,"--space-memory=",15)) {
+                if (!copy_program || copy_number(option+15,&copy_memory_bytes) ||
+                    copy_memory_bytes<8192 || copy_memory_bytes>=262144 ||
+                    (copy_memory_bytes&(copy_memory_bytes-1))) return 125;
             } else break;
             ++consumed;
         }

@@ -64,6 +64,21 @@ def main():
     status,stdout,stderr,file=decode(program.stdout)
     assert program.returncode==status==0 and not stdout and not stderr and len(file)==262144
     direct(file,root/"program-result",8)
+    for memory in (8192,16384,32768,65536,131072):
+        packet=job(b'value:\ncopy.mov $r0,$sp\ncopy.ret\n',program_options+["--space-memory="+str(memory)])
+        (root/f"memory-{memory}.job").write_bytes(packet)
+        run=subprocess.run([str(root/"native")],input=packet,capture_output=True)
+        status,stdout,stderr,file=decode(run.stdout)
+        assert run.returncode==status==0 and not stdout and not stderr
+        direct(file,root/f"memory-{memory}",memory-12)
+    explicit=subprocess.run([str(root/"native")],input=job(program_asm,program_options+["--space-memory=8192"]),capture_output=True)
+    assert explicit.stdout==program.stdout
+    invalid_memory=["", "0", "4096", "8193", "262144", "4294967296", "-8192", "+8192", " 8192", "08", "8192junk"]
+    for number in invalid_memory:
+        result=subprocess.run([str(root/"native")],input=job(program_asm,program_options+["--space-memory="+number]),capture_output=True)
+        assert result.returncode==125 and not result.stdout
+    result=subprocess.run([str(root/"native")],input=job(assembly,options+["--space-memory=8192"]),capture_output=True)
+    assert result.returncode==125 and not result.stdout
     for name,body,private,expected in (
         ("default",b"main:\ncopy.ldi.l $r0,9\ncopy.ret\n",["--space-copy=result.s"],9),
         ("six-args",b"value:\ncopy.mov $r0,$r5\ncopy.ret\n",
@@ -89,6 +104,8 @@ def main():
     evidence={"scope":"adapter with mock cc1, not actual compilation","sources_sha256":hashes,
         "native_direct_result":7,"rejected_arguments":len(invalid)+4,"rejected_lowering":status}
     evidence["native_program_result"]=8
+    evidence.update({"memory_sizes_checked":[8192,16384,32768,65536,131072],
+        "rejected_memory_arguments":len(invalid_memory)+1,"default_program_image_unchanged":True})
     if not args.native_only:
         if not args.newlib: raise ValueError("guest check requires --newlib")
         prefix=args.newlib.resolve()/"riscv64-unknown-elf"

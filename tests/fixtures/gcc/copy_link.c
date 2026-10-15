@@ -7,10 +7,15 @@ static int cs_read(void *p, unsigned n) { return (int)fread(p,1,n,stdin); }
 static int cs_write(const void *p, unsigned n) { return (int)fwrite(p,1,n,stdout); }
 #endif
 #ifdef CS_COPY_PROGRAM
-static unsigned char image[262144];
-#else
-static unsigned char image[65536];
+#ifndef CS_COPY_IMAGE_BYTES
+#define CS_COPY_IMAGE_BYTES 262144
 #endif
+#else
+#ifndef CS_COPY_IMAGE_BYTES
+#define CS_COPY_IMAGE_BYTES 65536
+#endif
+#endif
+static unsigned char image[CS_COPY_IMAGE_BYTES];
 static char assembly[8192];
 #ifdef CS_COPY_OBJECTS
 #ifndef CS_COPY_OBJECT_TEXT_BYTES
@@ -41,14 +46,26 @@ int main(void)
         objects[count].assembly=assembly+begin;objects[count++].size=i-begin;
         begin=i+1;
     }
-    if (cs_copy_link_objects(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,objects,count,object_text,sizeof(object_text),"value",arguments,2,&error)) {
+    if (
+#ifdef CS_COPY_MEMORY_BYTES
+        cs_copy_link_objects_memory(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,CS_COPY_MEMORY_BYTES,
+#else
+        cs_copy_link_objects(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,
+#endif
+        objects,count,object_text,sizeof(object_text),"value",arguments,2,&error)) {
 #ifndef __riscv
         fprintf(stderr,"%zu: %s\n",error.line,error.message);
 #endif
         return 2;
     }
 #elif defined(CS_COPY_PROGRAM)
-    if (cs_copy_link_program(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,assembly,size,"value",arguments,2,&error)) return 2;
+    if (
+#ifdef CS_COPY_MEMORY_BYTES
+        cs_copy_link_program_memory(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,CS_COPY_MEMORY_BYTES,
+#else
+        cs_copy_link_program(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,
+#endif
+        assembly,size,"value",arguments,2,&error)) return 2;
 #else
     if (cs_copy_link_leaf(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,assembly,size,"value",arguments,2,&error)) return 2;
 #endif

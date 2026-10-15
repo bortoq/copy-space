@@ -72,7 +72,15 @@ def main():
         (b'.section .alpha,"aw"\n.byte 1\n.pushsection .beta,"aw"\n.p2align 4\nwide:\n.long 9\n.popsection\n.byte 2\n.text\nvalue:\ncopy.ldi.l $r0,wide\ncopy.ret\n',272),
         (b'.data\nobject:\n.long 9\n.set view,object\n.set forward,view\n.text\nvalue:\ncopy.lda.l $r0,forward\ncopy.ret\n',9),
         (b'.set wrapper,helper\n.text\nvalue:\ncopy.jsra wrapper\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',7),
-        (b'.equ constant,11\n.text\nvalue:\ncopy.ldi.l $r0,constant\ncopy.ret\n',11)]
+        (b'.equ constant,11\n.text\nvalue:\ncopy.ldi.l $r0,constant\ncopy.ret\n',11),
+        (b'.weak optional\nvalue:\ncopy.ldi.l $r0,optional\ncopy.ret\n',0),
+        (b'.weak optional\nvalue:\ncopy.ldi.l $r2,optional\ncopy.ldi.l $r3,0\ncopy.cmp $r2,$r3\ncopy.branch.eq .Lnone\ncopy.jsra optional\ncopy.ret\n.Lnone:\ncopy.add $r0,$r1\ncopy.ret\n',7),
+        (b'.weak optional\nvalue:\ncopy.jsra optional\ncopy.ret\noptional:\ncopy.add $r0,$r1\ncopy.ret\n',7),
+        (b'.weak optional\n.set alias,optional\nvalue:\ncopy.ldi.l $r0,alias\ncopy.ret\n',0),
+        (b'.weak optional\n.set alias,optional\nvalue:\ncopy.jsra alias\ncopy.ret\n',None),
+        (b'.weak optional\nvalue:\ncopy.jsra optional\ncopy.ret\n',None),
+        (b'.weak optional\n.data\ncallback:\n.long optional\n.text\nvalue:\ncopy.lda.l $r0,callback\ncopy.ret\n',0),
+        (b'.weak one,two\nvalue:\ncopy.ldi.l $r0,one\ncopy.ldi.l $r1,two\ncopy.or $r0,$r1\ncopy.ret\n',0)]
     if args.assembly:
         if not 0<=args.expected_result<=0xffffffff:raise ValueError("expected result must fit uint32")
         cases.append((args.assembly.read_bytes(),args.expected_result))
@@ -89,10 +97,12 @@ def main():
         command=[str(emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt"),"--dump-space",str(folder/"space.bin")]
         (folder/"command.json").write_text(json.dumps(command)+"\n")
         checked=subprocess.run(command,capture_output=True,check=True,timeout=args.direct_timeout)
-        (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==struct.pack("<I",value),(index,checked.stdout)
+        expected_output=b"" if value is None else struct.pack("<I",value)
+        (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==expected_output,(index,checked.stdout)
         raw=(folder/"space.bin").read_bytes()
         def word(at):return sum(((raw[(at+i)//8]>>(7-(at+i)%8))&1)<<i for i in range(32))
-        assert word(32768)==8192 and word(32800)==8192,(index,word(32768),word(32800))
+        if value is not None:
+            assert word(32768)==8192 and word(32800)==8192,(index,word(32768),word(32800))
         if args.result_space_bytes>2097152:
             with gzip.open(folder/"space.bin.gz","wb",compresslevel=1) as stream:stream.write(raw)
             (folder/"space.bin").unlink()
@@ -115,7 +125,9 @@ def main():
              b'.set a,target\n.data\na:\n.long 1\n.text\ntarget:\ncopy.ret\nvalue:\ncopy.ret\n',
              b'.popsection\nvalue:\ncopy.ret\n',
              b'.previous\nvalue:\ncopy.ret\n',
-             b'value:\ncopy.ret\n.pushsection .data\n']
+             b'value:\ncopy.ret\n.pushsection .data\n',
+             b'.weak\nvalue:\ncopy.ret\n',
+             b'.weak optional,\nvalue:\ncopy.ret\n']
     for assembly in invalid:
         result=subprocess.run([str(root/"native")],input=assembly,capture_output=True)
         assert result.returncode==2 and not result.stdout
@@ -140,7 +152,8 @@ def main():
         command=[str(emulator),"--core",str(folder/"image.bin"),"--trace",str(folder/"trace.txt")]
         (folder/"command.json").write_text(json.dumps(command)+"\n")
         checked=subprocess.run(command,capture_output=True,check=True,timeout=30)
-        (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==struct.pack("<I",expected_value)
+        expected_output=b"" if expected_value is None else struct.pack("<I",expected_value)
+        (folder/"out.bin").write_bytes(checked.stdout);assert checked.stdout==expected_output
         evidence.update({"guest_generation":execution,"guest_exit":word(132160),"guest_direct_result":expected_value})
     (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     print("OK direct call frames:",len(results),"programs")

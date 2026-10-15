@@ -24,7 +24,7 @@ struct context {
     struct cs_copy_program program;
     uint32_t constants[12];
     unsigned constant_count;
-    struct { char name[64]; uint32_t address; int defined, data, alias; } labels[32];
+    struct { char name[64]; uint32_t address; int defined, data, alias, weak, missing_weak; } labels[32];
     struct { uint32_t layer, table, fallthrough; int label, inverted; size_t line; } jumps[64];
     unsigned label_count, jump_count;
     int compared;
@@ -350,6 +350,15 @@ static int data_directive(struct context *ctx, char *s)
         if (data_reserve(ctx,count,&at)) return -1;
         ctx->active_section=active;ctx->previous_section=previous;ctx->section=ctx->sections[active].kind;
         ctx->previous_valid=previous_valid;
+    } else if (!strcmp(s,".weak")) {
+        for (;;) {
+            char *comma=strchr(arguments,',');if (comma) *comma=0;
+            int index=label(ctx,trim(arguments));
+            if (index<0) return -1;
+            ctx->labels[index].weak=1;
+            if (!comma) break;
+            arguments=comma+1;
+        }
     } else if (!strcmp(s,".local") || !strcmp(s,".hidden") || !strcmp(s,".protected")) {
         if (!*arguments) return -1;
     } else if (ctx->section==1 || ctx->section==2) {
@@ -415,12 +424,18 @@ static int layout_data(struct context *ctx)
     for (unsigned i=0;i<ctx->label_count;++i)
         if (ctx->labels[i].defined && ctx->labels[i].data>0)
             ctx->labels[i].address+=ctx->sections[ctx->labels[i].data-1].base;
+    for (unsigned i=0;i<ctx->label_count;++i)
+        if (ctx->labels[i].weak && !ctx->labels[i].defined && !ctx->labels[i].alias) {
+            ctx->labels[i].defined=1;ctx->labels[i].data=-1;
+            ctx->labels[i].address=0;ctx->labels[i].missing_weak=1;
+        }
     for (unsigned pass=0;pass<ctx->alias_count;++pass)
         for (unsigned i=0;i<ctx->alias_count;++i) {
             int index=ctx->aliases[i].label,target=ctx->aliases[i].target;
             if (ctx->labels[index].defined || (target>=0 && !ctx->labels[target].defined)) continue;
             ctx->labels[index].address=ctx->aliases[i].addend+(target<0 ? 0 : ctx->labels[target].address);
             ctx->labels[index].data=target<0 ? -1 : ctx->labels[target].data;
+            ctx->labels[index].missing_weak=target>=0 && ctx->labels[target].missing_weak;
             ctx->labels[index].defined=1;
         }
     for (unsigned i=0;i<ctx->alias_count;++i)
@@ -1020,10 +1035,11 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     if (program_mode) pack_data(&ctx);
     for (unsigned i=0;i<ctx.jump_count;++i) {
         int index=ctx.jumps[i].label;
-        if (index>=0 && (!ctx.labels[index].defined || ctx.labels[index].data)) {
+        int missing_weak=index>=0 && ctx.labels[index].missing_weak;
+        if (index>=0 && (!ctx.labels[index].defined || (ctx.labels[index].data && !missing_weak))) {
             line=ctx.jumps[i].line; message="undefined or non-code jump label"; goto fail;
         }
-        uint32_t target=index==-2 ? report : ctx.labels[index].address;
+        uint32_t target=index==-2 ? report : missing_weak ? ctx.labels[ctx.memory_fault].address : ctx.labels[index].address;
         if (ctx.jumps[i].table) {
             uint32_t first=ctx.jumps[i].inverted ? target : ctx.jumps[i].fallthrough;
             uint32_t second=ctx.jumps[i].inverted ? ctx.jumps[i].fallthrough : target;

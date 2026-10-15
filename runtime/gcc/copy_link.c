@@ -12,9 +12,17 @@
 #ifndef CS_COPY_CALL_CAPACITY
 #define CS_COPY_CALL_CAPACITY 32
 #endif
+#ifndef CS_COPY_SYMBOL_CAPACITY
+#define CS_COPY_SYMBOL_CAPACITY 12
+#endif
+#ifndef CS_COPY_RELOCATION_CAPACITY
+#define CS_COPY_RELOCATION_CAPACITY 64
+#endif
 #if CS_COPY_LABEL_CAPACITY < 1 || CS_COPY_LABEL_CAPACITY > 1048576 || \
     CS_COPY_JUMP_CAPACITY < 1 || CS_COPY_JUMP_CAPACITY > 1048576 || \
-    CS_COPY_CALL_CAPACITY < 1 || CS_COPY_CALL_CAPACITY > 1048576
+    CS_COPY_CALL_CAPACITY < 1 || CS_COPY_CALL_CAPACITY > 1048576 || \
+    CS_COPY_SYMBOL_CAPACITY < 1 || CS_COPY_SYMBOL_CAPACITY > 1048576 || \
+    CS_COPY_RELOCATION_CAPACITY < 1 || CS_COPY_RELOCATION_CAPACITY > 1048576
 #error "copy table capacities must be in 1..1048576"
 #endif
 
@@ -37,7 +45,7 @@ enum { REG_BASE=32768, CONSTANT_BASE=24576,
        RETURN_FP=34848, RETURN_PC=34880, CALL_TARGET=34912,
        CALL_TABLE=BRANCH_TABLE+64*CS_COPY_JUMP_CAPACITY,
        SYMBOL_TABLE=CALL_TABLE+32*CS_COPY_CALL_CAPACITY,
-       CODE_BEGIN=SYMBOL_TABLE+32*12,
+       CODE_BEGIN=SYMBOL_TABLE+32*CS_COPY_SYMBOL_CAPACITY,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
@@ -53,7 +61,7 @@ struct context {
     int memory_fault;
     int return_handler;
     unsigned call_count;
-    struct { int label; uint32_t addend; } symbols[12];
+    struct { int label; uint32_t addend; } symbols[CS_COPY_SYMBOL_CAPACITY];
     unsigned symbol_count;
     int program_mode;
     int section;
@@ -64,7 +72,7 @@ struct context {
     struct { uint32_t staging,offset,count; unsigned section; } fragments[256];
     unsigned fragment_count;
     uint32_t data_cursor;
-    struct { uint32_t destination,addend; int label; } relocations[64];
+    struct { uint32_t destination,addend; int label; } relocations[CS_COPY_RELOCATION_CAPACITY];
     unsigned relocation_count;
     struct { int label,target; uint32_t addend; } aliases[CS_COPY_LABEL_CAPACITY];
     unsigned alias_count;
@@ -420,7 +428,7 @@ static int data_directive(struct context *ctx, char *s)
                         (bytes==8 && cs_copy_constant(&ctx->program.image,at+32,32,(uint32_t)(number>>32)))) return -1;
                 } else {
                     int index;uint32_t addend;
-                    if (ctx->section==2 || bytes<4 || ctx->relocation_count==64 || expression(ctx,value,&index,&addend)) return -1;
+                    if (ctx->section==2 || bytes<4 || ctx->relocation_count==CS_COPY_RELOCATION_CAPACITY || expression(ctx,value,&index,&addend)) return -1;
                     unsigned i=ctx->relocation_count++;
                     ctx->relocations[i].destination=at;ctx->relocations[i].addend=addend;ctx->relocations[i].label=index;
                 }
@@ -497,7 +505,7 @@ static int symbol(struct context *ctx, const char *name, uint32_t *address)
     for (i=0;i<ctx->symbol_count;++i)
         if (ctx->symbols[i].label==index && ctx->symbols[i].addend==addend) break;
     if (i==ctx->symbol_count) {
-        if (i==12) return -1;
+        if (i==CS_COPY_SYMBOL_CAPACITY) return -1;
         ctx->symbols[i].label=index;ctx->symbols[i].addend=addend;++ctx->symbol_count;
     }
     *address=SYMBOL_TABLE+32*i;

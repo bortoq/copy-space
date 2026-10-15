@@ -44,16 +44,19 @@ def main():
     parser.add_argument("--copy-label-capacity",type=int,default=32)
     parser.add_argument("--copy-jump-capacity",type=int,default=64)
     parser.add_argument("--copy-call-capacity",type=int,default=32)
+    parser.add_argument("--copy-symbol-capacity",type=int,default=12)
+    parser.add_argument("--copy-relocation-capacity",type=int,default=64)
     args=parser.parse_args()
-    capacities={"label":args.copy_label_capacity,"jump":args.copy_jump_capacity,"call":args.copy_call_capacity}
+    capacities={"label":args.copy_label_capacity,"jump":args.copy_jump_capacity,"call":args.copy_call_capacity,
+                "symbol":args.copy_symbol_capacity,"relocation":args.copy_relocation_capacity}
     if any(not 1<=value<=1048576 for value in capacities.values()):
         raise ValueError("copy table capacities must be in 1..1048576")
     size=args.copy_program_bytes
     if not 262144<=size<=min(268435456,args.space_bytes) or size&(size-1):
         raise ValueError("copy program size must be a power of two fitting Space, at least 262144")
-    if not args.copy_output and (size!=262144 or capacities!={"label":32,"jump":64,"call":32}):
+    if not args.copy_output and (size!=262144 or capacities!={"label":32,"jump":64,"call":32,"symbol":12,"relocation":64}):
         raise ValueError("copy configuration requires --copy-output")
-    code_begin=60032+64*capacities["jump"]+32*capacities["call"]+32*12
+    code_begin=60032+64*capacities["jump"]+32*capacities["call"]+32*capacities["symbol"]
     if args.copy_output and code_begin+256*(3*((args.space_bytes*8).bit_length()-1)-1)>(size-8192)*8:
         raise ValueError("copy tables leave no room for code and default data/stack memory")
     if not 0<args.heap_bytes<args.memory_bytes-4*1024*1024:

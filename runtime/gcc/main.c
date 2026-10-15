@@ -38,6 +38,10 @@ static uint32_t copy_memory_bytes=8192;
 static const char *copy_objects[7];
 static unsigned copy_objectc;
 static const char *copy_library;
+static int copy_no_libgcc;
+/* Optional read-only target runtime installed while preparing the image. */
+extern const unsigned char cs_gcc_default_archive[] __attribute__((weak));
+extern const unsigned cs_gcc_default_archive_size __attribute__((weak));
 static int copy_number(const char *number, uint32_t *result)
 {
     char *end;
@@ -56,8 +60,17 @@ static int lower_copy(const unsigned char *data, unsigned size)
     unsigned char *image=malloc(image_bytes);
     struct cs_copy_link_error error={0,"out of memory"};
     int failed=!image;
-    if (image) {
-        if (copy_objectc || copy_library) {
+    struct cs_copy_archive archives[2];unsigned archive_count=0;
+    if (copy_library) {
+        const unsigned char *archive;unsigned bytes;
+        if (cs_gcc_fs_output(copy_library,&archive,&bytes)) {
+            error.message="missing copy library file";failed=1;
+        } else archives[archive_count++]=(struct cs_copy_archive){bytes ? (const char *)archive : "",bytes};
+    }
+    if (copy_program && !copy_no_libgcc && cs_gcc_default_archive && &cs_gcc_default_archive_size)
+        archives[archive_count++]=(struct cs_copy_archive){(const char *)cs_gcc_default_archive,cs_gcc_default_archive_size};
+    if (image && !failed) {
+        if (copy_objectc || archive_count) {
             struct cs_copy_object objects[8]={{size ? (const char *)data : "",size}};
             for (unsigned i=0;i<copy_objectc;++i) {
                 const unsigned char *source;unsigned bytes;
@@ -66,12 +79,9 @@ static int lower_copy(const unsigned char *data, unsigned size)
                 }
                 objects[i+1]=(struct cs_copy_object){bytes ? (const char *)source : "",bytes};
             }
-            if (!failed && copy_library) {
-                const unsigned char *archive;unsigned bytes;
-                if (cs_gcc_fs_output(copy_library,&archive,&bytes)) {
-                    error.message="missing copy library file";failed=1;
-                } else failed=cs_copy_link_archive_alloc(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
-                    copy_memory_bytes,objects,copy_objectc+1,(const char *)archive,bytes,
+            if (!failed && archive_count) {
+                failed=cs_copy_link_archives_alloc(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
+                    copy_memory_bytes,objects,copy_objectc+1,archives,archive_count,
                     copy_entry,copy_arguments,copy_argc,&error);
             } else if (!failed) failed=cs_copy_link_objects_alloc(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
                 copy_memory_bytes,objects,copy_objectc+1,copy_entry,copy_arguments,copy_argc,&error);
@@ -156,6 +166,9 @@ int __wrap_main(void)
             } else if (!strncmp(option,"--space-library=",16)) {
                 if (!copy_program || copy_library || !option[16]) return 125;
                 copy_library=option+16;
+            } else if (!strcmp(option,"--space-no-libgcc")) {
+                if (!copy_program || copy_no_libgcc) return 125;
+                copy_no_libgcc=1;
             } else break;
             ++consumed;
         }

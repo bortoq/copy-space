@@ -1664,7 +1664,7 @@ static int archive_decimal(const char *s, size_t bytes, size_t *value)
 }
 
 static int archive_members(const char *archive, size_t size,
-                            struct cs_copy_object *members, unsigned *count)
+                            struct cs_copy_object *members, unsigned *count, unsigned capacity)
 {
     if (!archive || size<8 || memcmp(archive,"!<arch>\n",8)) return -1;
     size_t at=8;*count=0;
@@ -1688,7 +1688,7 @@ static int archive_members(const char *archive, size_t size,
             if (filename>=9 && !memcmp(archive+at,"__.SYMDEF",9)) metadata=1;
         } else if (name_size>=9 && !memcmp(header,"__.SYMDEF",9)) metadata=1;
         if (!metadata) {
-            if (*count==CS_COPY_MAX_ARCHIVE_MEMBERS) return -1;
+            if (*count==capacity) return -1;
             members[(*count)++]=(struct cs_copy_object){archive+at+filename,bytes-filename};
         }
         at+=bytes;
@@ -1727,18 +1727,24 @@ static int archive_needed(struct object_names *required, struct object_names *ca
     return 0;
 }
 
-int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned address_bits,
+int cs_copy_link_archives_alloc(unsigned char *data, size_t bytes, unsigned address_bits,
                         uint32_t memory_bytes, const struct cs_copy_object *objects, unsigned count,
-                        const char *archive, size_t archive_size,
+                        const struct cs_copy_archive *archives, unsigned archive_count,
                         const char *entry, const uint32_t *arguments, unsigned argc,
                         struct cs_copy_link_error *error)
 {
     const char *message="invalid copy archive input";
-    struct cs_copy_object members[CS_COPY_MAX_ARCHIVE_MEMBERS],selected[CS_COPY_MAX_OBJECTS];unsigned member_count;
+    struct cs_copy_object members[CS_COPY_MAX_ARCHIVE_MEMBERS],selected[CS_COPY_MAX_OBJECTS];unsigned member_count=0;
     struct object_names *names=NULL;
     char *buffer=NULL;
     if (!objects || !count || count>CS_COPY_MAX_OBJECTS || !entry || !*entry ||
-        archive_members(archive,archive_size,members,&member_count)) goto fail;
+        !archives || !archive_count || archive_count>CS_COPY_MAX_ARCHIVE_MEMBERS) goto fail;
+    for (unsigned i=0;i<archive_count;++i) {
+        unsigned added;
+        if (archive_members(archives[i].data,archives[i].size,members+member_count,&added,
+                            CS_COPY_MAX_ARCHIVE_MEMBERS-member_count)) goto fail;
+        member_count+=added;
+    }
     size_t capacity=1;
     for (unsigned i=0;i<count+member_count;++i) {
         const struct cs_copy_object *object=i<count ? &objects[i] : &members[i-count];
@@ -1786,4 +1792,15 @@ fail:
     free(buffer);free(names);
     if (error) *error=(struct cs_copy_link_error){0,message};
     return -1;
+}
+
+int cs_copy_link_archive_alloc(unsigned char *data, size_t bytes, unsigned address_bits,
+                        uint32_t memory_bytes, const struct cs_copy_object *objects, unsigned count,
+                        const char *archive, size_t archive_size,
+                        const char *entry, const uint32_t *arguments, unsigned argc,
+                        struct cs_copy_link_error *error)
+{
+    const struct cs_copy_archive input={archive,archive_size};
+    return cs_copy_link_archives_alloc(data,bytes,address_bits,memory_bytes,objects,count,
+                                      &input,1,entry,arguments,argc,error);
 }

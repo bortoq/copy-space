@@ -6,8 +6,10 @@ import shlex
 import struct
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 from build_libraries import ROOT, Toolchain
+from package_target_library import load_library, embedded_assembly
 sys.path.insert(0,str(ROOT/"modules"))
 from rv32i import Image, Layout
 from rv32i_stream import encode_stream
@@ -40,6 +42,7 @@ def main():
     parser.add_argument("--space-bytes",type=lambda s:int(s,0),default=256*1024*1024)
     parser.add_argument("--framed-output",action="store_true",help="emit GCCOUT1 with separate result/diagnostics")
     parser.add_argument("--copy-output",action="store_true",help="lower cc1 output with the guest copy assembler")
+    parser.add_argument("--target-library",type=Path,help="install a verified target library package as the default runtime")
     parser.add_argument("--copy-program-bytes",type=lambda s:int(s,0),default=262144)
     parser.add_argument("--copy-label-capacity",type=int,default=32)
     parser.add_argument("--copy-jump-capacity",type=int,default=64)
@@ -47,6 +50,8 @@ def main():
     parser.add_argument("--copy-symbol-capacity",type=int,default=12)
     parser.add_argument("--copy-relocation-capacity",type=int,default=64)
     args=parser.parse_args()
+    if args.target_library and not args.copy_output:
+        raise ValueError("a default target library requires --copy-output")
     capacities={"label":args.copy_label_capacity,"jump":args.copy_jump_capacity,"call":args.copy_call_capacity,
                 "symbol":args.copy_symbol_capacity,"relocation":args.copy_relocation_capacity}
     if any(not 1<=value<=1048576 for value in capacities.values()):
@@ -66,6 +71,10 @@ def main():
     if args.copy_output and (not args.framed_output or receipt["target"]!="copyspace-unknown-elf"):
         raise ValueError("--copy-output requires --framed-output and copyspace cc1")
     if digest(gcc/"cc1")!=receipt["sha256"]: raise ValueError("original cc1 changed")
+    target_archive=target_receipt=None
+    if args.target_library:
+        target_archive,target_receipt=load_library(args.target_library.resolve(),
+            receipt["build_profile"]["target_sources_sha256"]["gcc/config/copyspace/copyspace.h"])
     root=args.artifacts.resolve(); root.mkdir(parents=True,exist_ok=False)
     tools=Toolchain(args.compiler)
     if tools.compiler!=receipt["compiler"]: raise ValueError("use the recorded cc1 preparation compiler")
@@ -76,14 +85,23 @@ def main():
         if digest(libraries/name)!=expected: raise ValueError("library changed: "+name)
     sources=root/"sources"
     frozen={}
+    generated={}
     names=["runtime/gcc/"+name for name in ("start.S","link.ld","main.c","job.c","job.h",
         "files.c","files.h","directories.c","include/dirent.h","syscalls.c","cxx.c")]
     names += ["runtime/rv32i/runtime.c","runtime/rv32i/copy_space.h","runtime/copy_c/input_files.h"]
     if args.framed_output: names.extend(["runtime/gcc/response.c","runtime/gcc/response.h"])
     if args.copy_output: names.extend(["runtime/gcc/"+name for name in ("copy_link.c","copy_link.h","copy_emit.c","copy_emit.h")])
+    if target_archive:
+        shutil.copyfile(target_archive,root/"target-libgcc.a")
+        if digest(root/"target-libgcc.a")!=target_receipt["archive_sha256"]:
+            raise ValueError("target archive changed during preparation")
+        (root/"target-library.json").write_text(json.dumps(target_receipt,indent=2)+"\n")
+        name="runtime/gcc/target_archive.S"
+        generated[name]=embedded_assembly("target-libgcc.a",(root/"target-libgcc.a").stat().st_size)
+        names.append(name)
     for name in names:
         path=sources/name; path.parent.mkdir(parents=True,exist_ok=True)
-        path.write_bytes((ROOT/name).read_bytes()); frozen[name]=digest(path)
+        path.write_bytes(generated[name] if name in generated else (ROOT/name).read_bytes()); frozen[name]=digest(path)
     objects=[]
     for name in [n for n in names if n.endswith((".c",".S"))]:
         path=sources/name
@@ -145,6 +163,9 @@ def main():
         "copy_output":args.copy_output,"copy_image_bytes":65536 if args.copy_output else None,
         "copy_program_bytes":args.copy_program_bytes if args.copy_output else None,
         "copy_capacities":capacities if args.copy_output else None,
+        "target_library":None if not target_receipt else {"archive_sha256":target_receipt["archive_sha256"],
+            "catalog_sha256":target_receipt["catalog_sha256"],"units":len(target_receipt["members"]),
+            "manifest_sha256":digest(root/"target-library.json"),"default":True},
         "libraries_sha256":library_receipt["archives_sha256"],
         "newlib_libc_sha256":digest(newlib/"lib/libc.a"),"newlib_libm_sha256":digest(newlib/"lib/libm.a"),
         "runtime_sources":frozen,"heap_bytes":args.heap_bytes,"elf_memory_end":end,

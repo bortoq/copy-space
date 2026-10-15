@@ -18,6 +18,7 @@ int cs_copy_link_program_memory(unsigned char *, size_t, unsigned, uint32_t,
 struct cs_copy_object { const char *assembly; size_t size; };
 #define CS_COPY_MAX_OBJECTS 64
 #define CS_COPY_MAX_ARCHIVE_MEMBERS 256
+struct cs_copy_archive { const char *data; size_t size; };
 /* Scoped locals and strong/common/weak resolution. Scratch holds text + NUL;
    it must not overlap the inputs or image. One input uses program linking. */
 int cs_copy_link_objects(unsigned char *, size_t, unsigned,
@@ -41,6 +42,12 @@ int cs_copy_link_objects_alloc(unsigned char *, size_t, unsigned, uint32_t,
 int cs_copy_link_archive_alloc(unsigned char *, size_t, unsigned, uint32_t,
                         const struct cs_copy_object *, unsigned,
                         const char *, size_t,
+                        const char *, const uint32_t *, unsigned,
+                        struct cs_copy_link_error *);
+/* Resolve dependencies across a group of archives; the member limit is total. */
+int cs_copy_link_archives_alloc(unsigned char *, size_t, unsigned, uint32_t,
+                        const struct cs_copy_object *, unsigned,
+                        const struct cs_copy_archive *, unsigned,
                         const char *, const uint32_t *, unsigned,
                         struct cs_copy_link_error *);
 #endif

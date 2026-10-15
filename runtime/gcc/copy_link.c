@@ -17,6 +17,7 @@ enum { REG_BASE=32768, CONSTANT_BASE=33344, ADD_TABLE=33792,
        DIV_DEN_SIGN=34697, DIV_SIGN=34698,
        MEM_ADDRESS=34720, MEM_FLAGS=34752, MEM_VALID=34757, MEM_BIT_ADDRESS=34784,
        STACK_VALUE=34816,
+       RETURN_FP=34848, RETURN_PC=34880, CALL_TABLE=64128,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
 struct context {
     struct cs_copy_program program;
@@ -28,6 +29,8 @@ struct context {
     int compared;
     uint32_t data_begin;
     int memory_fault;
+    int return_handler;
+    unsigned call_count;
 };
 
 static int label(struct context *ctx, const char *name)
@@ -404,6 +407,36 @@ static const char *stack(struct context *ctx, int push, char *cursor, char *oper
         cs_copy_program_emit(p,32,value,STACK_VALUE)) return "copy image capacity exceeded";
     return NULL;
 }
+static const char *call(struct context *ctx, char *name, size_t line)
+{
+    if (ctx->call_count==32) return "call capacity exceeded";
+    int target=label(ctx,name);
+    if (target<0) return "invalid function label";
+    struct cs_copy_program *p=&ctx->program;
+    uint32_t twelve,zero;
+    uint32_t continuation=CALL_TABLE+32*ctx->call_count++;
+    if (constant(ctx,12,&twelve) || constant(ctx,0,&zero) ||
+        cs_copy_program_sub32(p,REG_BASE+32,REG_BASE+32,twelve,SUB_TABLE,TEMPORARY,CARRY) ||
+        memory_access(ctx,1,32,REG_BASE,REG_BASE+32,0) ||
+        memory_access(ctx,1,32,continuation,REG_BASE+32,4) ||
+        memory_access(ctx,1,32,zero,REG_BASE+32,8) ||
+        cs_copy_program_emit(p,32,REG_BASE,REG_BASE+32) || jump(ctx,target,line) ||
+        cs_copy_constant(&p->image,continuation,32,p->image.layer)) return "copy image capacity exceeded";
+    return NULL;
+}
+static int return_frame(struct context *ctx)
+{
+    struct cs_copy_program *p=&ctx->program;
+    uint32_t twelve;
+    if (constant(ctx,12,&twelve) ||
+        memory_access(ctx,0,32,RETURN_FP,REG_BASE,0) ||
+        memory_access(ctx,0,32,RETURN_PC,REG_BASE,4) ||
+        cs_copy_program_add32(p,REG_BASE+32,REG_BASE,twelve,ADD_TABLE,TEMPORARY,CARRY) ||
+        cs_copy_program_emit(p,32,REG_BASE,RETURN_FP)) return -1;
+    uint32_t source_field=255*p->image.instruction_bits+p->image.count_bits+p->image.address_bits;
+    return cs_copy_program_emit(p,p->image.address_bits,source_field,RETURN_PC) ||
+           cs_copy_program_next(p) ? -1 : 0;
+}
 static const char *instruction(struct context *ctx, char *s)
 {
     char *operands=s;
@@ -478,10 +511,10 @@ static const char *instruction(struct context *ctx, char *s)
     return rc ? "copy image capacity exceeded" : NULL;
 }
 
-int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
+static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
                        const char *assembly, size_t size, const char *entry,
                        const uint32_t *arguments, unsigned argc,
-                       struct cs_copy_link_error *error)
+                       struct cs_copy_link_error *error, int program_mode)
 {
     struct context ctx;
     const char *message="invalid link input";
@@ -502,6 +535,20 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
         cs_copy_constant(&ctx.program.image,REG_BASE+32,32,8192)) goto fail;
     for (unsigned i=0;i<argc;++i)
         if (cs_copy_constant(&ctx.program.image,REG_BASE+32*(i+2),32,arguments[i])) goto fail;
+    int entry_label=-1;
+    if (program_mode) {
+        if (bytes<262144 || ((bytes*8)&65535)) goto fail;
+        ctx.data_begin=(uint32_t)(bytes*8)-65536;
+        ctx.program.code_limit=ctx.data_begin;
+        entry_label=label(&ctx,entry);
+        ctx.return_handler=internal_label(&ctx);
+        ctx.memory_fault=internal_label(&ctx);
+        if (entry_label<0 || ctx.return_handler<0 || ctx.memory_fault<0 ||
+            cs_copy_constant(&ctx.program.image,REG_BASE,32,8180) ||
+            cs_copy_constant(&ctx.program.image,REG_BASE+32,32,8180) ||
+            cs_copy_constant(&ctx.program.image,ctx.data_begin+8180*8,32,8192) ||
+            jump(&ctx,entry_label,0)) goto fail;
+    }
     while (offset<size) {
         size_t end=offset;
         while (end<size && assembly[end]!='\n') ++end;
@@ -519,7 +566,7 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
             s[length-1]=0;
             s=trim(s);
             message="only one function and local labels are supported";
-            if ((!entered && strcmp(s,entry)) || (entered && strncmp(s,".L",2))) goto fail;
+            if (!program_mode && ((!entered && strcmp(s,entry)) || (entered && strncmp(s,".L",2)))) goto fail;
             int index=label(&ctx,s);
             message="invalid or duplicate copy label";
             if (index<0 || ctx.labels[index].defined) goto fail;
@@ -528,6 +575,7 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
             }
             ctx.labels[index].address=ctx.program.image.layer;
             ctx.labels[index].defined=1;
+            if (program_mode && strncmp(s,".L",2)) ctx.compared=0;
             entered=1; terminated=0; continue;
         }
         if (*s=='.') {
@@ -539,8 +587,13 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
         if (!entered || terminated) goto fail;
         if (!strcmp(s,"copy.ret")) {
             message="copy image capacity exceeded";
-            if (jump(&ctx,-2,line)) goto fail;
+            if (jump(&ctx,program_mode ? ctx.return_handler : -2,line)) goto fail;
             returned=1; terminated=1; continue;
+        }
+        if (program_mode && !strncmp(s,"copy.jsra",9) && whitespace((unsigned char)s[9])) {
+            message=call(&ctx,trim(s+9),line);
+            if (message) goto fail;
+            continue;
         }
         if (!strncmp(s,"copy.branch.",12)) {
             message=branch(&ctx,s,line);
@@ -560,7 +613,9 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
     }
     message="missing leaf entry or return";
     if (!entered || !returned) goto fail;
+    if (program_mode && !ctx.labels[entry_label].defined) goto fail;
     message="copy image capacity exceeded";
+    if (program_mode && (bind_internal(&ctx,ctx.return_handler) || return_frame(&ctx))) goto fail;
     if (ctx.memory_fault>=0) {
         if (jump(&ctx,-2,0) || bind_internal(&ctx,ctx.memory_fault)) goto fail;
         uint32_t fault=ctx.program.image.layer;
@@ -571,6 +626,7 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
     }
     if (cs_copy_program_next(&ctx.program)) goto fail;
     uint32_t report=ctx.program.image.layer;
+    if (program_mode && cs_copy_constant(&ctx.program.image,ctx.data_begin+8184*8,32,report)) goto fail;
     for (unsigned i=0;i<ctx.jump_count;++i) {
         int index=ctx.jumps[i].label;
         if (index>=0 && !ctx.labels[index].defined) {
@@ -600,4 +656,18 @@ int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
 fail:
     if (error) *error=(struct cs_copy_link_error){line,message};
     return -1;
+}
+
+int cs_copy_link_leaf(unsigned char *data, size_t bytes, unsigned address_bits,
+                     const char *assembly, size_t size, const char *entry,
+                     const uint32_t *arguments, unsigned argc, struct cs_copy_link_error *error)
+{
+    return link_image(data,bytes,address_bits,assembly,size,entry,arguments,argc,error,0);
+}
+
+int cs_copy_link_program(unsigned char *data, size_t bytes, unsigned address_bits,
+                        const char *assembly, size_t size, const char *entry,
+                        const uint32_t *arguments, unsigned argc, struct cs_copy_link_error *error)
+{
+    return link_image(data,bytes,address_bits,assembly,size,entry,arguments,argc,error,1);
 }

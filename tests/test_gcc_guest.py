@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--image",type=Path,required=True,help="directory prepared by prepare_image.py")
     parser.add_argument("--artifacts",type=Path,required=True)
     parser.add_argument("--emulator",type=Path)
-    parser.add_argument("--mode",choices=["preprocess","compile","copy-compile","integrated-copy"],default="preprocess")
+    parser.add_argument("--mode",choices=["preprocess","compile","copy-compile","integrated-copy","integrated-program"],default="preprocess")
     parser.add_argument("--newlib",type=Path,help="guest assembler C runtime for copy-compile")
     parser.add_argument("--resume",action="store_true")
     parser.add_argument("--timeout",type=float,default=300)
@@ -33,6 +33,8 @@ def main():
             raise ValueError("copy-compile requires copyspace framed image and --newlib")
     if args.mode=="integrated-copy" and not manifest.get("copy_output"):
         raise ValueError("integrated-copy requires an image prepared with --copy-output")
+    if args.mode=="integrated-program" and not manifest.get("copy_program_bytes"):
+        raise ValueError("integrated-program requires a current --copy-output image")
     profiles={2*1024*1024:"space",64*1024*1024:"space-64m",256*1024*1024:"space-256m"}
     emulator=args.emulator.resolve() if args.emulator else ROOT/"build/bin"/profiles[manifest["space_bytes"]]
     if not emulator.is_file(): raise ValueError("build matching emulator: "+str(emulator))
@@ -51,6 +53,13 @@ def main():
             files=[(b"main.c",b'#include "value.h"\nunsigned value(unsigned a, unsigned b) { return (a + b) ^ VALUE; }\n'),
                    (b"include/value.h",b"#define VALUE 5\n")]
             oracle=b"unsigned value(unsigned a, unsigned b) { return (a + b) ^ 5; }\n"
+        elif args.mode=="integrated-program":
+            files=[(b"main.c",b'#include "value.h"\n'
+                b'__attribute__((noinline,noipa)) unsigned helper(unsigned a,unsigned b) { return a+b; }\n'
+                b'unsigned value(unsigned a,unsigned b) { return helper(a,b)+VALUE; }\n'),
+                (b"include/value.h",b"#define VALUE 1\n")]
+            oracle=(b'__attribute__((noinline,noipa)) unsigned helper(unsigned a,unsigned b) { return a+b; }\n'
+                b'unsigned value(unsigned a,unsigned b) { return helper(a,b)+1; }\n')
         for name,data in files:
             path=root/"native-inputs"/name.decode()
             path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
@@ -70,11 +79,12 @@ def main():
             if manifest.get("framed_output"):
                 argv.insert(1,b"--space-result=result.s")
                 argv[argv.index(b"-o")+1]=b"result.s"
-        elif args.mode in ("copy-compile","integrated-copy"):
+        elif args.mode in ("copy-compile","integrated-copy","integrated-program"):
             argv=[b"cc1",b"--space-result=result.s",b"-quiet",b"-O2",b"-nostdinc",b"-Iinclude",
                   b"-o",b"result.s",b"main.c"]
-            if args.mode=="integrated-copy":
-                argv[1:2]=[b"--space-copy=result.s",b"--space-entry=value",b"--space-arg=3",b"--space-arg=4"]
+            if args.mode in ("integrated-copy","integrated-program"):
+                option=b"--space-program=result.s" if args.mode=="integrated-program" else b"--space-copy=result.s"
+                argv[1:2]=[option,b"--space-entry=value",b"--space-arg=3",b"--space-arg=4"]
         job=b"GCCJOB1\0"+struct.pack("<II",len(argv),len(packet))
         for arg in argv: job+=struct.pack("<I",len(arg))+arg
         job+=packet
@@ -113,18 +123,20 @@ def main():
     if args.mode=="preprocess":
         assert output==(root/"native.out").read_bytes(),output
         print("OK actual cc1 in Space: full preprocessed output matches GCC; guest exit 0",flush=True)
-    elif args.mode=="integrated-copy":
-        assert len(output)==manifest["copy_image_bytes"]
+    elif args.mode in ("integrated-copy","integrated-program"):
+        expected_value=8 if args.mode=="integrated-program" else 2
+        key="copy_program_bytes" if args.mode=="integrated-program" else "copy_image_bytes"
+        assert len(output)==manifest[key]
         direct=root/"direct";direct.mkdir();(direct/"image.bin").write_bytes(output)
         command=[str(emulator),"--core",str(direct/"image.bin"),"--trace",str(direct/"trace.txt")]
         (direct/"command.json").write_text(json.dumps(command)+"\n")
         checked=subprocess.run(command,capture_output=True,check=True,timeout=10)
         (direct/"out.bin").write_bytes(checked.stdout)
-        assert checked.stdout==struct.pack("<I",2)
+        assert checked.stdout==struct.pack("<I",expected_value)
         evidence.update({"scope":"GNU C and copy lowering in one Space execution; direct result without RV32I",
             "direct_image_sha256":digest(direct/"image.bin"),"direct_output_hex":checked.stdout.hex()})
         (root/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
-        print("OK cc1 and copy lowering in the same Space execution; direct result 2",flush=True)
+        print(f"OK cc1 and copy lowering in the same Space execution; direct result {expected_value}",flush=True)
     elif args.mode=="copy-compile":
         assembly=root/"guest-result.s"; assembly.write_bytes(output)
         command=[sys.executable,str(ROOT/"tests/test_gcc_copy_link.py"),"--artifacts",str(root/"copy-link"),

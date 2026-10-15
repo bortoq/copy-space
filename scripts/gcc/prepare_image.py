@@ -123,6 +123,7 @@ def main():
         "target":receipt["target"],"target_sources_sha256":receipt["build_profile"].get("target_sources_sha256"),
         "compiler":tools.compiler,"framed_output":args.framed_output,
         "copy_output":args.copy_output,"copy_image_bytes":65536 if args.copy_output else None,
+        "copy_program_bytes":262144 if args.copy_output else None,
         "libraries_sha256":library_receipt["archives_sha256"],
         "newlib_libc_sha256":digest(newlib/"lib/libc.a"),"newlib_libm_sha256":digest(newlib/"lib/libm.a"),
         "runtime_sources":frozen,"heap_bytes":args.heap_bytes,"elf_memory_end":end,

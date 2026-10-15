@@ -6,7 +6,11 @@
 static int cs_read(void *p, unsigned n) { return (int)fread(p,1,n,stdin); }
 static int cs_write(const void *p, unsigned n) { return (int)fwrite(p,1,n,stdout); }
 #endif
+#ifdef CS_COPY_PROGRAM
+static unsigned char image[262144];
+#else
 static unsigned char image[65536];
+#endif
 static char assembly[8192];
 #ifndef CS_COPY_RESULT_ADDRESS_BITS
 #define CS_COPY_RESULT_ADDRESS_BITS 24
@@ -23,7 +27,11 @@ int main(void)
     }
     const uint32_t arguments[]={3,4};
     struct cs_copy_link_error error;
+#ifdef CS_COPY_PROGRAM
+    if (cs_copy_link_program(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,assembly,size,"value",arguments,2,&error)) return 2;
+#else
     if (cs_copy_link_leaf(image,sizeof(image),CS_COPY_RESULT_ADDRESS_BITS,assembly,size,"value",arguments,2,&error)) return 2;
+#endif
     unsigned written=0;
     while (written<sizeof(image)) {
         int n=cs_write(image+written,sizeof(image)-written);

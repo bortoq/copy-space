@@ -58,6 +58,12 @@ def main():
     code,out,err,image=decode(good.stdout)
     assert good.returncode==code==0 and not out and not err and len(image)==65536
     direct(image,root/"native-result",7)
+    program_options=["--space-program=result.s"]+options[1:]
+    program_asm=b'value:\ncopy.jsra helper\ncopy.inc $r0,1\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n'
+    program=subprocess.run([str(root/"native")],input=job(program_asm,program_options),capture_output=True)
+    status,stdout,stderr,file=decode(program.stdout)
+    assert program.returncode==status==0 and not stdout and not stderr and len(file)==262144
+    direct(file,root/"program-result",8)
     for name,body,private,expected in (
         ("default",b"main:\ncopy.ldi.l $r0,9\ncopy.ret\n",["--space-copy=result.s"],9),
         ("six-args",b"value:\ncopy.mov $r0,$r5\ncopy.ret\n",
@@ -82,6 +88,7 @@ def main():
     assert failed.returncode==status==126 and not stdout and not file and b"unsupported operation" in stderr
     evidence={"scope":"adapter with mock cc1, not actual compilation","sources_sha256":hashes,
         "native_direct_result":7,"rejected_arguments":len(invalid)+4,"rejected_lowering":status}
+    evidence["native_program_result"]=8
     if not args.native_only:
         if not args.newlib: raise ValueError("guest check requires --newlib")
         prefix=args.newlib.resolve()/"riscv64-unknown-elf"

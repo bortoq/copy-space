@@ -23,23 +23,25 @@ static unsigned char *packet;
 static const char *output_file;
 #ifdef CS_GCC_COPY_OUTPUT
 static int copy_output;
+static int copy_program;
 static const char *copy_entry="main";
 static uint32_t copy_arguments[6];
 static unsigned copy_argc;
 static int lower_copy(const unsigned char *data, unsigned size)
 {
-    unsigned char *image=malloc(65536);
+    unsigned image_bytes=copy_program ? 262144 : 65536;
+    unsigned char *image=malloc(image_bytes);
     struct cs_copy_link_error error={0,"out of memory"};
-    int failed=!image || cs_copy_link_leaf(image,65536,CS_GCC_COPY_ADDRESS_BITS,
+    int failed=!image || (copy_program ? cs_copy_link_program : cs_copy_link_leaf)(image,image_bytes,CS_GCC_COPY_ADDRESS_BITS,
         (const char *)data,size,copy_entry,copy_arguments,copy_argc,&error);
     if (!failed) {
         int fd=cs_gcc_fs_open(output_file,CS_FS_WRITE|CS_FS_TRUNC);
         if (fd<0) failed=1;
         else {
             unsigned written=0;
-            while (written<65536) {
-                int count=cs_gcc_fs_write(fd,image+written,65536-written);
-                if (count<=0 || (unsigned)count>65536-written) { failed=1; break; }
+            while (written<image_bytes) {
+                int count=cs_gcc_fs_write(fd,image+written,image_bytes-written);
+                if (count<=0 || (unsigned)count>image_bytes-written) { failed=1; break; }
                 written+=(unsigned)count;
             }
             if (cs_gcc_fs_close(fd)) failed=1;
@@ -83,8 +85,10 @@ int __wrap_main(void)
     }
 #ifdef CS_GCC_FRAMED_OUTPUT
 #ifdef CS_GCC_COPY_OUTPUT
-    if (job.argc>1 && !strncmp(job.argv[1],"--space-copy=",13)) {
-        output_file=job.argv[1]+13;
+    if (job.argc>1 && (!strncmp(job.argv[1],"--space-copy=",13) ||
+                      !strncmp(job.argv[1],"--space-program=",16))) {
+        copy_program=!strncmp(job.argv[1],"--space-program=",16);
+        output_file=job.argv[1]+(copy_program ? 16 : 13);
         if (!*output_file || !strcmp(output_file,"-")) return 125;
         copy_output=1;
         int consumed=2;

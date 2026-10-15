@@ -12,6 +12,13 @@
 #ifndef CS_GCC_COPY_ADDRESS_BITS
 #define CS_GCC_COPY_ADDRESS_BITS 24
 #endif
+#ifndef CS_GCC_COPY_PROGRAM_BYTES
+#define CS_GCC_COPY_PROGRAM_BYTES 262144
+#endif
+#if CS_GCC_COPY_PROGRAM_BYTES < 262144 || CS_GCC_COPY_PROGRAM_BYTES > 268435456 || \
+    (CS_GCC_COPY_PROGRAM_BYTES & (CS_GCC_COPY_PROGRAM_BYTES-1))
+#error "copy program size must be a power of two in 262144..268435456"
+#endif
 #endif
 #endif
 #include <stdio.h>
@@ -42,7 +49,7 @@ static int copy_number(const char *number, uint32_t *result)
 }
 static int lower_copy(const unsigned char *data, unsigned size)
 {
-    unsigned image_bytes=copy_program ? 262144 : 65536;
+    unsigned image_bytes=copy_program ? CS_GCC_COPY_PROGRAM_BYTES : 65536;
     unsigned char *image=malloc(image_bytes);
     struct cs_copy_link_error error={0,"out of memory"};
     int failed=!image;
@@ -118,7 +125,7 @@ int __wrap_main(void)
                 ++copy_argc;
             } else if (!strncmp(option,"--space-memory=",15)) {
                 if (!copy_program || copy_number(option+15,&copy_memory_bytes) ||
-                    copy_memory_bytes<8192 || copy_memory_bytes>=262144 ||
+                    copy_memory_bytes<8192 || copy_memory_bytes>=CS_GCC_COPY_PROGRAM_BYTES ||
                     (copy_memory_bytes&(copy_memory_bytes-1))) return 125;
             } else break;
             ++consumed;

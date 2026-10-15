@@ -40,7 +40,22 @@ def main():
     parser.add_argument("--space-bytes",type=lambda s:int(s,0),default=256*1024*1024)
     parser.add_argument("--framed-output",action="store_true",help="emit GCCOUT1 with separate result/diagnostics")
     parser.add_argument("--copy-output",action="store_true",help="lower cc1 output with the guest copy assembler")
+    parser.add_argument("--copy-program-bytes",type=lambda s:int(s,0),default=262144)
+    parser.add_argument("--copy-label-capacity",type=int,default=32)
+    parser.add_argument("--copy-jump-capacity",type=int,default=64)
+    parser.add_argument("--copy-call-capacity",type=int,default=32)
     args=parser.parse_args()
+    capacities={"label":args.copy_label_capacity,"jump":args.copy_jump_capacity,"call":args.copy_call_capacity}
+    if any(not 1<=value<=1048576 for value in capacities.values()):
+        raise ValueError("copy table capacities must be in 1..1048576")
+    size=args.copy_program_bytes
+    if not 262144<=size<=min(268435456,args.space_bytes) or size&(size-1):
+        raise ValueError("copy program size must be a power of two fitting Space, at least 262144")
+    if not args.copy_output and (size!=262144 or capacities!={"label":32,"jump":64,"call":32}):
+        raise ValueError("copy configuration requires --copy-output")
+    code_begin=60032+64*capacities["jump"]+32*capacities["call"]+32*12
+    if args.copy_output and code_begin+256*(3*((args.space_bytes*8).bit_length()-1)-1)>(size-8192)*8:
+        raise ValueError("copy tables leave no room for code and default data/stack memory")
     if not 0<args.heap_bytes<args.memory_bytes-4*1024*1024:
         raise ValueError("heap must leave room for code and stack")
     work=args.cc1_work.resolve(); gcc=work/"gcc"
@@ -78,7 +93,9 @@ def main():
             "-I"+str(sources/"runtime/rv32i"),"-c",str(path),"-o",str(obj)]
         if args.framed_output: command.insert(1,"-DCS_GCC_FRAMED_OUTPUT")
         if args.copy_output: command[1:1]=["-DCS_GCC_COPY_OUTPUT",
-            "-DCS_GCC_COPY_ADDRESS_BITS="+str((args.space_bytes*8).bit_length()-1)]
+            "-DCS_GCC_COPY_ADDRESS_BITS="+str((args.space_bytes*8).bit_length()-1),
+            "-DCS_GCC_COPY_PROGRAM_BYTES="+str(args.copy_program_bytes)]+[
+                "-DCS_COPY_"+name.upper()+"_CAPACITY="+str(value) for name,value in capacities.items()]
         run(root,path.stem+"-compile",command,root); objects.append(str(obj))
     dry=run(root,"link-recipe",["make","-n","-C",str(gcc),"-W","cc1-checksum.o","cc1",
         "CC_FOR_BUILD=gcc","CXX_FOR_BUILD=g++","CPPFLAGS="],work)
@@ -123,7 +140,8 @@ def main():
         "target":receipt["target"],"target_sources_sha256":receipt["build_profile"].get("target_sources_sha256"),
         "compiler":tools.compiler,"framed_output":args.framed_output,
         "copy_output":args.copy_output,"copy_image_bytes":65536 if args.copy_output else None,
-        "copy_program_bytes":262144 if args.copy_output else None,
+        "copy_program_bytes":args.copy_program_bytes if args.copy_output else None,
+        "copy_capacities":capacities if args.copy_output else None,
         "libraries_sha256":library_receipt["archives_sha256"],
         "newlib_libc_sha256":digest(newlib/"lib/libc.a"),"newlib_libm_sha256":digest(newlib/"lib/libm.a"),
         "runtime_sources":frozen,"heap_bytes":args.heap_bytes,"elf_memory_end":end,

@@ -73,6 +73,25 @@ def main():
         direct(file,root/f"memory-{memory}",memory-12)
     explicit=subprocess.run([str(root/"native")],input=job(program_asm,program_options+["--space-memory=8192"]),capture_output=True)
     assert explicit.stdout==program.stdout
+    scaled_flags=["-DCS_GCC_COPY_PROGRAM_BYTES=2097152", "-DCS_COPY_LABEL_CAPACITY=128",
+                  "-DCS_COPY_JUMP_CAPACITY=512", "-DCS_COPY_CALL_CAPACITY=64"]
+    scaled_command=command[:-2]+scaled_flags+["-o",str(root/"scaled")]
+    (root/"scaled-command.json").write_text(json.dumps(scaled_command)+"\n")
+    subprocess.run(scaled_command,capture_output=True,check=True)
+    many_calls=b'value:\n'+b'copy.jsra helper\n'*40+b'copy.ret\nhelper:\ncopy.inc $r0,1\ncopy.ret\n'
+    for name,body,private,expected in (
+        ("scaled-calls",many_calls,program_options,43),
+        ("scaled-memory",b'value:\ncopy.mov $r0,$sp\ncopy.ret\n',
+         program_options+["--space-memory=1048576"],1048576-12)):
+        packet=job(body,private);(root/(name+".job")).write_bytes(packet)
+        result=subprocess.run([str(root/"scaled")],input=packet,capture_output=True)
+        status,stdout,stderr,file=decode(result.stdout)
+        assert result.returncode==status==0 and not stdout and not stderr and len(file)==2097152
+        direct(file,root/name,expected)
+    for memory in (2097152,4194304):
+        result=subprocess.run([str(root/"scaled")],input=job(program_asm,
+            program_options+["--space-memory="+str(memory)]),capture_output=True)
+        assert result.returncode==125 and not result.stdout
     invalid_memory=["", "0", "4096", "8193", "262144", "4294967296", "-8192", "+8192", " 8192", "08", "8192junk"]
     for number in invalid_memory:
         result=subprocess.run([str(root/"native")],input=job(program_asm,program_options+["--space-memory="+number]),capture_output=True)
@@ -104,6 +123,8 @@ def main():
     evidence={"scope":"adapter with mock cc1, not actual compilation","sources_sha256":hashes,
         "native_direct_result":7,"rejected_arguments":len(invalid)+4,"rejected_lowering":status}
     evidence["native_program_result"]=8
+    evidence["scaled_program"]={"image_bytes":2097152,"calls":40,"result":43,
+        "memory_bytes":1048576,"memory_result":1048576-12}
     evidence.update({"memory_sizes_checked":[8192,16384,32768,65536,131072],
         "rejected_memory_arguments":len(invalid_memory)+1,"default_program_image_unchanged":True})
     if not args.native_only:

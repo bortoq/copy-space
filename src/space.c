@@ -38,24 +38,31 @@ int space_init(const void *image, size_t bytes)
 }
 
 /* return bit string of instruction argument as a number */
+static inline uint32_t reverse_bits_in_bytes(uint32_t value)
+{
+  value = ((value & UINT32_C(0x55555555)) << 1) | ((value >> 1) & UINT32_C(0x55555555));
+  value = ((value & UINT32_C(0x33333333)) << 2) | ((value >> 2) & UINT32_C(0x33333333));
+  return ((value & UINT32_C(0x0f0f0f0f)) << 4) | ((value >> 4) & UINT32_C(0x0f0f0f0f));
+}
+
 static inline size get_argument(size src, size n)
 {
-  size value = 0;
-  size i = 0;
-  while(i < n)
+  size_t byte = src >> 3;
+  unsigned offset = src & 7u;
+  const unsigned char *p = (const unsigned char *)space + byte;
+  if(byte + 4 > sizeof space)
   {
-    unsigned byte = (unsigned char)space[(src + i) >> 3];
-    unsigned offset = (unsigned)((src + i) & 7u);
-    unsigned take = 8u - offset;
-    if(take > n - i)
-      take = n - i;
-    byte = ((byte & 0x55u) << 1) | ((byte >> 1) & 0x55u);
-    byte = ((byte & 0x33u) << 2) | ((byte >> 2) & 0x33u);
-    byte = (byte << 4) | (byte >> 4);
-    value |= (size)((byte >> offset) & ((1u << take) - 1u)) << i;
-    i += take;
+    size value = 0, i;
+    for(i = 0; i < n; ++i)
+      value |= (size)(((unsigned char)space[(src+i) >> 3] >> (7u-((src+i)&7u))) & 1u) << i;
+    return value;
   }
-  return value;
+  uint32_t packed = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+                    ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+  uint32_t value = reverse_bits_in_bytes(packed) >> offset;
+  if(n + offset > 32)
+    value |= reverse_bits_in_bytes(p[4]) << (32-offset);
+  return value & ((UINT32_C(1) << n)-1);
 }
 
 /* read "i-th instruction" bit string from bit space to the processor mechanism */

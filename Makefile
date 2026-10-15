@@ -36,6 +36,7 @@ BITCOPY_OBJ := $(OBJDIR)/tests/test_bitcopy.o
 RUNTIME_BIN := $(BINDIR)/test_space_runtime
 RUNTIME_OBJ := $(OBJDIR)/tests/test_space_runtime.o
 DECODE_BIN := $(BINDIR)/test_space_decode
+DECODE_BOUNDARY_BIN := $(BINDIR)/test_space_decode_boundary
 IO_PARTIAL_BIN := $(BINDIR)/test_rv32i_io_partial
 IO_PARTIAL_OBJ := $(OBJDIR)/tests/test_rv32i_io_partial.o
 
@@ -83,12 +84,17 @@ $(DECODE_BIN): $(OBJDIR)/tests/test_space_decode.o $(EMULATOR_OBJS)
 	@mkdir -p "$(dir $@)"
 	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
 
+$(DECODE_BOUNDARY_BIN): tests/test_space_decode.c $(EMULATOR_SRCS) src/space.h src/support.h
+	@mkdir -p "$(dir $@)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -UVM_SPACE_BYTES -DVM_SPACE_BYTES=512 -UPROCESSOR_N -DPROCESSOR_N=117 tests/test_space_decode.c $(EMULATOR_SRCS) $(LDFLAGS) -o "$@" $(LDLIBS)
+
 $(IO_PARTIAL_BIN): $(IO_PARTIAL_OBJ) $(addprefix $(OBJDIR)/,$(RUN_SRCS:.c=.o)) $(EMULATOR_OBJS)
 	@mkdir -p "$(dir $@)"
 	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
 
-test: bins bins-large $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(DECODE_BIN) $(IO_PARTIAL_BIN) test-clean
+test: bins bins-large $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(DECODE_BIN) $(DECODE_BOUNDARY_BIN) $(IO_PARTIAL_BIN) test-clean
 	$(DECODE_BIN)
+	$(DECODE_BOUNDARY_BIN)
 	./scripts/tdd/run_all.sh
 
 tdd: test

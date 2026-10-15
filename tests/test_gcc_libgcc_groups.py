@@ -9,7 +9,7 @@ independent Python reference.
 
 Guest archive linking caps selected units at eight including the explicit
 object (runtime/gcc/copy_link.h), hence the helpers ride in small groups:
-shifts (six ops), bitops (clz/ctz plus the clz table, five members),
+shifts (six ops), bitops (clz/ctz/clrsb plus the clz table, seven members),
 ffs-a (ffs/popcount plus the clz table, five members) and ffs-b
 (parity/bswap, four members). Zero-input ctz semantics are target-specific
 quirks derived from the compiled copy assembly: __ctzsi2(0) is -1 and
@@ -68,6 +68,26 @@ def clz64(a):
     return 64 if a == 0 else 64 - a.bit_length()
 
 
+def clrsb32(a):
+    a &= 0xffffffff
+    word = (~a & 0xffffffff) if a >= 0x80000000 else a
+    return 31 if word == 0 else clz32(word)-1
+
+
+def clrsb64(a):
+    a &= 0xffffffffffffffff
+    hi, lo = (a >> 32) & 0xffffffff, a & 0xffffffff
+    if hi == 0:
+        word, add = lo, 32
+    elif hi == 0xffffffff:
+        word, add = ~lo & 0xffffffff, 32
+    elif hi < 0x80000000:
+        word, add = hi, 0
+    else:
+        word, add = ~hi & 0xffffffff, 0
+    return (32 if word == 0 else clz32(word))+add-1
+
+
 GROUPS = {
     'shifts': {
         'members': ('ashldi3', 'lshrdi3', 'ashrdi3', 'cmpdi2', 'ucmpdi2', 'negdi2'),
@@ -85,15 +105,19 @@ GROUPS = {
                   'c4(cases[i].a,cases[i].b2)==cases[i].e4', 'c5(cases[i].a)==cases[i].e5'),
     },
     'bitops': {
-        'members': ('clz', 'clzsi2', 'clzdi2', 'ctzsi2', 'ctzdi2'),
-        'decls': ('int __clzsi2(u32); int __clzdi2(u64); int __ctzsi2(u32); int __ctzdi2(u64);\n'),
-        'calcs': ('c0', 'c1', 'c2', 'c3'),
+        'members': ('clz', 'clzsi2', 'clzdi2', 'ctzsi2', 'ctzdi2', 'clrsbsi2', 'clrsbdi2'),
+        'decls': ('int __clzsi2(u32); int __clzdi2(u64); int __ctzsi2(u32); int __ctzdi2(u64);\n'
+                  'int __clrsbsi2(u32); int __clrsbdi2(u64);\n'),
+        'calcs': ('c0', 'c1', 'c2', 'c3', 'c4', 'c5'),
         'fns': ('static __attribute__((__noinline__,__noipa__)) unsigned c0(u32 a){return (unsigned)__clzsi2(a);}\n'
                 'static __attribute__((__noinline__,__noipa__)) unsigned c1(u64 a){return (unsigned)__clzdi2(a);}\n'
                 'static __attribute__((__noinline__,__noipa__)) unsigned c2(u32 a){return (unsigned)__ctzsi2(a);}\n'
-                'static __attribute__((__noinline__,__noipa__)) unsigned c3(u64 a){return (unsigned)__ctzdi2(a);}\n'),
+                'static __attribute__((__noinline__,__noipa__)) unsigned c3(u64 a){return (unsigned)__ctzdi2(a);}\n'
+                'static __attribute__((__noinline__,__noipa__)) unsigned c4(u32 a){return (unsigned)__clrsbsi2(a);}\n'
+                'static __attribute__((__noinline__,__noipa__)) unsigned c5(u64 a){return (unsigned)__clrsbdi2(a);}\n'),
         'calls': ('c0((u32)cases[i].a)==cases[i].e0', 'c1(cases[i].a)==cases[i].e1',
-                  'c2((u32)cases[i].a)==cases[i].e2', 'c3(cases[i].a)==cases[i].e3'),
+                  'c2((u32)cases[i].a)==cases[i].e2', 'c3(cases[i].a)==cases[i].e3',
+                  'c4((u32)cases[i].a)==cases[i].e4', 'c5(cases[i].a)==cases[i].e5'),
     },
     'ffs-a': {
         'members': ('clz', 'ffssi2', 'ffsdi2', 'popcountsi2', 'popcountdi2'),
@@ -232,7 +256,8 @@ def main():
         else:
             values = reference_cases(name, args.seed)
             if name == 'bitops':
-                records = [(a, clz32(a), clz64(a), ctz32(a), ctz64(a)) for a in values]
+                records = [(a, clz32(a), clz64(a), ctz32(a), ctz64(a),
+                            clrsb32(a), clrsb64(a)) for a in values]
             elif name == 'ffs-a':
                 records = [(a, 0 if (a & 0xffffffff) == 0 else (a & 0xffffffff & -(a & 0xffffffff)).bit_length(),
                             0 if a == 0 else (a & -a).bit_length(),
@@ -240,9 +265,10 @@ def main():
             else:
                 records = [(a, bin(a & 0xffffffff).count('1') & 1, bin(a).count('1') & 1,
                             bswap32(a), bswap64(a)) for a in values]
+            nops = len(spec['calls'])
             header = ('typedef __UINT32_TYPE__ u32; typedef __UINT64_TYPE__ u64;\n' + spec['decls']
-                      + 'struct record { u64 a; u64 e0,e1,e2,e3; };\n')
-            body = ['{%dULL,%dULL,%dULL,%dULL,%dULL}' % r for r in records]
+                      + 'struct record { u64 a; u64 ' + ','.join('e%d' % i for i in range(nops)) + '; };\n')
+            body = ['{%dULL,%s}' % (r[0], ','.join('%dULL' % v for v in r[1:])) for r in records]
         text = header + 'static const struct record cases[]={' + ','.join(body) + '};\n' + spec['fns']
         text += 'unsigned value(void){unsigned p=0;for(unsigned i=0;i<%d;i++){' % len(records)
         for call in spec['calls']:

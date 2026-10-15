@@ -38,7 +38,7 @@ def main():
     parser.add_argument('--unit', action='append', choices=['muldi3', 'udivdi3', 'divdi3', 'umoddi3', 'moddi3',
         'ashldi3', 'lshrdi3', 'ashrdi3', 'cmpdi2', 'ucmpdi2', 'clzsi2', 'clzdi2', 'ctzsi2', 'ctzdi2', 'negdi2', 'clz',
         'ffssi2', 'ffsdi2', 'popcountsi2', 'popcountdi2', 'paritysi2', 'paritydi2', 'bswapsi2', 'bswapdi2',
-        'divmoddi4', 'udivmoddi4'])
+        'divmoddi4', 'udivmoddi4', 'clrsbsi2', 'clrsbdi2'])
     parser.add_argument('--link-probe', action='store_true', help='link five original arithmetic helpers from an archive and execute direct copies')
     args = parser.parse_args()
     store, build, target, diagnostic = (p.resolve() for p in

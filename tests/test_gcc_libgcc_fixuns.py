@@ -29,14 +29,18 @@ def digest(path, algo="sha256"):
     with path.open("rb") as s:
         return hashlib.file_digest(s, algo).hexdigest()
 
-def run_one(qemu, elf, emu, lib_bytes, lib_name, main_c, sub, ncases):
+def run_one(qemu, elf, emu, lib_bytes, lib_name, main_c, sub, ncases, *, installed=False):
     if not main_c or not lib_bytes:
         raise SystemExit("empty harness or library")
     sub.mkdir(parents=True, exist_ok=False)
     (sub/"main.c").write_bytes(main_c)
-    incoming = pack(['cc1','--space-program=result.s','--space-entry=value','--space-memory=65536',
-                     '--space-library='+lib_name,'-quiet','-O2','-ffreestanding','-fno-builtin','-nostdinc',
-                     '-o','result.s','main.c'], {'main.c': main_c, lib_name: lib_bytes})
+    options = [] if installed else ['--space-library='+lib_name]
+    files = {'main.c': main_c}
+    if not installed:
+        files[lib_name] = lib_bytes
+    incoming = pack(['cc1','--space-program=result.s','--space-entry=value','--space-memory=65536']+
+                    options+['-quiet','-O2','-ffreestanding','-fno-builtin','-nostdinc',
+                     '-o','result.s','main.c'], files)
     (sub/"job.bin").write_bytes(incoming)
     cmd = [str(qemu),"-strace",str(elf)]
     (sub/"command.json").write_text(json.dumps(cmd)+"\n")

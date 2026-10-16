@@ -876,13 +876,14 @@ static const char *call(struct context *ctx, char *name, size_t line, int indire
         target=label(ctx,name);
         if (target<0) return "invalid function label";
     }
-    uint32_t twelve,zero;
+    uint32_t twelve;
     uint32_t continuation=CALL_TABLE+32*ctx->call_count++;
-    if (constant(ctx,12,&twelve) || constant(ctx,0,&zero) ||
+    /* The caller writes its static chain at old SP-4.  After allocating
+       the 12-byte frame this is FP+8, where the callee expects it. */
+    if (constant(ctx,12,&twelve) ||
         cs_copy_program_sub32(p,REG_BASE+32,REG_BASE+32,twelve,SUB_TABLE,TEMPORARY,CARRY) ||
         memory_access(ctx,1,32,REG_BASE,REG_BASE+32,0) ||
         memory_access(ctx,1,32,continuation,REG_BASE+32,4) ||
-        memory_access(ctx,1,32,zero,REG_BASE+32,8) ||
         cs_copy_program_emit(p,32,REG_BASE,REG_BASE+32) ||
         (indirect ? dynamic_jump(ctx,CALL_TARGET) : jump(ctx,target,line)) ||
         cs_copy_constant(&p->image,continuation,32,p->image.layer)) return "copy image capacity exceeded";

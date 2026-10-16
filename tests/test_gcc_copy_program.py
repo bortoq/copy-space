@@ -112,6 +112,8 @@ def main():
         (b'value:\ncopy.jsra helper\ncopy.mov $r0,$sp\ncopy.ret\nhelper:\ncopy.dec $sp,16\ncopy.ret\n',8156),
         (b'value:\ncopy.dec $sp,4\ncopy.ldi.l $r2,19\ncopy.st.l ($sp),$r2\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ldo.l $r0,12($fp)\ncopy.ret\n',19),
         (b'value:\ncopy.ldi.l $r2,helper\ncopy.jsr $r2\ncopy.inc $r0,1\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',8),
+        (b'value:\ncopy.ldi.l $r2,123\ncopy.sto.l -4($sp),$r2\ncopy.jsra helper\ncopy.ret\nhelper:\ncopy.ldo.l $r0,8($fp)\ncopy.ret\n',123),
+        (b'value:\ncopy.ldi.l $r2,456\ncopy.sto.l -4($sp),$r2\ncopy.ldi.l $r3,helper\ncopy.jsr $r3\ncopy.ret\nhelper:\ncopy.ldo.l $r0,8($fp)\ncopy.ret\n',456),
         (b'value:\ncopy.ldi.l $r2,helper\ncopy.sta.l 16,$r2\ncopy.lda.l $r3,16\ncopy.jsr $r3\ncopy.ret\nhelper:\ncopy.add $r0,$r1\ncopy.ret\n',7),
         (b'value:\ncopy.ldi.l $r2,helper\ncopy.ldi.l $r3,helper\ncopy.cmp $r2,$r3\ncopy.branch.ne .Lbad\ncopy.jsr $r2\ncopy.ret\n.Lbad:\ncopy.ldi.l $r0,99\ncopy.ret\nhelper:\ncopy.inc $r0,1\ncopy.ret\n',4),
         (b'value:\ncopy.ldi.l $r2,.Lnext\ncopy.jmp $r2\n.Lskip:\ncopy.ldi.l $r0,99\ncopy.ret\n.Lnext:\ncopy.add $r0,$r1\ncopy.ret\n',7),

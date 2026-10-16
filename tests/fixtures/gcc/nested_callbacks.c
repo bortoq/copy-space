@@ -86,7 +86,8 @@ unsigned callback_equal(void)
     NOIPA unsigned first(unsigned x) { return bias+x; }
     NOIPA unsigned second(unsigned x) { return bias+2*x; }
     callback a=first,b=first,c=second;
-    return (a==b)+(a!=c)+(a!=0)+(a!=plain_callback);
+    return compare_callbacks(a,b)+!compare_callbacks(a,c)
+           +!compare_callbacks(a,0)+!compare_callbacks(a,plain_callback);
 }
 
 unsigned callback_label(void)

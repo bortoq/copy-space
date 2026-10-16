@@ -88,3 +88,14 @@ unsigned callback_equal(void)
     callback a=first,b=first,c=second;
     return (a==b)+(a!=c)+(a!=0)+(a!=plain_callback);
 }
+
+unsigned callback_label(void)
+{
+    __label__ target;
+    volatile unsigned bias=5;
+    NOIPA void nested(unsigned x) { bias+=x; goto target; }
+    notify(nested,37);
+    bias=99;
+target:
+    return bias;
+}

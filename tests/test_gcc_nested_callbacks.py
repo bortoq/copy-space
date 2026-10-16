@@ -20,7 +20,7 @@ sys.path.insert(0,str(ROOT/'scripts/gcc'))
 from job_format import pack_job
 
 CASES={'capture':17,'modify':61,'array':142,'recursive':15,'void':42,
-       'arguments':42,'structure':70,'deep':17,'equal':4}
+       'arguments':42,'structure':70,'deep':17,'equal':4,'label':42}
 
 
 def digest(path):

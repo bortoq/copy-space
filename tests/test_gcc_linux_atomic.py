@@ -4,8 +4,8 @@ The fixture exercises the copyspace asm/atomic.h, asm/cmpxchg.h and UP
 atomic bitops through <linux/atomic.h> and <linux/bitops.h>. The host
 dependency scan only selects files for GCCJOB1; QEMU runs the compiler
 and the guest linker, results execute as direct copies. The __sync_*
-helpers come from tests/fixtures/gcc/sync_up.c compiled by the same
-target GCC in the same run. This is not GCC-in-Space execution evidence.
+helpers come from the installed runtime with --installed, or from the
+fixture compiled by the same target GCC. This is not GCC-in-Space evidence.
 """
 import argparse
 import hashlib
@@ -39,7 +39,11 @@ def main():
                         help='pinned original linux-6.12.tar.xz; verify every Linux input')
     parser.add_argument('--diagnostic', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
+    parser.add_argument('--installed', action='store_true')
+    parser.add_argument('--image', type=Path)
     args = parser.parse_args()
+    if args.installed != bool(args.image):
+        parser.error('--installed and --image require each other')
     archive = args.linux_archive.resolve()
     archive_sha256 = 'b1a2562be56e42afb3f8489d4c2a7ac472ac23098f1ef1c1e40da601f54625eb'
     assert digest(archive) == archive_sha256, 'changed pinned Linux 6.12 archive'
@@ -51,6 +55,14 @@ def main():
     assert digest(elf) == original['elf_sha256'], 'changed diagnostic GCC'
     qemu = Path(command[0])
     assert digest(qemu) == original['qemu_sha256'], 'changed diagnostic QEMU'
+    installed_hash = None
+    if args.installed:
+        image = args.image.resolve()
+        manifest = json.loads((image/'image.json').read_text())
+        assert digest(image/'gcc-space.elf') == manifest['elf_sha256'] == original['original_elf_sha256']
+        assert manifest['target_library']['default']
+        installed_hash = digest(image/'target-libgcc.a')
+        assert installed_hash == manifest['target_library']['archive_sha256']
     root = args.artifacts.resolve()
     root.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(__file__, root/'run.py')
@@ -126,33 +138,41 @@ def main():
              '-Werror=implicit-function-declaration', '-Werror=implicit-int', '-nostdinc']
             + common + ['-include', 'port/config.h', '-o', 'result.s', 'port/probe.c'])
     (root/'probe-argv.json').write_text(json.dumps(argv, indent=2)+'\n')
-    compiled = subprocess.run(run, input=pack(argv, files), capture_output=True, timeout=180)
+    incoming = pack(argv, files)
+    (root/'probe.job').write_bytes(incoming)
+    compiled = subprocess.run(run, input=incoming, capture_output=True, timeout=180)
     (root/'probe-response.bin').write_bytes(compiled.stdout)
     status, stdout, stderr, probe_asm = decode(compiled.stdout)
     assert compiled.returncode == status == 0 and not stdout and not stderr and probe_asm, stderr
     (root/'probe.s').write_bytes(probe_asm)
     # 2. Compile the __sync_* helpers with the same compiler.
-    sync_src = (ROOT/'tests/fixtures/gcc/sync_up.c').read_bytes()
-    (root/'sync_up.c').write_bytes(sync_src)
-    argv2 = ['cc1', '--space-result=result.s', '-quiet', '-O2', '-ffreestanding', '-fno-builtin',
-             '-nostdinc', '-o', 'result.s', 'sync_up.c']
-    (root/'sync-argv.json').write_text(json.dumps(argv2, indent=2)+'\n')
-    compiled2 = subprocess.run(run, input=pack(argv2, {'sync_up.c': sync_src}),
-                               capture_output=True, timeout=180)
-    (root/'sync-response.bin').write_bytes(compiled2.stdout)
-    status2, stdout2, stderr2, helper_asm = decode(compiled2.stdout)
-    assert compiled2.returncode == status2 == 0 and not stdout2 and not stderr2 and helper_asm, stderr2
-    (root/'sync_up.s').write_bytes(helper_asm)
+    helper_asm = b''
+    if not args.installed:
+        sync_src = (ROOT/'tests/fixtures/gcc/sync_up.c').read_bytes()
+        (root/'sync_up.c').write_bytes(sync_src)
+        argv2 = ['cc1', '--space-result=result.s', '-quiet', '-O2', '-ffreestanding', '-fno-builtin',
+                 '-nostdinc', '-o', 'result.s', 'sync_up.c']
+        (root/'sync-argv.json').write_text(json.dumps(argv2, indent=2)+'\n')
+        compiled2 = subprocess.run(run, input=pack(argv2, {'sync_up.c': sync_src}),
+                                   capture_output=True, timeout=180)
+        (root/'sync-response.bin').write_bytes(compiled2.stdout)
+        status2, stdout2, stderr2, helper_asm = decode(compiled2.stdout)
+        assert compiled2.returncode == status2 == 0 and not stdout2 and not stderr2 and helper_asm, stderr2
+        (root/'sync_up.s').write_bytes(helper_asm)
     # 3. Link probe + helper in the guest and execute direct copies.
-    argv3 = (['cc1', '--space-program=result.s', '--space-entry=value', '--space-memory=65536',
-              '--space-object=port/sync_up.s', '-quiet', '-O2', '-std=gnu11', '-ffreestanding',
+    object_option = [] if args.installed else ['--space-object=port/sync_up.s']
+    argv3 = (['cc1', '--space-program=result.s', '--space-entry=value', '--space-memory=65536']+
+             object_option+['-quiet', '-O2', '-std=gnu11', '-ffreestanding',
               '-fno-builtin', '-fno-common', '-fno-strict-aliasing', '-fno-stack-protector',
               '-Werror=implicit-function-declaration', '-Werror=implicit-int', '-nostdinc']
              + common + ['-include', 'port/config.h', '-o', 'result.s', 'port/probe.c'])
     linked_files = dict(files)
-    linked_files['port/sync_up.s'] = helper_asm
+    if not args.installed:
+        linked_files['port/sync_up.s'] = helper_asm
     (root/'link-argv.json').write_text(json.dumps(argv3, indent=2)+'\n')
-    linked = subprocess.run(run, input=pack(argv3, linked_files), capture_output=True, timeout=300)
+    incoming = pack(argv3, linked_files)
+    (root/'link.job').write_bytes(incoming)
+    linked = subprocess.run(run, input=incoming, capture_output=True, timeout=300)
     (root/'link-response.bin').write_bytes(linked.stdout)
     status3, stdout3, stderr3, image = decode(linked.stdout)
     assert linked.returncode == status3 == 0 and not stdout3 and not stderr3 and image, stderr3
@@ -169,6 +189,8 @@ def main():
                 'elf_sha256': original['elf_sha256'], 'qemu_sha256': original['qemu_sha256'],
                 'guest_files': len(files), 'probe_bytes': len(probe_asm),
                 'helper_bytes': len(helper_asm), 'direct_result': EXPECTED,
+                'installed_runtime': args.installed, 'installed_archive_sha256': installed_hash,
+                'input_contains_assembly': any(name.endswith(('.s', '.S', '.a', '.o')) for name in linked_files),
                 'image_sha256': digest(root/'image.bin')}
     (root/'evidence.json').write_text(json.dumps(evidence, indent=2)+'\n')
     print(f'OK Linux atomics: {len(files)} guest files; direct OUT={EXPECTED}; QEMU diagnostic only')

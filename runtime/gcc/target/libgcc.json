@@ -37,6 +37,13 @@
     {"source": "libgcc/memcpy.c", "defines": [], "units": ["memcpy"]},
     {"source": "libgcc/memmove.c", "defines": [], "options": ["-Wno-discarded-qualifiers"], "units": ["memmove"]},
     {"source": "libgcc/memset.c", "defines": [], "units": ["memset"]},
-    {"source": "libgcc/memcmp.c", "defines": [], "units": ["memcmp"]}
+    {"source": "libgcc/memcmp.c", "defines": [], "units": ["memcmp"]},
+    {
+      "origin": "project",
+      "source": "runtime/gcc/target/sync_up.c",
+      "defines": [],
+      "units": ["sync_add4", "sync_sub4", "sync_or4", "sync_and4", "sync_xor4", "sync_nand4", "sync_cas4",
+                "sync_add8", "sync_sub8", "sync_or8", "sync_and8", "sync_xor8", "sync_nand8", "sync_cas8"]
+    }
   ]
 }

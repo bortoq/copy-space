@@ -108,6 +108,12 @@ def main():
             ('data-reference', b'.global value; value: copy.lda.l $r2,ptr; copy.ld.l $r0,0($r2); copy.ret\n.data; ptr: .long shared\n',
              [('shared.s/', b'.data; .global shared; shared: .long 17\n')],
              [b'.data; .global shared; shared: .long 17\n'], 17),
+            ('difference-reference', b'.global value; value: copy.lda.l $r0,delta; copy.ret\n'
+             b'.data; delta: .long high-(low)\n',
+             [('low.s/', b'.data; .global low; low: .byte 1; .space 8\n'),
+              ('high.s/', b'.data; .global high; high: .long 0\n')],
+             [b'.data; .global low; low: .byte 1; .space 8\n',
+              b'.data; .global high; high: .long 0\n'], 9),
         ]
         chain = [(f'f{i}.s/', (f'.global f{i}; f{i}: copy.jsra f{i+1}; copy.inc $r0,1; copy.ret\n'
                                if i<6 else '.global f6; f6: copy.inc $r0,1; copy.ret\n').encode()) for i in range(7)]

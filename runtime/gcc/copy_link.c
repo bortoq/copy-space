@@ -2,6 +2,7 @@
 #include "copy_emit.h"
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 /* These limits also determine the physical tables before generated code. */
 #ifndef CS_COPY_LABEL_CAPACITY
@@ -48,6 +49,8 @@ enum { REG_BASE=32768, CONSTANT_BASE=24576,
        SYMBOL_TABLE=CALL_TABLE+32*CS_COPY_CALL_CAPACITY,
        CODE_BEGIN=SYMBOL_TABLE+32*CS_COPY_SYMBOL_CAPACITY,
        OUTPUT=34000, STATUS=34100, ZERO_LAYER=36352 };
+struct data_section { char name[64]; uint32_t position,alignment,base; int kind; };
+struct data_fragment { uint32_t staging,offset,count; unsigned section; };
 struct context {
     struct cs_copy_program program;
     uint32_t constants[CONSTANT_CAPACITY];
@@ -66,14 +69,14 @@ struct context {
     unsigned symbol_count;
     int program_mode;
     int section;
-    struct { char name[64]; uint32_t position,alignment,base; int kind; } sections[16];
-    unsigned section_count,active_section,previous_section;
+    struct data_section *sections;
+    unsigned section_count,section_capacity,active_section,previous_section;
     int previous_valid;
     unsigned section_stack[16],section_depth;
-    struct { uint32_t staging,offset,count; unsigned section; } fragments[256];
-    unsigned fragment_count;
+    struct data_fragment *fragments;
+    unsigned fragment_count,fragment_capacity;
     uint32_t data_cursor;
-    struct { uint32_t destination,addend; int label; } relocations[CS_COPY_RELOCATION_CAPACITY];
+    struct { uint64_t addend; uint32_t destination; int label,subtract; unsigned bytes; } relocations[CS_COPY_RELOCATION_CAPACITY];
     unsigned relocation_count;
     struct { int label,target; uint32_t addend; } aliases[CS_COPY_LABEL_CAPACITY];
     unsigned alias_count;
@@ -268,6 +271,67 @@ static int integer64(const char *s, uint64_t *value)
     *value=negative ? 0-n : n;
     return 0;
 }
+static int data_symbol(struct context *ctx, const char **text, int *index)
+{
+    const char *at=*text;
+    unsigned parentheses=0;
+    while (whitespace((unsigned char)*at)) ++at;
+    while (*at=='(') {
+        if (++parentheses>32) return -1;
+        ++at;
+        while (whitespace((unsigned char)*at)) ++at;
+    }
+    char name[64];size_t n=0;
+    while (at[n] && !whitespace((unsigned char)at[n]) &&
+           at[n]!='+' && at[n]!='-' && at[n]!='(' && at[n]!=')') ++n;
+    if (!n || n>=sizeof(name)) return -1;
+    memcpy(name,at,n);name[n]=0;
+    *index=label(ctx,name);
+    if (*index<0) return -1;
+    at+=n;
+    while (whitespace((unsigned char)*at)) ++at;
+    while (parentheses) {
+        if (*at++!=')') return -1;
+        --parentheses;
+        while (whitespace((unsigned char)*at)) ++at;
+    }
+    *text=at;return 0;
+}
+static int data_expression(struct context *ctx, const char *text, int *index,
+                           int *subtract, uint64_t *addend)
+{
+    /* Preserve existing symbol+32-bit-addend initializers. Relative label
+     * tables need both labels resolved after code/data placement. */
+    uint32_t offset;
+    *subtract=-1;
+    if (!expression(ctx,text,index,&offset)) { *addend=offset;return 0; }
+    if (data_symbol(ctx,&text,index) || *text++!='-' ||
+        data_symbol(ctx,&text,subtract)) return -1;
+    *addend=0;
+    if (*text) {
+        char sign=*text++;
+        if (sign!='+' && sign!='-') return -1;
+        while (whitespace((unsigned char)*text)) ++text;
+        uint64_t value;
+        if (integer64(text,&value)) return -1;
+        *addend=sign=='-' ? 0-value : value;
+    }
+    return 0;
+}
+/* Keep indices stable while the arrays grow. Allocate before replacing the
+ * old table so all failure paths can release the current allocation. */
+static void *grow_table(void *table, unsigned *capacity, size_t item_bytes)
+{
+    if (*capacity>UINT_MAX/2) return NULL;
+    unsigned next=*capacity ? *capacity*2 : 16;
+    if (item_bytes>SIZE_MAX/next) return NULL;
+    void *larger=malloc(next*item_bytes);
+    if (!larger) return NULL;
+    if (*capacity) memcpy(larger,table,*capacity*item_bytes);
+    free(table);
+    *capacity=next;
+    return larger;
+}
 static int data_reserve(struct context *ctx, uint32_t count, uint32_t *at)
 {
     uint32_t capacity=ctx->memory_bytes/2;
@@ -281,7 +345,11 @@ static int data_reserve(struct context *ctx, uint32_t count, uint32_t *at)
             ctx->fragments[index-1].offset+ctx->fragments[index-1].count==offset) {
             ctx->fragments[index-1].count+=count;
         } else {
-            if (index==256) return -1;
+            if (index==ctx->fragment_capacity) {
+                void *larger=grow_table(ctx->fragments,&ctx->fragment_capacity,sizeof(*ctx->fragments));
+                if (!larger) return -1;
+                ctx->fragments=larger;
+            }
             ctx->fragments[index].staging=ctx->data_cursor;
             ctx->fragments[index].offset=offset;
             ctx->fragments[index].count=count;
@@ -307,7 +375,14 @@ static int select_section(struct context *ctx, const char *name, int kind)
     for (i=0;i<ctx->section_count;++i) if (!strcmp(ctx->sections[i].name,name)) break;
     if (i==ctx->section_count) {
         size_t length=strlen(name);
-        if (i==16 || length>=sizeof(ctx->sections[i].name)) return -1;
+        /* Label.data stores section index + 1 in an int. */
+        if (i>=INT_MAX || length>=sizeof(ctx->sections[i].name)) return -1;
+        if (i==ctx->section_capacity) {
+            void *larger=grow_table(ctx->sections,&ctx->section_capacity,sizeof(*ctx->sections));
+            if (!larger) return -1;
+            ctx->sections=larger;
+        }
+        memset(&ctx->sections[i],0,sizeof(ctx->sections[i]));
         memcpy(ctx->sections[i].name,name,length+1);
         ctx->sections[i].kind=kind;ctx->sections[i].alignment=1;++ctx->section_count;
     } else if (ctx->sections[i].kind!=kind) return -1;
@@ -484,10 +559,12 @@ static int data_directive(struct context *ctx, char *s)
                     if (cs_copy_constant(&ctx->program.image,at,bytes>4 ? 32 : bytes*8,(uint32_t)number) ||
                         (bytes==8 && cs_copy_constant(&ctx->program.image,at+32,32,(uint32_t)(number>>32)))) return -1;
                 } else {
-                    int index;uint32_t addend;
-                    if (ctx->section==2 || bytes<4 || ctx->relocation_count==CS_COPY_RELOCATION_CAPACITY || expression(ctx,value,&index,&addend)) return -1;
+                    int index,subtract;uint64_t addend;
+                    if (ctx->section==2 || bytes<4 || ctx->relocation_count==CS_COPY_RELOCATION_CAPACITY ||
+                        data_expression(ctx,value,&index,&subtract,&addend)) return -1;
                     unsigned i=ctx->relocation_count++;
                     ctx->relocations[i].destination=at;ctx->relocations[i].addend=addend;ctx->relocations[i].label=index;
+                    ctx->relocations[i].subtract=subtract;ctx->relocations[i].bytes=bytes;
                 }
                 if (!comma) break;
                 arguments=comma+1;
@@ -1024,6 +1101,7 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
     const char *message="invalid link input";
     size_t line=0, offset=0, physical_line=1;
     int entered=0, returned=0, terminated=0, trapped=0;
+    ctx.sections=NULL;ctx.fragments=NULL;
     if (!data || bytes<32768 || bytes>UINT32_MAX/8 || !assembly || !entry || !*entry ||
         argc>6 || (argc && !arguments) || memchr(assembly,0,size)) goto fail;
     message="out of memory for assembly operator";
@@ -1184,11 +1262,15 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
             cs_copy_constant(&ctx.program.image,SYMBOL_TABLE+32*i,32,ctx.labels[index].address+ctx.symbols[i].addend)) goto fail;
     }
     for (unsigned i=0;i<ctx.relocation_count;++i) {
-        int index=ctx.relocations[i].label;
+        int index=ctx.relocations[i].label,subtract=ctx.relocations[i].subtract;
         message="undefined data initializer symbol";
-        if (!ctx.labels[index].defined ||
-            cs_copy_constant(&ctx.program.image,ctx.relocations[i].destination,32,
-                ctx.labels[index].address+ctx.relocations[i].addend)) goto fail;
+        if (!ctx.labels[index].defined || (subtract>=0 && !ctx.labels[subtract].defined)) goto fail;
+        uint64_t value;
+        if (subtract<0) value=(uint32_t)(ctx.labels[index].address+(uint32_t)ctx.relocations[i].addend);
+        else value=(uint64_t)ctx.labels[index].address-ctx.labels[subtract].address+ctx.relocations[i].addend;
+        if (cs_copy_constant(&ctx.program.image,ctx.relocations[i].destination,32,(uint32_t)value) ||
+            (ctx.relocations[i].bytes==8 &&
+             cs_copy_constant(&ctx.program.image,ctx.relocations[i].destination+32,32,(uint32_t)(value>>32)))) goto fail;
     }
     if (program_mode) {
         pack_data(&ctx);
@@ -1224,9 +1306,11 @@ static int link_image(unsigned char *data, size_t bytes, unsigned address_bits,
         cs_copy_program_finish(&ctx.program,ZERO_LAYER)) goto fail;
     if (error) *error=(struct cs_copy_link_error){0,NULL};
     free(buffer);
+    free(ctx.sections);free(ctx.fragments);
     return 0;
 fail:
     free(buffer);
+    free(ctx.sections);free(ctx.fragments);
     if (error) *error=(struct cs_copy_link_error){line,message};
     return -1;
 }

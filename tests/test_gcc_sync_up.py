@@ -1,6 +1,6 @@
 """Link single-hart __sync_* helpers and execute direct copies.
 
-The fixture tests/fixtures/gcc/sync_up.c implements the fifteen _4 and
+The fixture or installed project runtime implements the fifteen _4 and
 fifteen _8 read-modify-write/CAS helpers as plain volatile accesses plus
 a compiler barrier (correct only on one hart with sequential copies;
 no SMP claim; nand uses post-GCC-4.4 semantics verified against native
@@ -40,13 +40,18 @@ def digest(path, algo="sha256"):
         return hashlib.file_digest(s, algo).hexdigest()
 
 def run_probe(qemu, elf, emu, lib_bytes, lib_name, main_c, sub, expect):
-    if not main_c or not lib_bytes:
+    if not main_c or (lib_bytes is not None and not lib_bytes):
         raise SystemExit("empty harness or library")
     sub.mkdir(parents=True, exist_ok=False)
     (sub/"main.c").write_bytes(main_c)
-    incoming = pack(['cc1','--space-program=result.s','--space-entry=value','--space-memory=65536',
-                     '--space-library='+lib_name,'-quiet','-O2','-ffreestanding','-fno-builtin','-nostdinc',
-                     '-o','result.s','main.c'], {'main.c': main_c, lib_name: lib_bytes})
+    files = {'main.c': main_c}
+    library_option = []
+    if lib_bytes is not None:
+        files[lib_name] = lib_bytes
+        library_option = ['--space-library='+lib_name]
+    incoming = pack(['cc1','--space-program=result.s','--space-entry=value','--space-memory=65536']+
+                   library_option+['-quiet','-O2','-ffreestanding','-fno-builtin','-nostdinc',
+                     '-o','result.s','main.c'], files)
     (sub/"job.bin").write_bytes(incoming)
     cmd = [str(qemu),"-strace",str(elf)]
     (sub/"command.json").write_text(json.dumps(cmd)+"\n")
@@ -72,19 +77,24 @@ def run_probe(qemu, elf, emu, lib_bytes, lib_name, main_c, sub, expect):
         raise SystemExit(f"OUT mismatch {d.stdout!r} vs {want!r} err={d.stderr[:200]!r}")
     if (sub/"direct.trace").read_bytes()[-6:] != b' idle\n':
         raise SystemExit("direct did not idle")
-    (sub/"evidence.json").write_text(json.dumps({'direct_result': expect}, indent=2)+"\n")
+    (sub/"evidence.json").write_text(json.dumps({'direct_result': expect, 'input_files': list(files),
+        'installed_runtime': lib_bytes is None, 'job_sha256': digest(sub/'job.bin'),
+        'image_sha256': digest(sub/'image.bin')}, indent=2)+"\n")
     return expect
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--sync-assembly', type=Path, required=True,
+    runtime = parser.add_mutually_exclusive_group(required=True)
+    runtime.add_argument('--sync-assembly', type=Path,
                         help='assembly.s compiled from sync_up.c by the target cc1')
+    runtime.add_argument('--installed', action='store_true', help='use the runtime installed in --image; send C only')
+    parser.add_argument('--image', type=Path)
     parser.add_argument('--diagnostic', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--seed', type=int, default=0x57c)
     args = parser.parse_args()
-    asm = args.sync_assembly.resolve()
-    if not asm.is_file() or asm.stat().st_size == 0:
+    asm = args.sync_assembly.resolve() if args.sync_assembly else None
+    if asm is not None and (not asm.is_file() or asm.stat().st_size == 0):
         raise SystemExit("missing sync assembly")
     diag = args.diagnostic.resolve()
     elf = diag/"gcc-diagnostic.elf"
@@ -94,6 +104,16 @@ def main():
     qemu = Path(json.loads((diag/"command.json").read_text())[0])
     if not qemu.is_file() or digest(qemu) != prior['qemu_sha256']:
         parser.error('changed diagnostic qemu')
+    installed_hash = None
+    if args.installed:
+        if not args.image:
+            parser.error('--installed requires --image')
+        image = args.image.resolve()
+        manifest = json.loads((image/'image.json').read_text())
+        assert prior['original_elf_sha256'] == manifest['elf_sha256'] == digest(image/'gcc-space.elf')
+        assert manifest['target_library']['default']
+        installed_hash = digest(image/'target-libgcc.a')
+        assert installed_hash == manifest['target_library']['archive_sha256']
     emu = ROOT/"build/bin/space-256m"
     if not emu.is_file():
         raise SystemExit(f"missing emulator {emu}")
@@ -101,12 +121,14 @@ def main():
     probe.mkdir(parents=True, exist_ok=False)
     import shutil
     shutil.copyfile(__file__, probe/'run.py')
-    (probe/"sync_up.s").write_bytes(asm.read_bytes())
-    lib = probe/"libsync.a"
-    r = subprocess.run(["ar","rcSD",str(lib),str(probe/"sync_up.s")], capture_output=True)
-    if r.returncode != 0:
-        raise SystemExit(f"ar failed: {r.stderr[:500]}")
-    libb = lib.read_bytes()
+    libb = None
+    if asm is not None:
+        (probe/"sync_up.s").write_bytes(asm.read_bytes())
+        lib = probe/"libsync.a"
+        r = subprocess.run(["ar","rcSD",str(lib),str(probe/"sync_up.s")], capture_output=True)
+        if r.returncode != 0:
+            raise SystemExit(f"ar failed: {r.stderr[:500]}")
+        libb = lib.read_bytes()
     rng = random.Random(args.seed)
     M32 = (1 << 32) - 1
     M64 = (1 << 64) - 1
@@ -231,6 +253,10 @@ def main():
     n = run_probe(qemu, elf, emu, libb, "libsync.a", text.encode(), probe/"probe-c", 60*2*15)
     print(f"sync-c: direct checks {n}", flush=True)
     grand += n
+    (probe/'evidence.json').write_text(json.dumps({'scope': __doc__, 'checks': grand,
+        'installed_runtime': args.installed, 'installed_archive_sha256': installed_hash,
+        'compiler_elf_sha256': prior['elf_sha256'], 'qemu_sha256': prior['qemu_sha256'],
+        'emulator_sha256': digest(emu)}, indent=2)+'\n')
     print(f"Single-hart sync helpers: direct checks {grand}")
 
 def op_expr(name, a, b):

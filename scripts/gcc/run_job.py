@@ -9,9 +9,9 @@ import hashlib
 import json
 import shutil
 import struct
-import subprocess
 import sys
 from pathlib import Path
+from check_result import check_direct
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'tests'))
@@ -26,24 +26,32 @@ def digest(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', type=Path, required=True)
-    parser.add_argument('--job', type=Path, help='required for a fresh run; frozen on resume')
+    parser.add_argument('--job', type=Path, help='required for a fresh run; inherited on a checkpoint fork')
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--emulator', type=Path)
-    parser.add_argument('--resume', action='store_true')
+    continuation = parser.add_mutually_exclusive_group()
+    continuation.add_argument('--resume', action='store_true')
+    continuation.add_argument('--checkpoint-from', type=Path,
+                              help='fork a frozen run into new artifacts, optionally using a new emulator')
     parser.add_argument('--segment-ticks', type=int, default=10000000)
     parser.add_argument('--timeout', type=float, default=1800)
     parser.add_argument('--max-parts', type=int, default=512)
+    parser.add_argument('--direct-ticks', type=int, default=100000,
+                        help='tick limit for the resulting direct program')
+    parser.add_argument('--direct-timeout', type=float, default=120,
+                        help='wall time limit for direct execution in seconds')
     expected = parser.add_mutually_exclusive_group()
     expected.add_argument('--expect-result', type=lambda text: int(text, 0),
                           help='also execute the resulting direct image and check uint32 OUT')
     expected.add_argument('--expect-trap', action='store_true',
                           help='also execute the resulting direct image; require idle without OUT')
     args = parser.parse_args()
-    if args.segment_ticks < 1 or args.max_parts < 1 or args.timeout <= 0:
+    if (args.segment_ticks < 1 or args.max_parts < 1 or args.timeout <= 0
+            or args.direct_ticks < 1 or args.direct_timeout <= 0):
         parser.error('execution limits must be positive')
     if args.expect_result is not None and not 0 <= args.expect_result <= 0xffffffff:
         parser.error('--expect-result must fit uint32')
-    if not args.resume and not args.job:
+    if not args.resume and not args.checkpoint_from and not args.job:
         parser.error('a fresh run requires --job')
     if args.resume and args.emulator:
         parser.error('resume uses the frozen emulator')
@@ -56,6 +64,16 @@ def main():
     configuration = {'stream_sha256': manifest['stream_sha256'],
         'segment_ticks': args.segment_ticks, 'expect_result': args.expect_result,
         'expect_trap': args.expect_trap}
+    origin = args.checkpoint_from.resolve() if args.checkpoint_from else None
+    if origin:
+        assert origin != root, 'checkpoint fork requires a new artifacts directory'
+        assert json.loads((origin/'image.json').read_text()) == manifest, 'changed checkpoint image manifest'
+        recorded = json.loads((origin/'configuration.json').read_text())
+        assert all(recorded[k] == value for k, value in configuration.items()), 'changed checkpoint configuration'
+        for name, key in [('job.bin', 'job_sha256'), ('in.bin', 'input_sha256'), ('emulator', 'emulator_sha256')]:
+            assert digest(origin/name) == recorded[key], 'changed checkpoint '+name
+        if args.job:
+            assert digest(args.job) == recorded['job_sha256'], 'changed checkpoint job'
     if args.resume:
         assert json.loads((root/'image.json').read_text()) == manifest, 'changed image manifest'
         recorded = json.loads((root/'configuration.json').read_text())
@@ -64,7 +82,7 @@ def main():
             assert digest(args.job) == recorded['job_sha256'], 'changed job'
         configuration = recorded
     else:
-        job = args.job.read_bytes()
+        job = (args.job if args.job else origin/'job.bin').read_bytes()
         assert 16 <= len(job) <= 16*1024*1024 and job[:8] == b'GCCJOB1\0', 'expected GCCJOB1'
         (root/'job.bin').write_bytes(job)
         profiles = {2097152: 'space', 67108864: 'space-64m', 268435456: 'space-256m'}
@@ -78,13 +96,17 @@ def main():
             target.write(job)
         configuration.update(job_sha256=digest(root/'job.bin'), input_sha256=digest(root/'in.bin'),
                              emulator_sha256=digest(root/'emulator'))
+        if origin:
+            assert configuration['input_sha256'] == recorded['input_sha256'], 'changed checkpoint input'
+            configuration['forked_from'] = str(origin)
         (root/'configuration.json').write_text(json.dumps(configuration, indent=2)+'\n')
     for name, key in [('job.bin', 'job_sha256'), ('in.bin', 'input_sha256'), ('emulator', 'emulator_sha256')]:
         assert digest(root/name) == configuration[key], 'changed frozen '+name
     execution = execute_segments(root/'emulator', root/'space', root/'in.bin',
         space_bytes=manifest['space_bytes'], layer_bytes=manifest['layer_bits']//8,
         ticks=args.segment_ticks, timeout=args.timeout, compression='zstd',
-        max_parts=args.max_parts, channels_only=True, resume=args.resume)
+        max_parts=args.max_parts, channels_only=True, resume=args.resume,
+        fork_from=origin/'space' if origin else None)
     raw = (root/'space/space.bin').read_bytes()
 
     def word(at):
@@ -111,20 +133,9 @@ def main():
     if status:
         raise SystemExit(status)
     if args.expect_result is not None or args.expect_trap:
-        assert size == manifest['copy_program_bytes'], 'unexpected direct image size'
-        direct = root/'direct'
-        direct.mkdir()
-        command = [str(root/'emulator'), '--ticks', '100000', '--core', str(root/'result.bin'),
-                   '--trace', str(direct/'trace.txt')]
-        (direct/'command.json').write_text(json.dumps(command)+'\n')
-        checked = subprocess.run(command, capture_output=True, check=True, timeout=120)
-        (direct/'out.bin').write_bytes(checked.stdout)
-        (direct/'stderr.txt').write_bytes(checked.stderr)
-        assert not checked.stderr and checked.stdout == (b'' if args.expect_trap else struct.pack('<I', args.expect_result))
-        with (direct/'trace.txt').open('rb') as trace:
-            trace.seek(max(0, (direct/'trace.txt').stat().st_size-80))
-            assert trace.read().endswith(b' idle\n'), 'direct image did not terminate'
-        evidence.update(direct_output_hex=checked.stdout.hex(), direct_stop='idle')
+        checked = check_direct(root, root/'direct', manifest, expected=args.expect_result,
+                               trap=args.expect_trap, ticks=args.direct_ticks, timeout=args.direct_timeout)
+        evidence.update(checked)
         (root/'evidence.json').write_text(json.dumps(evidence, indent=2)+'\n')
     print('OK framed job inside Space: exit', status, '; result bytes', size, flush=True)
 

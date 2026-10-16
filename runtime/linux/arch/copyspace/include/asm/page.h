@@ -27,6 +27,7 @@
 #define ARCH_PFN_OFFSET _AC(0, UL)
 
 #ifndef __ASSEMBLY__
+#include <linux/types.h>
 #include <linux/string.h>
 #include <linux/pfn.h>
 
@@ -65,8 +66,12 @@ typedef struct page *pgtable_t;
 /* Use the kernel's bounded FLATMEM conversion and pfn_valid: the upper
  * limit is max_mapnr, rather than accepting every address above the base. */
 #include <asm-generic/memory_model.h>
+#define page_to_phys(page)	((phys_addr_t)page_to_pfn(page) << PAGE_SHIFT)
 #define virt_to_page(vaddr)	pfn_to_page(virt_to_pfn(vaddr))
+#define virt_addr_valid(vaddr)	pfn_valid(virt_to_pfn(vaddr))
 extern struct page *mem_map;
+
+#include <asm-generic/getorder.h>
 
 #endif /* !__ASSEMBLY__ */
 #endif /* _ASM_COPYSPACE_PAGE_H */

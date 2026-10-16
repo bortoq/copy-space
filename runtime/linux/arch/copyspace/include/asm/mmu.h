@@ -2,8 +2,10 @@
 #ifndef _ASM_COPYSPACE_MMU_H
 #define _ASM_COPYSPACE_MMU_H
 
-/* No address spaces exist on this NOMMU target: the context is empty. */
-typedef struct {
-} mm_context_t;
+/* NOMMU still tracks the brk limit (and optional FDPIC load maps). */
+#ifdef CONFIG_MMU
+#error "copyspace MMU contexts are not implemented"
+#endif
+#include <asm-generic/mmu.h>
 
 #endif /* _ASM_COPYSPACE_MMU_H */

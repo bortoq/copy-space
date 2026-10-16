@@ -66,6 +66,42 @@ def main():
     if manifest.get('licenses_sha256'):
         damaged = clone('bad-license', {'COPYING.RUNTIME': (library/'COPYING.RUNTIME').read_bytes()+b'\n'})
         reject('license checksum', lambda: load_library(damaged), 'changed upstream license')
+    if manifest.get('project_inputs_sha256'):
+        modified = {**manifest, 'project_inputs_sha256': {}}
+        damaged = clone('bad-project-inventory', {'library.json': json.dumps(modified).encode()})
+        reject('project source inventory', lambda: load_library(damaged), 'project runtime source inventory')
+        damaged = clone('bad-project-source', {})
+        (damaged/'project-sources').unlink()
+        shutil.copytree(library/'project-sources', damaged/'project-sources')
+        name = next(iter(manifest['project_inputs_sha256']))
+        path = damaged/'project-sources'/name
+        path.write_bytes(path.read_bytes()+b'\n')
+        reject('project source checksum', lambda: load_library(damaged), 'changed project runtime source')
+        damaged = clone('bad-project-license', {'PROJECT-LICENSE': (library/'PROJECT-LICENSE').read_bytes()+b'\n'})
+        reject('project license checksum', lambda: load_library(damaged), 'changed project runtime license')
+        modified = {**manifest, 'project_licenses_sha256': {}}
+        damaged = clone('missing-project-license', {'library.json': json.dumps(modified).encode()})
+        reject('project license inventory', lambda: load_library(damaged), 'project runtime license inventory')
+        modified = {**manifest, 'licenses_sha256': {}}
+        damaged = clone('missing-gcc-licenses', {'library.json': json.dumps(modified).encode()})
+        reject('GCC license inventory', lambda: load_library(damaged), 'license inventory')
+        modified = {**manifest, 'format': 'copyspace-target-library-v1'}
+        damaged = clone('downgraded-project-format', {'library.json': json.dumps(modified).encode()})
+        reject('project provenance downgrade', lambda: load_library(damaged), 'project runtime provenance format')
+        entries = [dict(member) for member in manifest['members']]
+        entries[-1]['origin'] = 'gcc'
+        modified = {**manifest, 'members': entries}
+        damaged = clone('bad-project-origin', {'library.json': json.dumps(modified).encode()})
+        reject('project origin', lambda: load_library(damaged), 'member origin')
+        catalog = json.loads((library/'catalog.json').read_text())
+        for group in catalog['groups']:
+            if group.get('origin') == 'project':
+                group['origin'] = 'gcc'
+        raw_catalog = json.dumps(catalog).encode()
+        modified = {**manifest, 'catalog_sha256': hashlib.sha256(raw_catalog).hexdigest()}
+        damaged = clone('bad-project-catalog-origin', {
+            'catalog.json': raw_catalog, 'library.json': json.dumps(modified).encode()})
+        reject('project catalog origin', lambda: load_library(damaged), 'unsupported runtime source origin')
     damaged = clone('bad-member', {})
     (damaged/'members').unlink()
     (damaged/'members').mkdir()

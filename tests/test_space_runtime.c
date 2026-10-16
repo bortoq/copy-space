@@ -39,6 +39,21 @@ int main(void)
   const unsigned char byte = 0xA5;
   CHECK(in && out);
 
+  /* A zero limit distinguishes an idle processor from an active one,
+   * and an exact-limit halt is still idle, not a limit stop. */
+  CHECK(space_init(NULL, 0) == 0);
+  limit = 0;
+  result = space_run(in, out, &limit, NULL, NULL);
+  CHECK(result.ticks == 0 && result.reason == SPACE_STOP_IDLE);
+  instruction(0, PROCESSOR_BITS, 0, PROCESSOR_BITS);
+  result = space_run(in, out, &limit, NULL, NULL);
+  CHECK(result.ticks == 0 && result.reason == SPACE_STOP_LIMIT);
+  CHECK(processor[0][0] == PROCESSOR_BITS);
+  limit = 1;
+  result = space_run(in, out, &limit, NULL, NULL);
+  CHECK(result.ticks == 1 && result.reason == SPACE_STOP_IDLE);
+  CHECK(processor[0][0] == 0);
+
   /* The runner resumes existing memory instead of restoring a built-in core. */
   CHECK(space_init(NULL, 0) == 0);
   instruction(0, 8, 65536, 65544);

@@ -1,7 +1,8 @@
 """Check NOMMU header contracts with native and actual target GCC.
 
-Only linux/types.h and linux/string.h are minimal test interfaces. PFN,
-constant and folded-table definitions come from the supplied Linux tree.
+Minimal interfaces supply types, strings, compiler attributes and bitops
+includes. PFN, constants, folded tables, bit scans, log2 and get_order
+definitions come from the supplied Linux tree.
 Native GCC also checks ILP32 compilation; optional diagnostic GCC produces
 an image executed as direct copies. No kernel boot or MMU claim.
 """
@@ -13,7 +14,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED = 18
+EXPECTED = 52
 
 
 def main():
@@ -29,8 +30,17 @@ def main():
     shutil.copytree(ROOT/'runtime/linux/arch/copyspace/include', port)
     stubs = root/'interfaces/linux'
     stubs.mkdir(parents=True)
-    (stubs/'types.h').write_text('#pragma once\ntypedef unsigned long long u64;\ntypedef unsigned long phys_addr_t;\n')
+    (stubs/'types.h').write_text('#pragma once\ntypedef unsigned long long u64, __u64;\n'
+        'typedef unsigned int u32, __u32;\ntypedef _Bool bool;\ntypedef unsigned long phys_addr_t;\n')
     (stubs/'string.h').write_text('#pragma once\nvoid *memcpy(void *,const void *,__SIZE_TYPE__);\nvoid *memset(void *,int,__SIZE_TYPE__);\n')
+    (stubs/'compiler.h').write_text('#pragma once\n#include <linux/compiler_attributes.h>\n')
+    (stubs/'bitops.h').write_text('#pragma once\n#define BITS_PER_LONG (__SIZEOF_LONG__ * 8)\n'
+        '#include <asm-generic/bitops/builtin-fls.h>\n#include <asm-generic/bitops/__fls.h>\n'
+        '#include <asm-generic/bitops/fls64.h>\n'
+        'static __always_inline int fls_long(unsigned long x) {\n'
+        'return sizeof(x)==4 ? fls(x) : fls64(x); }\n')
+    (root/'interfaces/asm').mkdir()
+    (root/'interfaces/asm/types.h').write_text('#pragma once\n#include <linux/types.h>\n')
     shutil.copyfile(ROOT/'tests/fixtures/gcc/linux_page_probe.c', root/'probe.c')
     driver = f'extern unsigned value(void); int main(void){{return value()!={EXPECTED};}}\n'
     (root/'driver.c').write_text(driver)
@@ -52,7 +62,20 @@ def main():
         bad = subprocess.run(['gcc', '-m32', '-nostdinc', '-fsyntax-only']+includes+flags+
                              ['-D'+define, str(root/'probe.c')], capture_output=True)
         assert bad.returncode and b'copyspace' in bad.stderr
-    evidence = {'scope': __doc__, 'native_checks': EXPECTED, 'configuration_rejections': 3}
+    rejected = 3
+    for header, define, message in [
+            ('ftrace.h', 'CONFIG_FUNCTION_TRACER=1', b'copyspace function tracing is not implemented'),
+            ('ftrace.h', 'CONFIG_FUNCTION_GRAPH_TRACER=1', b'copyspace function tracing is not implemented'),
+            ('ftrace.h', 'CONFIG_DYNAMIC_FTRACE=1', b'copyspace function tracing is not implemented'),
+            ('mmu.h', 'CONFIG_MMU=1', b'copyspace MMU contexts are not implemented'),
+            ('mmu_context.h', 'CONFIG_MMU=1', b'copyspace MMU contexts are not implemented'),
+            ('tlb.h', 'CONFIG_MMU=1', b'copyspace TLB management is not implemented')]:
+        (root/'unsupported.c').write_text('#include <asm/'+header+'>\n')
+        bad = subprocess.run(['gcc', '-m32', '-nostdinc', '-fsyntax-only']+includes+flags+
+                             ['-D'+define, str(root/'unsupported.c')], capture_output=True)
+        assert bad.returncode and message in bad.stderr
+        rejected += 1
+    evidence = {'scope': __doc__, 'native_checks': EXPECTED, 'configuration_rejections': rejected}
     if args.diagnostic:
         from test_gcc_linux_units import pack
         from test_gcc_copy_output import decode

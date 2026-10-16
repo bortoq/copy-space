@@ -38,15 +38,22 @@ space_result space_run(FILE *in, FILE *out, const uint64_t *limit,
 {
   space_result result = {0, SPACE_STOP_IDLE};
   observation state = {0, observe, context};
-  while(space_active())
+  for(;;)
   {
     if(limit && result.ticks == *limit)
     {
-      result.reason = SPACE_STOP_LIMIT;
+      /* An idle processor takes precedence over the tick limit. */
+      if(space_active())
+        result.reason = SPACE_STOP_LIMIT;
       break;
     }
     state.tick = result.ticks;
-    if(space_step(in, out, observe ? forward_event : NULL, &state) == SPACE_STEP_ERROR)
+    /* space_step checks activity before servicing channels or copies.
+     * Reading all processor fields here as well duplicates that work. */
+    space_step_result step = space_step(in, out, observe ? forward_event : NULL, &state);
+    if(step == SPACE_STEP_IDLE)
+      break;
+    if(step == SPACE_STEP_ERROR)
     {
       result.reason = SPACE_STOP_ERROR;
       break;

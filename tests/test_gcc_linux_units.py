@@ -53,6 +53,10 @@ def main():
                         help='directory produced by scripts/gcc/diagnose_guest.py')
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--unit', choices=['string', 'ctype', 'sort', 'rbtree', 'bug', 'mm/nommu', 'init/main'], default='string')
+    parser.add_argument('--ggc-min-expand', type=int,
+                        help='explicit GCC garbage collection growth percentage for limited guest memory')
+    parser.add_argument('--ggc-min-heapsize', type=int,
+                        help='explicit GCC garbage collection heap threshold in KiB')
     parser.add_argument('--entry-probe', action='store_true',
                         help='compile ctype/sort/string with direct execution entries')
     parser.add_argument('--target-library', type=Path,
@@ -60,6 +64,8 @@ def main():
     parser.add_argument('--image', type=Path,
                         help='prepared GCC image with that runtime installed; required with --target-library')
     args = parser.parse_args()
+    if any(value is not None and value < 0 for value in (args.ggc_min_expand, args.ggc_min_heapsize)):
+        parser.error('GGC parameters must be nonnegative')
     if args.entry_probe and args.unit not in ('ctype', 'sort', 'string', 'rbtree'):
         parser.error('--entry-probe requires ctype, sort, string or rbtree')
     if bool(args.target_library) != bool(args.image) or (args.target_library and not args.entry_probe):
@@ -108,7 +114,11 @@ def main():
         '#undef CONFIG_DEBUG_BUGVERBOSE\n'
         '/* Future copyspace Kconfig leaves this unset: no spinlock-based\n'
         ' * lib/atomic64.c, arch_atomic64_* from asm/atomic.h apply. */\n'
-        '#undef CONFIG_GENERIC_ATOMIC64\n')
+        '#undef CONFIG_GENERIC_ATOMIC64\n'
+        '/* Use Linux generic C syscall definitions with the target C ABI.\n'
+        ' * RISC-V register wrappers do not describe copyspace entry.\n'
+        ' * Actual syscall entry/dispatch remains unfinished. */\n'
+        '#undef CONFIG_ARCH_HAS_SYSCALL_WRAPPER\n')
     if args.unit == 'bug' or args.entry_probe:
         source = port/'probe.c'
         shutil.copyfile(ROOT/'tests/fixtures/gcc'/('linux_'+args.unit+'.c'), source)
@@ -193,6 +203,9 @@ def main():
             '-fno-stack-protector', '-Werror=implicit-function-declaration',
             '-Werror=implicit-int', '-nostdinc'] + options + [
             '-include', 'port/config.h', '-o', 'result.s', virtual(source)]
+    for name, value in [('ggc-min-expand', args.ggc_min_expand), ('ggc-min-heapsize', args.ggc_min_heapsize)]:
+        if value is not None:
+            argv[2:2] = ['--param='+name+'='+str(value)]
     (root/'argv.json').write_text(json.dumps(argv, indent=2)+'\n')
     job = pack(argv, files)
     assert len(argv) <= 256 and len(job) <= 16*1024*1024
@@ -216,7 +229,10 @@ def main():
         'original_config_sha256': digest(root/'original.config'),
         'inputs_sha256': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
         'job_sha256': digest(root/'job.bin'), 'exit': status, 'assembly_bytes': size,
-        'assembly_sha256': digest(root/'result.s')}
+        'assembly_sha256': digest(root/'result.s'),
+        'ggc_parameters': {name: value for name, value in [
+            ('ggc-min-expand', args.ggc_min_expand), ('ggc-min-heapsize', args.ggc_min_heapsize)]
+            if value is not None}}
     if target_library:
         assert 'port/muldi3.c' not in files
         evidence.update(target_library_sha256=digest(target_library),

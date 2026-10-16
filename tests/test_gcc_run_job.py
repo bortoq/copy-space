@@ -61,6 +61,9 @@ def main():
             path.write_bytes(data[:-1]+bytes([data[-1]^1]))
             result = run('changed-'+name, ['--resume'])
             assert result.returncode and message in result.stderr
+            fork_rejected = run('changed-fork-'+name, ['--artifacts', str(root/('bad-fork-'+name)),
+                                '--checkpoint-from', str(root/'run')])
+            assert fork_rejected.returncode and ('changed checkpoint '+relative).encode() in fork_rejected.stderr
             assert segments.read_bytes() == checkpoint, 'rejection advanced execution'
         finally:
             path.write_bytes(data)
@@ -72,10 +75,24 @@ def main():
         path.write_text(json.dumps(changed)+'\n')
         result = run('changed-manifest', ['--resume'])
         assert result.returncode and b'changed image manifest' in result.stderr
+        fork_rejected = run('changed-fork-manifest', ['--artifacts', str(root/'bad-fork-manifest'),
+                            '--checkpoint-from', str(root/'run')])
+        assert fork_rejected.returncode and b'changed checkpoint image manifest' in fork_rejected.stderr
         assert segments.read_bytes() == checkpoint
     finally:
         path.write_bytes(data)
     rejected.append('manifest')
+    fork_rejected = run('changed-fork-expectation', ['--artifacts', str(root/'bad-fork-expectation'),
+                        '--checkpoint-from', str(root/'run'), '--expect-result', '17'])
+    assert fork_rejected.returncode and b'changed checkpoint configuration' in fork_rejected.stderr
+    fork = run('fork', ['--artifacts', str(root/'fork'), '--checkpoint-from', str(root/'run')])
+    assert fork.returncode == 0, fork.stderr
+    assert segments.read_bytes() == checkpoint, 'fork changed its source checkpoint'
+    assert (root/'fork/space/program.in').read_bytes() == bytes.fromhex(original['output_hex'])
+    fork_evidence = json.loads((root/'fork/evidence.json').read_text())
+    assert fork_evidence['guest_exit'] == 0 and fork_evidence['origin_sha256']
+    assert fork_evidence['forked_from'] == str(root/'run')
+    assert json.loads((root/'fork/space/origin.json').read_text())['checkpoint_sha256'] == json.loads(checkpoint)[-1]['dump_sha256']
     result = run('resume', ['--resume'])
     assert result.returncode == 0, result.stderr
     assert (root/'run/space/program.in').read_bytes() == bytes.fromhex(original['output_hex'])
@@ -86,9 +103,11 @@ def main():
     assert evidence['guest_exit'] == 0 and evidence['original_cc1_sha256'] is None
     assert len(json.loads(segments.read_text())) > 1
     (root/'evidence.json').write_text(json.dumps({'scope': __doc__, 'rejected_changes': rejected,
+        'fork_rejected_changes': rejected+['expectation'],
         'runner_sha256': hashlib.sha256(runner.read_bytes()).hexdigest(),
-        'output_hex': original['output_hex'], 'copy_events': evidence['copy_events']}, indent=2)+'\n')
-    print('OK framed runner fixture: limit/resume, four changed-input rejections and exact response; not GCC')
+        'output_hex': original['output_hex'], 'copy_events': evidence['copy_events'],
+        'fork_copy_events': fork_evidence['copy_events'], 'fork_source_preserved': True}, indent=2)+'\n')
+    print('OK framed runner fixture: limit/resume/fork, four resume and five fork rejections; exact response; not GCC')
 
 
 if __name__ == '__main__':

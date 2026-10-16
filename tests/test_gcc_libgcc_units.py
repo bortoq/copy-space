@@ -1,4 +1,4 @@
-"""Compile original pinned libgcc2 C/headers with actual copyspace GCC in QEMU.
+"""Compile original pinned libgcc C/headers with actual copyspace GCC in QEMU.
 
 Host preprocessing only selects input files. GCCJOB1 carries their original
 bytes; this diagnostic is not evidence of GCC execution inside Space.
@@ -48,7 +48,7 @@ def main():
         'fixunssfsi', 'fixunsdfsi', 'fixsfdi', 'fixdfdi', 'floatdisf', 'floatdidf', 'floatundisf', 'floatundidf',
         'fixunssfdi', 'fixunsdfdi', 'mulsc3', 'muldc3', 'divsc3', 'divdc3', 'powisf2', 'powidf2',
         'addvsi3', 'addvdi3', 'subvsi3', 'subvdi3', 'mulvsi3', 'mulvdi3',
-        'negvsi2', 'negvdi2', 'absvsi2', 'absvdi2'])
+        'negvsi2', 'negvdi2', 'absvsi2', 'absvdi2', 'memcpy', 'memmove', 'memset', 'memcmp'])
     parser.add_argument('--link-probe', action='store_true', help='link five original arithmetic helpers from an archive and execute direct copies')
     parser.add_argument('--source-file', default='libgcc/libgcc2.c',
                         help='C file inside the pinned GCC tree, e.g. libgcc/fp-bit.c')
@@ -65,6 +65,12 @@ def main():
     assert digest(elf) == prior['elf_sha256']
     qemu = Path(json.loads((diagnostic/'command.json').read_text())[0])
     assert digest(qemu) == prior['qemu_sha256']
+    compiler = json.loads((args.cc1_work/'cc1.json').read_text())
+    assert digest(build/'cc1') == compiler['sha256']
+    abi_header = target/'config/copyspace/copyspace.h'
+    assert digest(abi_header) == compiler['build_profile']['target_sources_sha256']['gcc/config/copyspace/copyspace.h']
+    linked = json.loads((diagnostic/'link-inputs.json').read_text())
+    assert linked[str(build/'libbackend.a')] == digest(build/'libbackend.a'), 'diagnostic uses a different backend'
     root = args.artifacts.resolve()
     root.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(__file__, root/'run.py')
@@ -83,10 +89,14 @@ def main():
     result = subprocess.run(command, env={**os.environ, 'DEFINES': '', 'HEADERS': ''},
                             capture_output=True, check=True)
     (generated/'libgcc_tm.h').write_bytes(result.stdout)
-    assert (build/'tconfig.h').is_file(), 'generate the normal GCC tconfig.h first'
+    if args.source_file in ('libgcc/libgcc2.c', 'libgcc/fp-bit.c'):
+        assert (build/'tconfig.h').is_file(), 'generate the normal GCC tconfig.h first'
     include = [generated, build, target, source/'libgcc', source/'include', source/'gcc/ginclude']
     flags = ['-nostdinc', '-Dinhibit_libc', '-DIN_GCC', '-DIN_LIBGCC2', '-fbuilding-libgcc',
              '-fno-stack-protector', '-ffreestanding', '-O2']
+    if args.source_file == 'libgcc/memmove.c':
+        # Original public-domain source assigns const void * to char *.
+        flags += ['-Wno-discarded-qualifiers']
     original = (source/args.source_file)
     if not original.resolve().is_relative_to(source.resolve()) or not original.is_file():
         parser.error('--source-file must name a file inside the pinned GCC tree')
@@ -112,6 +122,9 @@ def main():
 
         paths = [Path(p) for p in shlex.split(selected.stdout.decode().replace('\\\n', ' '))[1:]]
         files = {virtual(p): p.read_bytes() for p in paths}
+        # Standalone memory sources need only stddef.h. Carry the verified
+        # compiler ABI header as an unused input anchor for package validation.
+        files.setdefault(virtual(abi_header), abi_header.read_bytes())
         wanted = {}
         for path in paths:
             real = path.resolve()

@@ -104,6 +104,7 @@ def package(runs, store, root, ar='ar'):
             argv, files = unpack_job(incoming)
             canonical = ['cc1', '--space-result=result.s', '-quiet', '-nostdinc', '-Dinhibit_libc',
                 '-DIN_GCC', '-DIN_LIBGCC2', '-fbuilding-libgcc', '-fno-stack-protector', '-ffreestanding', '-O2']
+            canonical += group.get('options', [])
             canonical += ['-D'+name for name in group['defines']]+['-DL_'+unit]
             canonical += ['-Igenerated', '-Ibuild', '-Itarget', '-Isource/libgcc', '-Isource/include',
                           '-Isource/gcc/ginclude', '-o', 'result.s', 'source/'+group['source']]

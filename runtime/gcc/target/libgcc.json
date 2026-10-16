@@ -33,6 +33,10 @@
         "thenan_df", "make_df", "negate_df", "df_to_si", "si_to_df", "compare_df", "ne_df",
         "gt_df", "ge_df", "lt_df", "le_df", "unord_df", "usi_to_df", "df_to_sf"
       ]
-    }
+    },
+    {"source": "libgcc/memcpy.c", "defines": [], "units": ["memcpy"]},
+    {"source": "libgcc/memmove.c", "defines": [], "options": ["-Wno-discarded-qualifiers"], "units": ["memmove"]},
+    {"source": "libgcc/memset.c", "defines": [], "units": ["memset"]},
+    {"source": "libgcc/memcmp.c", "defines": [], "units": ["memcmp"]}
   ]
 }

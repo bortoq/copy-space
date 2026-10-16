@@ -271,12 +271,12 @@ def main():
                             ('condition_once', 5), ('warning_once', 21), ('warning_return', 101)])
     elif args.entry_probe:
         cases = {'ctype': [('value', 65)], 'sort': [('value', 204)],
-                 'rbtree': [('value', 65)],
+                 'rbtree': [('value', 65), ('augmented', 25)],
                  'string': [('value', 207), ('fatal', None), ('warning_once', 1),
                             ('multiplication', 8), ('bit_operations', 32),
                             ('argument_home', 11), ('variadic', 15),
                             ('stack_arguments', 52), ('variadic_call', 42)]}
-        check_direct(root, assembly, evidence, cases[args.unit], large=args.unit == 'string', library=target_library)
+        check_direct(root, assembly, evidence, cases[args.unit], large=args.unit in ('string', 'rbtree'), library=target_library)
         if target_library:
             check_guest_link(root, argv, files, run, evidence, cases[args.unit], image_manifest,
                              require_runtime=args.unit == 'string')

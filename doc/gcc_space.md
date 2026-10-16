@@ -2196,6 +2196,15 @@ test_and_*_bit в `asm/bitops.h`. UP-семантика задокументир
 exit=0, `space-tests/gcc-linux-rbtree-entry-v1`). Сборка ядра остаётся
 непроверенной.
 
+Второй вход `augmented` (OUT=25, `space-tests/gcc-linux-rbtree-entry-v3`,
+51312 байтов) проверяет augmented-интерфейс с колбэками propagate/copy/rotate:
+12 интервалов вставляются с seeding `subtree = last` до link и ручным
+`augment->propagate(parent, NULL)` после link (оба шага обязательны:
+propagate обновляет только предков, вставку без ротаций колбэки не
+трогают — это контракт ядра, а не баг), затем стираются по чётности;
+после каждого шага сверяются счётчик, порядок и корень submax с
+эталоном. Сборка ядра остаётся непроверенной.
+
 ## Компиляция комплексных и степенных helpers libgcc
 
 `test_gcc_libgcc_units.py` принимает дополнительные единицы `mulsc3`,

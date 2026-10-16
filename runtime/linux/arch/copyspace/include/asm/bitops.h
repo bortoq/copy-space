@@ -6,8 +6,48 @@
 #error "Only <linux/bitops.h> can be included directly"
 #endif
 
-/* C implementations for scans and non-atomic operations. Atomic bitops and
- * interrupt masking still need an architecture implementation. */
+/* C implementations for scans and non-atomic operations. UP atomic bitops
+ * below are plain volatile accesses plus a compiler barrier, sufficient on
+ * one hart with no preemption inside a primitive; no SMP claim. */
+extern unsigned int __sync_fetch_and_or_4(volatile void *, unsigned int);
+extern unsigned int __sync_fetch_and_and_4(volatile void *, unsigned int);
+extern unsigned int __sync_fetch_and_xor_4(volatile void *, unsigned int);
+
+static __always_inline void set_bit(unsigned int nr, volatile unsigned long *addr)
+{
+	__sync_fetch_and_or_4((volatile void *)&addr[nr / 32U], 1U << (nr % 32U));
+}
+
+static __always_inline void clear_bit(unsigned int nr, volatile unsigned long *addr)
+{
+	__sync_fetch_and_and_4((volatile void *)&addr[nr / 32U], ~(1U << (nr % 32U)));
+}
+
+static __always_inline void change_bit(unsigned int nr, volatile unsigned long *addr)
+{
+	__sync_fetch_and_xor_4((volatile void *)&addr[nr / 32U], 1U << (nr % 32U));
+}
+
+static __always_inline int test_and_set_bit(unsigned int nr, volatile unsigned long *addr)
+{
+	unsigned int old = __sync_fetch_and_or_4((volatile void *)&addr[nr / 32U],
+						 1U << (nr % 32U));
+	return (old >> (nr % 32U)) & 1U;
+}
+
+static __always_inline int test_and_clear_bit(unsigned int nr, volatile unsigned long *addr)
+{
+	unsigned int old = __sync_fetch_and_and_4((volatile void *)&addr[nr / 32U],
+						  ~(1U << (nr % 32U)));
+	return (old >> (nr % 32U)) & 1U;
+}
+
+static __always_inline int test_and_change_bit(unsigned int nr, volatile unsigned long *addr)
+{
+	unsigned int old = __sync_fetch_and_xor_4((volatile void *)&addr[nr / 32U],
+						  1U << (nr % 32U));
+	return (old >> (nr % 32U)) & 1U;
+}
 #include <asm-generic/bitops/__ffs.h>
 #include <asm-generic/bitops/ffz.h>
 #include <asm-generic/bitops/__fls.h>

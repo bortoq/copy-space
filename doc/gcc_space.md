@@ -2167,6 +2167,25 @@ bitops; прямое выполнение rbtree не доказано. Изме
 атомарность или обработку прерываний. Запущенный сквозной Linux string
 сохраняет свой замороженный вход до этого дополнительного теста ffz.
 
+Недостающий интерфейс закрыт собственными заголовками copyspace:
+`asm/cmpxchg.h` (обмен и сравнение-с-обменом 1/2/4/8 байтов через
+__sync-helpers, sub-word через содержащее слово), `asm/atomic.h`
+(полный набор arch_atomic_*/arch_atomic64_* через __sync_*_4/_8,
+atomic64_t при отсутствии CONFIG_64BIT), `asm/current.h` (current как
+глобальный указатель одного харта), `asm/irqflags.h` (заглушки UP без
+маскирования), `asm/thread_info.h` и `asm/processor.h` (флаги,
+task_stack_page, cpu_relax), атомарные set_bit/clear_bit/change_bit и
+test_and_*_bit в `asm/bitops.h`. UP-семантика задокументирована в
+каждом файле; претензий на SMP нет. Зонд `linux_atomic_probe.c`
+(atomic_t/atomic64_t, xchg/cmpxchg, битовые операции, 20 проверок)
+скомпилирован настоящим cc1, связан с `sync_up` гостевым линковщиком
+и исполнен прямыми копиями: OUT=20, idle. Неизменённый `linux/lib/rbtree.c`
+принял все 158 файлов и выдал 28000 байтов ассемблера, exit=0
+(`space-tests/gcc-linux-rbtree-port-v2`); в probe-конфигурацию добавлен
+`#undef CONFIG_GENERIC_ATOMIC64` как эмуляция будущего Kconfig без
+спинлокового lib/atomic64.c. Прямое выполнение rbtree и сборка ядра
+остаются непроверенными.
+
 ## Компиляция комплексных и степенных helpers libgcc
 
 `test_gcc_libgcc_units.py` принимает дополнительные единицы `mulsc3`,

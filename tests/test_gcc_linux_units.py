@@ -102,7 +102,10 @@ def main():
         '#include <linux/kconfig.h>\n'
         '#undef CONFIG_GENERIC_BUG\n'
         '#undef CONFIG_GENERIC_BUG_RELATIVE_POINTERS\n'
-        '#undef CONFIG_DEBUG_BUGVERBOSE\n')
+        '#undef CONFIG_DEBUG_BUGVERBOSE\n'
+        '/* Future copyspace Kconfig leaves this unset: no spinlock-based\n'
+        ' * lib/atomic64.c, arch_atomic64_* from asm/atomic.h apply. */\n'
+        '#undef CONFIG_GENERIC_ATOMIC64\n')
     if args.unit == 'bug' or args.entry_probe:
         source = port/'probe.c'
         shutil.copyfile(ROOT/'tests/fixtures/gcc'/('linux_'+args.unit+'.c'), source)

@@ -1550,6 +1550,14 @@ sort отсортировал {8,3,6,1,7,2,5,4}, проверил каждый �
 `space-tests/gcc-linux-sort-entry-diagnostic-v1`.
 GCC этих диагностик исполнялся в QEMU, а не в пространстве.
 
+После смены backend (дескрипторы callback, cc1 v9) все три entry-пробы
+повторно прошли тем же настоящим GCC под диагностикой v5 с побайтно
+неизменёнными результатами: ctype — 33 файла, 1888 байтов, OUT 65;
+sort — 33 файла, 10856 байтов, OUT 204; string — 109 файлов,
+60458 байта, OUT 207. Материалы: `space-tests/gcc-linux-ctype-entry-v5backend-v1`,
+`space-tests/gcc-linux-sort-entry-v5backend-v1`,
+`space-tests/gcc-linux-string-entry-v5backend-v1`.
+
 Проба исходного string.c с собственным BUG прошла этот заголовок,
 но остановилась на требовании __riscv_xlen в оставшемся asm/asm.h
 RISC-V. Материалы: `space-tests/gcc-linux-string-port-diagnostic-v1`.

@@ -23,7 +23,7 @@ from test_gcc_linux_units import pack
 from test_gcc_copy_output import decode
 ROOT = Path(__file__).resolve().parents[1]
 
-EXPECTED = 20
+EXPECTED = 62
 
 
 def digest(path):
@@ -128,11 +128,8 @@ def main():
     (root/'probe-argv.json').write_text(json.dumps(argv, indent=2)+'\n')
     compiled = subprocess.run(run, input=pack(argv, files), capture_output=True, timeout=180)
     (root/'probe-response.bin').write_bytes(compiled.stdout)
-    assert compiled.stdout[:8] == b'GCCOUT1\0'
-    status, outsize, errsize, size = struct.unpack_from('<IIII', compiled.stdout, 8)
-    assert compiled.returncode == status == 0 and not outsize, compiled.stdout[24:24+errsize][:500]
-    assert size
-    probe_asm = compiled.stdout[24+outsize+errsize:]
+    status, stdout, stderr, probe_asm = decode(compiled.stdout)
+    assert compiled.returncode == status == 0 and not stdout and not stderr and probe_asm, stderr
     (root/'probe.s').write_bytes(probe_asm)
     # 2. Compile the __sync_* helpers with the same compiler.
     sync_src = (ROOT/'tests/fixtures/gcc/sync_up.c').read_bytes()
@@ -143,11 +140,8 @@ def main():
     compiled2 = subprocess.run(run, input=pack(argv2, {'sync_up.c': sync_src}),
                                capture_output=True, timeout=180)
     (root/'sync-response.bin').write_bytes(compiled2.stdout)
-    assert compiled2.stdout[:8] == b'GCCOUT1\0'
-    status2, out2, err2, size2 = struct.unpack_from('<IIII', compiled2.stdout, 8)
-    assert compiled2.returncode == status2 == 0 and not out2, compiled2.stdout[24:24+err2][:500]
-    assert size2
-    helper_asm = compiled2.stdout[24+out2+err2:]
+    status2, stdout2, stderr2, helper_asm = decode(compiled2.stdout)
+    assert compiled2.returncode == status2 == 0 and not stdout2 and not stderr2 and helper_asm, stderr2
     (root/'sync_up.s').write_bytes(helper_asm)
     # 3. Link probe + helper in the guest and execute direct copies.
     argv3 = (['cc1', '--space-program=result.s', '--space-entry=value', '--space-memory=65536',
@@ -160,11 +154,8 @@ def main():
     (root/'link-argv.json').write_text(json.dumps(argv3, indent=2)+'\n')
     linked = subprocess.run(run, input=pack(argv3, linked_files), capture_output=True, timeout=300)
     (root/'link-response.bin').write_bytes(linked.stdout)
-    assert linked.stdout[:8] == b'GCCOUT1\0'
-    status3, out3, err3, size3 = struct.unpack_from('<IIII', linked.stdout, 8)
-    assert linked.returncode == status3 == 0 and not out3 and not err3, linked.stdout[24:][:500]
-    assert size3
-    image = linked.stdout[24:]
+    status3, stdout3, stderr3, image = decode(linked.stdout)
+    assert linked.returncode == status3 == 0 and not stdout3 and not stderr3 and image, stderr3
     (root/'image.bin').write_bytes(image)
     emulator = ROOT/'build/bin/space-256m'
     direct = subprocess.run([str(emulator), '--ticks', '10000000', '--core', str(root/'image.bin'),

@@ -59,8 +59,6 @@ static __always_inline int test_and_change_bit(unsigned int nr, volatile unsigne
 #include <asm-generic/bitops/hweight.h>
 #include <asm-generic/bitops/non-atomic.h>
 
-#endif
-
 static __always_inline int test_and_set_bit_lock(unsigned int nr, volatile unsigned long *addr)
 {
 	return test_and_set_bit(nr, addr);
@@ -85,3 +83,5 @@ static __always_inline bool arch_xor_unlock_is_negative_byte(unsigned long mask,
 	return (old & (1UL << 7)) != 0;
 }
 #define xor_unlock_is_negative_byte arch_xor_unlock_is_negative_byte
+
+#endif /* _ASM_COPYSPACE_BITOPS_H */

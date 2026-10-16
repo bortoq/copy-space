@@ -2,7 +2,6 @@
 #ifndef _ASM_COPYSPACE_PGTABLE_H
 #define _ASM_COPYSPACE_PGTABLE_H
 
-#include <linux/bits.h>
 #include <linux/const.h>
 #include <asm/page.h>
 
@@ -12,7 +11,7 @@
  * RISC-V RV32 layout so future trap code meets no surprises, but only
  * software consistency is claimed: present/none/dirty/accessed tracking
  * used by generic mm code. pud/pmd fold into pgd through the generic
- * folding headers. NOMMU identity mapping keeps every pfns able to
+ * folding headers. NOMMU linear mapping keeps every pfns able to
  * round-trip through pfn_pte/pte_pfn.
  */
 #define _PAGE_PRESENT	_AC(0x001, L)
@@ -28,9 +27,7 @@
 #define _PAGE_IO	_AC(0x000, L)
 #define _PAGE_NOCACHE	_AC(0x000, L)
 #define _PAGE_MTMASK	_AC(0x000, L)
-#define _PAGE_CHG_MASK	(~(unsigned long)(_PAGE_PRESENT | _PAGE_READ |	\
-					  _PAGE_WRITE | _PAGE_EXEC |	\
-					  _PAGE_USER | _PAGE_GLOBAL))
+#define _PAGE_CHG_MASK	(PAGE_MASK | _PAGE_ACCESSED | _PAGE_DIRTY | _PAGE_SOFT)
 
 #define _PAGE_BASE	(_PAGE_PRESENT | _PAGE_ACCESSED | _PAGE_USER)
 #define PAGE_NONE	__pgprot(_PAGE_PROT_NONE | _PAGE_READ)
@@ -86,7 +83,8 @@
 static inline int pte_none(pte_t pte) { return !(pte_val(pte) & ~_PAGE_SOFT); }
 static inline int pte_present(pte_t pte)
 { return (pte_val(pte) & (_PAGE_PRESENT | _PAGE_PROT_NONE)); }
-static inline void pte_clear(pte_t *ptep) { ptep->pte = 0; }
+static inline void pte_clear(struct mm_struct *mm, unsigned long address, pte_t *ptep)
+{ (void)mm; (void)address; ptep->pte = 0; }
 static inline int pte_write(pte_t pte) { return pte_val(pte) & _PAGE_WRITE; }
 static inline int pte_exec(pte_t pte) { return pte_val(pte) & _PAGE_EXEC; }
 static inline int pte_user(pte_t pte) { return pte_val(pte) & _PAGE_USER; }
@@ -94,8 +92,9 @@ static inline int pte_dirty(pte_t pte) { return pte_val(pte) & _PAGE_DIRTY; }
 static inline int pte_young(pte_t pte) { return pte_val(pte) & _PAGE_ACCESSED; }
 static inline pte_t pte_wrprotect(pte_t pte)
 { return __pte(pte_val(pte) & ~_PAGE_WRITE); }
-static inline pte_t pte_mkwrite(pte_t pte, pgprot_t prot)
-{ (void)prot; return __pte(pte_val(pte) | _PAGE_WRITE); }
+/* linux/pgtable.h provides pte_mkwrite(pte, vma) through this hook. */
+static inline pte_t pte_mkwrite_novma(pte_t pte)
+{ return __pte(pte_val(pte) | _PAGE_WRITE); }
 static inline pte_t pte_mkexec(pte_t pte) { return __pte(pte_val(pte) | _PAGE_EXEC); }
 static inline pte_t pte_mkdirty(pte_t pte) { return __pte(pte_val(pte) | _PAGE_DIRTY); }
 static inline pte_t pte_mkyoung(pte_t pte) { return __pte(pte_val(pte) | _PAGE_ACCESSED); }
@@ -121,11 +120,14 @@ static inline void set_pte(pte_t *ptep, pte_t pte) { *ptep = pte; }
 #define pgprot_noncached(prot) (prot)
 #define pgprot_writecombine(prot) (prot)
 #define pgprot_device(prot) (prot)
-#define pgprot_modify(prot, mask, bits) __pgprot((pgprot_val(prot) & ~(mask)) | (bits))
-#define pte_pgprot(pte) __pgprot(pte_val(pte) & _PAGE_CHG_MASK)
+static inline pgprot_t pgprot_modify(pgprot_t oldprot, pgprot_t newprot)
+{ (void)oldprot; return newprot; }
+#define pgprot_modify pgprot_modify
+#define pte_pgprot(pte) __pgprot(pte_val(pte) & ~PAGE_MASK)
 
-#endif /* _ASM_COPYSPACE_PGTABLE_H */
 
 /* Flat NOMMU user range is provisional together with the load map. */
 #define TASK_SIZE	_AC(0xffffffff, UL)
 #define TASK_SIZE_MAX	TASK_SIZE
+
+#endif /* _ASM_COPYSPACE_PGTABLE_H */

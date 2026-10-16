@@ -39,27 +39,35 @@ static __always_inline void arch_atomic_set(atomic_t *v, int i)
 #define arch_atomic_or(i, v) ({ (void)__sync_fetch_and_or_4(&(v)->counter, (i)); })
 #define arch_atomic_xor(i, v) ({ (void)__sync_fetch_and_xor_4(&(v)->counter, (i)); })
 
-#define arch_atomic_fetch_add(i, v) __sync_fetch_and_add_4(&(v)->counter, (i))
+#define arch_atomic_fetch_add(i, v) ((int)__sync_fetch_and_add_4(&(v)->counter, (i)))
 #define arch_atomic_fetch_add_relaxed(i, v) arch_atomic_fetch_add((i), (v))
-#define arch_atomic_fetch_sub(i, v) __sync_fetch_and_sub_4(&(v)->counter, (i))
+#define arch_atomic_fetch_sub(i, v) ((int)__sync_fetch_and_sub_4(&(v)->counter, (i)))
 #define arch_atomic_fetch_sub_relaxed(i, v) arch_atomic_fetch_sub((i), (v))
-#define arch_atomic_fetch_and(i, v) __sync_fetch_and_and_4(&(v)->counter, (i))
+#define arch_atomic_fetch_and(i, v) ((int)__sync_fetch_and_and_4(&(v)->counter, (i)))
 #define arch_atomic_fetch_and_relaxed(i, v) arch_atomic_fetch_and((i), (v))
-#define arch_atomic_fetch_or(i, v) __sync_fetch_and_or_4(&(v)->counter, (i))
+#define arch_atomic_fetch_or(i, v) ((int)__sync_fetch_and_or_4(&(v)->counter, (i)))
 #define arch_atomic_fetch_or_relaxed(i, v) arch_atomic_fetch_or((i), (v))
-#define arch_atomic_fetch_xor(i, v) __sync_fetch_and_xor_4(&(v)->counter, (i))
+#define arch_atomic_fetch_xor(i, v) ((int)__sync_fetch_and_xor_4(&(v)->counter, (i)))
 #define arch_atomic_fetch_xor_relaxed(i, v) arch_atomic_fetch_xor((i), (v))
 
-#define arch_atomic_add_return(i, v) (arch_atomic_fetch_add((i), (v)) + (i))
+static __always_inline int arch_atomic_add_return(int i, atomic_t *v)
+{
+	return (int)((unsigned int)arch_atomic_fetch_add(i, v) + (unsigned int)i);
+}
+#define arch_atomic_add_return arch_atomic_add_return
 #define arch_atomic_add_return_relaxed(i, v) arch_atomic_add_return((i), (v))
-#define arch_atomic_sub_return(i, v) (arch_atomic_fetch_sub((i), (v)) - (i))
+static __always_inline int arch_atomic_sub_return(int i, atomic_t *v)
+{
+	return (int)((unsigned int)arch_atomic_fetch_sub(i, v) - (unsigned int)i);
+}
+#define arch_atomic_sub_return arch_atomic_sub_return
 #define arch_atomic_sub_return_relaxed(i, v) arch_atomic_sub_return((i), (v))
 
 static __always_inline int arch_atomic_fetch_add_unless(atomic_t *v, int a, int u)
 {
 	int prev = arch_atomic_read(v);
 	if (prev != u)
-		arch_atomic_set(v, prev + a);
+		arch_atomic_set(v, (int)((unsigned int)prev + (unsigned int)a));
 	return prev;
 }
 #define arch_atomic_fetch_add_unless arch_atomic_fetch_add_unless
@@ -68,7 +76,7 @@ static __always_inline bool arch_atomic_inc_unless_negative(atomic_t *v)
 {
 	int prev = arch_atomic_read(v);
 	if (prev >= 0)
-		arch_atomic_set(v, prev + 1);
+		arch_atomic_set(v, (int)((unsigned int)prev + (unsigned int)1));
 	return prev >= 0;
 }
 #define arch_atomic_inc_unless_negative arch_atomic_inc_unless_negative
@@ -77,7 +85,7 @@ static __always_inline bool arch_atomic_dec_unless_positive(atomic_t *v)
 {
 	int prev = arch_atomic_read(v);
 	if (prev <= 0)
-		arch_atomic_set(v, prev - 1);
+		arch_atomic_set(v, (int)((unsigned int)prev - (unsigned int)1));
 	return prev <= 0;
 }
 #define arch_atomic_dec_unless_positive arch_atomic_dec_unless_positive
@@ -86,8 +94,8 @@ static __always_inline int arch_atomic_dec_if_positive(atomic_t *v)
 {
 	int prev = arch_atomic_read(v);
 	if (prev > 0)
-		arch_atomic_set(v, prev - 1);
-	return prev - 1;
+		arch_atomic_set(v, (int)((unsigned int)prev - (unsigned int)1));
+	return (int)((unsigned int)prev - 1);
 }
 #define arch_atomic_dec_if_positive arch_atomic_dec_if_positive
 
@@ -133,27 +141,35 @@ static __always_inline void arch_atomic64_set(atomic64_t *v, s64 i)
 #define arch_atomic64_or(i, v) ({ (void)__sync_fetch_and_or_8(&(v)->counter, (i)); })
 #define arch_atomic64_xor(i, v) ({ (void)__sync_fetch_and_xor_8(&(v)->counter, (i)); })
 
-#define arch_atomic64_fetch_add(i, v) __sync_fetch_and_add_8(&(v)->counter, (i))
+#define arch_atomic64_fetch_add(i, v) ((s64)__sync_fetch_and_add_8(&(v)->counter, (i)))
 #define arch_atomic64_fetch_add_relaxed(i, v) arch_atomic64_fetch_add((i), (v))
-#define arch_atomic64_fetch_sub(i, v) __sync_fetch_and_sub_8(&(v)->counter, (i))
+#define arch_atomic64_fetch_sub(i, v) ((s64)__sync_fetch_and_sub_8(&(v)->counter, (i)))
 #define arch_atomic64_fetch_sub_relaxed(i, v) arch_atomic64_fetch_sub((i), (v))
-#define arch_atomic64_fetch_and(i, v) __sync_fetch_and_and_8(&(v)->counter, (i))
+#define arch_atomic64_fetch_and(i, v) ((s64)__sync_fetch_and_and_8(&(v)->counter, (i)))
 #define arch_atomic64_fetch_and_relaxed(i, v) arch_atomic64_fetch_and((i), (v))
-#define arch_atomic64_fetch_or(i, v) __sync_fetch_and_or_8(&(v)->counter, (i))
+#define arch_atomic64_fetch_or(i, v) ((s64)__sync_fetch_and_or_8(&(v)->counter, (i)))
 #define arch_atomic64_fetch_or_relaxed(i, v) arch_atomic64_fetch_or((i), (v))
-#define arch_atomic64_fetch_xor(i, v) __sync_fetch_and_xor_8(&(v)->counter, (i))
+#define arch_atomic64_fetch_xor(i, v) ((s64)__sync_fetch_and_xor_8(&(v)->counter, (i)))
 #define arch_atomic64_fetch_xor_relaxed(i, v) arch_atomic64_fetch_xor((i), (v))
 
-#define arch_atomic64_add_return(i, v) (arch_atomic64_fetch_add((i), (v)) + (i))
+static __always_inline s64 arch_atomic64_add_return(s64 i, atomic64_t *v)
+{
+	return (s64)((u64)arch_atomic64_fetch_add(i, v) + (u64)i);
+}
+#define arch_atomic64_add_return arch_atomic64_add_return
 #define arch_atomic64_add_return_relaxed(i, v) arch_atomic64_add_return((i), (v))
-#define arch_atomic64_sub_return(i, v) (arch_atomic64_fetch_sub((i), (v)) - (i))
+static __always_inline s64 arch_atomic64_sub_return(s64 i, atomic64_t *v)
+{
+	return (s64)((u64)arch_atomic64_fetch_sub(i, v) - (u64)i);
+}
+#define arch_atomic64_sub_return arch_atomic64_sub_return
 #define arch_atomic64_sub_return_relaxed(i, v) arch_atomic64_sub_return((i), (v))
 
 static __always_inline s64 arch_atomic64_fetch_add_unless(atomic64_t *v, s64 a, s64 u)
 {
 	s64 prev = arch_atomic64_read(v);
 	if (prev != u)
-		arch_atomic64_set(v, prev + a);
+		arch_atomic64_set(v, (s64)((u64)prev + (u64)a));
 	return prev;
 }
 #define arch_atomic64_fetch_add_unless arch_atomic64_fetch_add_unless
@@ -162,7 +178,7 @@ static __always_inline bool arch_atomic64_inc_unless_negative(atomic64_t *v)
 {
 	s64 prev = arch_atomic64_read(v);
 	if (prev >= 0)
-		arch_atomic64_set(v, prev + 1);
+		arch_atomic64_set(v, (s64)((u64)prev + (u64)1));
 	return prev >= 0;
 }
 #define arch_atomic64_inc_unless_negative arch_atomic64_inc_unless_negative
@@ -171,7 +187,7 @@ static __always_inline bool arch_atomic64_dec_unless_positive(atomic64_t *v)
 {
 	s64 prev = arch_atomic64_read(v);
 	if (prev <= 0)
-		arch_atomic64_set(v, prev - 1);
+		arch_atomic64_set(v, (s64)((u64)prev - (u64)1));
 	return prev <= 0;
 }
 #define arch_atomic64_dec_unless_positive arch_atomic64_dec_unless_positive
@@ -180,8 +196,8 @@ static __always_inline s64 arch_atomic64_dec_if_positive(atomic64_t *v)
 {
 	s64 prev = arch_atomic64_read(v);
 	if (prev > 0)
-		arch_atomic64_set(v, prev - 1);
-	return prev - 1;
+		arch_atomic64_set(v, (s64)((u64)prev - (u64)1));
+	return (s64)((u64)prev - 1);
 }
 #define arch_atomic64_dec_if_positive arch_atomic64_dec_if_positive
 

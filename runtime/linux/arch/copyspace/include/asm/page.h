@@ -15,17 +15,20 @@
 /* Logical page geometry, shared with the guest runtime's sysconf. Page
  * allocation and kernel memory mappings are separate unfinished work.
  *
- * NOMMU identity mapping below is provisional: virtual address minus
+ * NOMMU linear mapping below is provisional: virtual address minus
  * PAGE_OFFSET is physical, and every pfn round-trips through one flat
  * mem_map. The final load map belongs to the kernel link layout. */
 #include <linux/const.h>
+#define PAGE_OFFSET	_AC(CONFIG_PAGE_OFFSET, UL)
+#define PAGE_SHIFT 12
+#define PAGE_SIZE (_AC(1, UL) << PAGE_SHIFT)
+#define PAGE_MASK (~(PAGE_SIZE - 1))
+/* __pa(PAGE_OFFSET) is zero in this provisional linear mapping. */
+#define ARCH_PFN_OFFSET _AC(0, UL)
+
+#ifndef __ASSEMBLY__
 #include <linux/string.h>
 #include <linux/pfn.h>
-
-#ifdef CONFIG_MMU
-#error "copyspace paging is not implemented"
-#endif
-#define PAGE_OFFSET	_AC(CONFIG_PAGE_OFFSET, UL)
 
 /* Page Global Directory entry */
 typedef struct {
@@ -50,11 +53,6 @@ typedef struct page *pgtable_t;
 #define __pte(x)	((pte_t) { (x) })
 #define __pgd(x)	((pgd_t) { (x) })
 #define __pgprot(x)	((pgprot_t) { (x) })
-#define PAGE_SHIFT 12
-#define PAGE_SIZE (1UL << PAGE_SHIFT)
-#define PAGE_MASK (~(PAGE_SIZE - 1))
-
-#endif
 
 #define clear_page(pgaddr)	memset((pgaddr), 0, PAGE_SIZE)
 #define copy_page(to, from)	memcpy((to), (from), PAGE_SIZE)
@@ -64,9 +62,11 @@ typedef struct page *pgtable_t;
 #define __pa(x)		((unsigned long)(x) - PAGE_OFFSET)
 #define __va(x)		((void *)((unsigned long)(x) + PAGE_OFFSET))
 #define virt_to_pfn(vaddr)	(PFN_DOWN(__pa(vaddr)))
-#define ARCH_PFN_OFFSET		(PAGE_OFFSET >> PAGE_SHIFT)
-#define pfn_to_page(pfn)	(mem_map + ((pfn) - ARCH_PFN_OFFSET))
-#define page_to_pfn(page)	((unsigned long)((page) - mem_map) + ARCH_PFN_OFFSET)
-#define pfn_valid(pfn)		((pfn) >= ARCH_PFN_OFFSET)
+/* Use the kernel's bounded FLATMEM conversion and pfn_valid: the upper
+ * limit is max_mapnr, rather than accepting every address above the base. */
+#include <asm-generic/memory_model.h>
 #define virt_to_page(vaddr)	pfn_to_page(virt_to_pfn(vaddr))
 extern struct page *mem_map;
+
+#endif /* !__ASSEMBLY__ */
+#endif /* _ASM_COPYSPACE_PAGE_H */

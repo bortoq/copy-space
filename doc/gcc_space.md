@@ -2179,7 +2179,9 @@ test_and_*_bit в `asm/bitops.h`. UP-семантика задокументир
 каждом файле; претензий на SMP нет. Зонд `linux_atomic_probe.c`
 (atomic_t/atomic64_t, xchg/cmpxchg, битовые операции, 20 проверок)
 скомпилирован настоящим cc1, связан с `sync_up` гостевым линковщиком
-и исполнен прямыми копиями: OUT=20, idle. Неизменённый `linux/lib/rbtree.c`
+и исполнен прямыми копиями: OUT=20, idle. Повторяемая проверка —
+`tests/test_gcc_linux_atomic.py` (`space-tests/gcc-linux-atomic-v1`,
+83 гостевых файла, оба компилятора и линковка в QEMU, прямой OUT=20). Неизменённый `linux/lib/rbtree.c`
 принял все 158 файлов и выдал 28000 байтов ассемблера, exit=0
 (`space-tests/gcc-linux-rbtree-port-v2`); в probe-конфигурацию добавлен
 `#undef CONFIG_GENERIC_ATOMIC64` как эмуляция будущего Kconfig без

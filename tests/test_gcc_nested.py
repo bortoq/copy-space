@@ -1,9 +1,9 @@
 """Check GNU C static chains with real GCC and guest lowering in QEMU.
 
 Eight ordinary C entries execute as direct copies. Native GCC only checks the
-test oracle; its assembly is never forwarded to the target. Nested function
-addresses still require unimplemented trampolines and must fail explicitly.
-This diagnostic is not evidence of GCC execution inside Space.
+test oracle; its assembly is never forwarded to the target. Older compiler
+images reject nested function addresses; --function-descriptors checks that
+new images accept and execute them. This is not GCC-in-Space evidence.
 """
 import argparse
 import hashlib
@@ -33,6 +33,7 @@ def main():
     for name in ('image','qemu','artifacts'):
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--optimization',choices=('O0','O2'),default='O2')
+    parser.add_argument('--function-descriptors',action='store_true')
     args=parser.parse_args()
     root=args.artifacts.resolve();root.mkdir(parents=True,exist_ok=False)
     shutil.copyfile(__file__,root/'run.py')
@@ -85,12 +86,26 @@ def main():
     run=subprocess.run([str(args.qemu.resolve()),'-strace',str(elf)],input=incoming,capture_output=True,timeout=300)
     (root/'trampoline.response').write_bytes(run.stdout);(root/'trampoline.syscalls').write_bytes(run.stderr)
     status,out,err,image=decode(run.stdout)
-    assert status==run.returncode and status and not out and not image
-    assert b'nested-function trampolines are not implemented' in err
+    assert status==run.returncode and not out
+    if args.function_descriptors:
+        assert status==0 and not err and len(image)==manifest['copy_program_bytes'],err
+        path=root/'callback.bin';path.write_bytes(image)
+        command=[str(emulator),'--ticks','10000000','--core',str(path),
+                 '--trace-channels',str(root/'callback.trace')]
+        (root/'callback-command.json').write_text(json.dumps(command)+'\n')
+        checked=subprocess.run(command,capture_output=True,timeout=300)
+        (root/'callback.out').write_bytes(checked.stdout)
+        assert checked.returncode==0 and not checked.stderr and checked.stdout==struct.pack('<I',17)
+        assert (root/'callback.trace').read_bytes().endswith(b' idle\n')
+    else:
+        assert status and not image
+        assert b'nested-function trampolines are not implemented' in err
     (root/'evidence.json').write_text(json.dumps({'scope':__doc__,'stream_sha256':manifest['stream_sha256'],
         'optimization':args.optimization,'source_sha256':digest(root/'nested.c'),'elf_sha256':digest(elf),'qemu_sha256':digest(args.qemu),
-        'emulator_sha256':digest(emulator),'checks':checks,'trampoline_rejected':True},indent=2)+'\n')
-    print('OK static chains:',len(checks),'direct GNU C entries; trampoline remains rejected',flush=True)
+        'emulator_sha256':digest(emulator),'checks':checks,
+        'trampoline_rejected':not args.function_descriptors,'function_descriptors':args.function_descriptors},indent=2)+'\n')
+    print('OK static chains:',len(checks),'direct GNU C entries; descriptor callback',
+          'passed' if args.function_descriptors else 'rejected by old compiler',flush=True)
 
 
 if __name__=='__main__':

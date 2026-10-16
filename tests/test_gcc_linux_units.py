@@ -60,8 +60,8 @@ def main():
     parser.add_argument('--image', type=Path,
                         help='prepared GCC image with that runtime installed; required with --target-library')
     args = parser.parse_args()
-    if args.entry_probe and args.unit not in ('ctype', 'sort', 'string'):
-        parser.error('--entry-probe requires ctype, sort or string')
+    if args.entry_probe and args.unit not in ('ctype', 'sort', 'string', 'rbtree'):
+        parser.error('--entry-probe requires ctype, sort, string or rbtree')
     if bool(args.target_library) != bool(args.image) or (args.target_library and not args.entry_probe):
         parser.error('--target-library and --image require each other and --entry-probe')
     archive = args.linux_archive.resolve()
@@ -271,6 +271,7 @@ def main():
                             ('condition_once', 5), ('warning_once', 21), ('warning_return', 101)])
     elif args.entry_probe:
         cases = {'ctype': [('value', 65)], 'sort': [('value', 204)],
+                 'rbtree': [('value', 65)],
                  'string': [('value', 207), ('fatal', None), ('warning_once', 1),
                             ('multiplication', 8), ('bit_operations', 32),
                             ('argument_home', 11), ('variadic', 15),

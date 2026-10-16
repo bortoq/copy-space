@@ -2207,6 +2207,20 @@ propagate обновляет только предков, вставку без 
 после каждого шага сверяются счётчик, порядок и корень submax с
 эталоном. Сборка ядра остаётся непроверенной.
 
+Следующий слой под `mm/nommu.c`: номинальные `asm/pgtable.h` (типы
+pte/pgd/pgprot, биты, свёртка pud/pmd через generic-заголовки, TASK_SIZE
+помечен предварительным вместе с картой загрузки), `asm/mmu.h` (пустой
+контекст NOMMU), `asm/timex.h` (заглушка get_cycles), `asm/io.h` и
+`asm/mmiowb.h`, `asm/ptrace.h` (user_regs_struct, номинальный pt_regs,
+user_mode() = 0), `asm/sigcontext.h`, `asm/elf.h`, `struct thread_struct`,
+атомарные `_lock`-варианты и `arch_xor_unlock_is_negative_byte` в
+`asm/bitops.h`, типы страниц в `asm/page.h` (по образцу RISC-V) плюс
+проброс `mm/nommu` и `init/main` в тест. Попутно исправлена коллизия
+макроса `task_stack_page` с `sched/task_stack.h`. Все ошибки заголовков
+для `mm/nommu.c` закрыты, но единица упирается в память гостя
+(`cc1: out of memory` около 28 МиБ кучи компилятора) — ей нужен образ
+с большим гостем; rbtree entry при этом повторно сошёлся 65+25.
+
 ## Компиляция комплексных и степенных helpers libgcc
 
 `test_gcc_libgcc_units.py` принимает дополнительные единицы `mulsc3`,

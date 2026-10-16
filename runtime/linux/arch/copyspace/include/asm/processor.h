@@ -10,7 +10,10 @@
  * other architectures). Relaxing in spin loops is a compiler barrier plus
  * a no-op copy; there is no pause instruction on this target.
  */
-#define task_stack_page(tsk)	((void *)(tsk))
+/* task_stack_page() comes from sched/task_stack.h; thread_info stays at
+ * offset zero of task_struct, as on other architectures. */
+struct thread_struct {
+};
 
 static __always_inline void cpu_relax(void)
 {

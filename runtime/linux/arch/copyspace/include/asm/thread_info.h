@@ -3,6 +3,7 @@
 #define _ASM_COPYSPACE_THREAD_INFO_H
 
 #include <asm/page.h>
+#include <asm/processor.h>
 #include <linux/const.h>
 #include <linux/sizes.h>
 

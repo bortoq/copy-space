@@ -53,7 +53,7 @@ static __always_inline unsigned long long __xchg_u64(volatile u64 *p, u64 n)
 	case 1: __ret = __XCHG_MASKED(u8, (ptr), (x)); break;			\
 	case 2: __ret = __XCHG_MASKED(u16, (ptr), (x)); break;			\
 	case 4: __ret = (__typeof__(*(ptr)))__xchg_u32((volatile u32 *)(ptr), (u32)(x)); break; \
-	case 8: __ret = (__typeof__(*(ptr)))__xchg_u64((volatile u64 *)(ptr), (u64)(unsigned long)(x)); break; \
+	case 8: __ret = (__typeof__(*(ptr)))(void *)(unsigned long)__xchg_u64((volatile u64 *)(ptr), (u64)(unsigned long)(x)); break; \
 	default: BUILD_BUG();							\
 	}									\
 	__ret;									\
@@ -89,7 +89,7 @@ static __always_inline unsigned long long __xchg_u64(volatile u64 *p, u64 n)
 	case 4: __ret = (__typeof__(*(ptr)))__sync_val_compare_and_swap_4( \
 		(volatile void *)(ptr), (unsigned int)(u32)(o), (unsigned int)(u32)(n)); break; \
 	case 8: __ret = (__typeof__(*(ptr)))__sync_val_compare_and_swap_8( \
-		(volatile void *)(ptr), (unsigned long long)(u64)(o),	\
+		(volatile void *)(ptr), (unsigned long long)(u64)(unsigned long)(o),	\
 		(unsigned long long)(u64)(unsigned long)(n)); break;			\
 	default: BUILD_BUG();							\
 	}									\

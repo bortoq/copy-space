@@ -52,7 +52,7 @@ def main():
     parser.add_argument('--diagnostic', type=Path, required=True,
                         help='directory produced by scripts/gcc/diagnose_guest.py')
     parser.add_argument('--artifacts', type=Path, required=True)
-    parser.add_argument('--unit', choices=['string', 'ctype', 'sort', 'rbtree', 'bug'], default='string')
+    parser.add_argument('--unit', choices=['string', 'ctype', 'sort', 'rbtree', 'bug', 'mm/nommu', 'init/main'], default='string')
     parser.add_argument('--entry-probe', action='store_true',
                         help='compile ctype/sort/string with direct execution entries')
     parser.add_argument('--target-library', type=Path,
@@ -87,10 +87,13 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(__file__, root/'run.py')
     shutil.copyfile(build/'.config', root/'original.config')
-    kbuild = build/'lib'/('.'+('string' if args.unit == 'bug' else args.unit)+'.o.cmd')
+    subdir, sep, short = args.unit.partition('/')
+    if not sep:
+        subdir, short = 'lib', args.unit
+    kbuild = build/subdir/('.'+('string' if short == 'bug' else short)+'.o.cmd')
     shutil.copyfile(kbuild, root/'kbuild.cmd')
     words = shlex.split(kbuild.read_text().splitlines()[0].split(':=', 1)[1])
-    source = linux/'lib'/(('string' if args.unit == 'bug' else args.unit)+'.c')
+    source = linux/subdir/((('string' if short == 'bug' else short))+'.c')
     assert words[-1] == str(source), 'unexpected Kbuild source'
     # The probe keeps the RISC-V scaffold's other headers explicitly. This
     # initial architecture fragment has fatal BUG, but no generic bug tables.

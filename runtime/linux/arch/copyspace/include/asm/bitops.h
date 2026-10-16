@@ -2,6 +2,8 @@
 #ifndef _ASM_COPYSPACE_BITOPS_H
 #define _ASM_COPYSPACE_BITOPS_H
 
+#include <linux/compiler.h>
+
 #ifndef _LINUX_BITOPS_H
 #error "Only <linux/bitops.h> can be included directly"
 #endif
@@ -58,3 +60,28 @@ static __always_inline int test_and_change_bit(unsigned int nr, volatile unsigne
 #include <asm-generic/bitops/non-atomic.h>
 
 #endif
+
+static __always_inline int test_and_set_bit_lock(unsigned int nr, volatile unsigned long *addr)
+{
+	return test_and_set_bit(nr, addr);
+}
+
+static __always_inline void clear_bit_unlock(unsigned int nr, volatile unsigned long *addr)
+{
+	barrier();
+	clear_bit(nr, addr);
+}
+
+static __always_inline void set_bit_lock(unsigned int nr, volatile unsigned long *addr)
+{
+	set_bit(nr, addr);
+}
+
+static __always_inline bool arch_xor_unlock_is_negative_byte(unsigned long mask,
+							     volatile unsigned long *addr)
+{
+	unsigned long old = __sync_fetch_and_xor_4((volatile void *)addr, mask);
+	barrier();
+	return (old & (1UL << 7)) != 0;
+}
+#define xor_unlock_is_negative_byte arch_xor_unlock_is_negative_byte

@@ -104,6 +104,7 @@ tdd: test
 test-rv32i-bulk:
 	python3 tests/test_rv32i_bulk_schedule.py
 	python3 tests/test_rv32i_bulk.py
+	python3 tests/test_rv32i_bulk_io.py
 
 test-rv32i-c: bins bins-large $(PROOF_BIN) $(IO_PARTIAL_BIN)
 	python3 tests/test_rv32i_c.py

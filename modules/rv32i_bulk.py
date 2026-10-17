@@ -42,6 +42,9 @@ PB_T = SCRATCH + 70*32
 PB_CIN = SCRATCH + 71*32
 TREE = SCRATCH + 72*32
 VAL = SCRATCH + 80*32
+# io adapter scratch: the SYS answer record and the status byte
+IO_RSP = SCRATCH + 96*32
+IO_ST = SCRATCH + 100*32
 
 
 class BulkImage(Image):
@@ -184,10 +187,114 @@ class BulkImage(Image):
             return target.home + target.slot * self.layout.instruction_bits + offset + value.offset
         return value
 
+    # ------------------------------------------------------------------
+    # io adapter (roadmap 8.1): old IN/OUT through the new data channels
+    # ------------------------------------------------------------------
+    @property
+    def sys_nbits(self):
+        """The emulator is launched with -s space_bytes*8-4, so its address
+        width is bit_length(space_bytes*8-4) = the generator address_bits and
+        the SYS/devices positions fit below 2**address_bits."""
+        return self.layout.space_bytes*8 - 4
+
+    @staticmethod
+    def _offsets(widths):
+        off, at = [], 0
+        for width in widths:
+            off.append(at)
+            at += width
+        return off
+
+    @staticmethod
+    def _record(widths, values):
+        """Pack record fields low bit first into bytes the `literal` reads."""
+        total, at, value = sum(widths), 0, 0
+        for width, field in zip(widths, values):
+            value |= (field & ((1 << width) - 1)) << at
+            at += width
+        raw = bytearray((total + 7)//8)
+        for i in range(total):
+            if (value >> i) & 1:
+                raw[i//8] |= 1 << (7 - i % 8)
+        return bytes(raw)
+
+    def build_io(self):
+        address_bits, n_bits = self.layout.address_bits, self.layout.n_bits
+        sys_nbits = self.sys_nbits
+        # SYS record fields (proto.def): req op/chan/flags/arg/off,
+        # rsp op/status/flags/size/moved/eof; SYS controls any channel.
+        req_w = [8, address_bits, 16, 32, 64]
+        rsp_w = [8, 8, 16, 64, n_bits, 1]
+        req_bits, rsp_bits = sum(req_w), sum(rsp_w)
+        rsp_off = self._offsets(rsp_w)          # [op, status, flags, size, moved, eof]
+        a0, a1, a2, a7 = (REGS + 32*i for i in (10, 11, 12, 17))
+
+        for name, descriptor, device, reading in [
+                ("read", 0, sys_nbits + 1, True), ("write", 1, sys_nbits + 2, False)]:
+            self.start("io_" + name)
+            self.require_value(a0, descriptor, "io_ebadf")
+            self.reduce_or(COND, list(range(a2, a2 + 32)))
+            self.branch(COND, "io_zero", "io_" + name + "_range")
+            self.start("io_" + name + "_range")
+            self.require_zero(list(range(a1 + self.memory_bits, a1 + 32)), "io_efault")
+            self.add(EA, a1, a2)
+            self.gate("not", COND, [CARRY])
+            self.guard(COND, "io_efault")
+            self.add(IMM, EA, self.constant(self.memory_bytes + 1), subtract=True)
+            self.gate("not", COND, [CARRY])
+            self.guard(COND, "io_efault")
+            # prepare a data copy; it is placed in its own block so the host
+            # services it in its own tick, after the field patches commit
+            if reading:
+                channel, field = Copy(0, self.layout.memory_bit, device), "dst"
+            else:
+                channel, field = Copy(0, device, self.layout.memory_bit), "src"
+            self.emit(self.memory_bits + 1, Field(channel, "n", 3), a2)
+            self.emit(self.memory_bits, Field(channel, field, 3), a1)
+            self.jump("io_" + name + "_transfer")
+            self.start("io_" + name + "_transfer")
+            self.blocks[self.current][0].append(channel)
+            self.jump("io_" + name + "_status")
+            # a later block asks SYS to fstat the channel and reads the answer
+            self.start("io_" + name + "_status")
+            self.blocks[self.current][0].append(Copy(
+                req_bits, sys_nbits,
+                self.literal(self._record(req_w, [3, device, 0, 0, 0]))))
+            self.blocks[self.current][0].append(Copy(rsp_bits, IO_RSP, sys_nbits))
+            self.emit(8, IO_ST, IO_RSP + rsp_off[1])
+            self.reduce_or(REDUCE, list(range(IO_ST, IO_ST + 8)))
+            self.gate("not", COND, [REDUCE])            # status == 0
+            if reading:
+                self.emit(32, RESULT, self.constant(0))
+                self.emit(n_bits, RESULT, IO_RSP + rsp_off[4])
+            else:
+                self.emit(32, RESULT, a2)
+            self.branch(COND, "io_eio", "io_return")
+
+        a0, a1, a2, a7 = (REGS + 32*i for i in (10, 11, 12, 17))
+        self.start("io_dispatch")
+        self.require_zero(list(range(a7 + 7, a7 + 32)), "io_enosys")
+        self.dispatch(list(range(a7, a7 + 7)),
+                      {63: "io_read", 64: "io_write", 93: "io_exit"}, default="io_enosys")
+        self.start("io_zero")
+        self.emit(32, RESULT, self.constant(0))
+        self.jump("io_return")
+        for name, value in [("enosys", -38), ("ebadf", -9), ("efault", -14), ("eio", -5)]:
+            self.start("io_" + name)
+            self.emit(32, RESULT, self.constant(value & 0xffffffff))
+            self.jump("io_return")
+        self.start("io_return")
+        self.emit(32, a0, RESULT)
+        self.jump("commit")
+        self.start("io_exit")
+        self.emit(32, EXIT_CODE, a0)
+        self.emit(32, STATUS, self.constant(10))
+        self.jump("halt")
+
     def encode(self, program=b"", entry=0, registers=None, *, initial_label="fetch",
                image_bytes=None):
-        if self.io or self.state_output or self.report_status:
-            raise NotImplementedError("the bulk generator supports the base profile only")
+        if self.state_output or self.report_status:
+            raise NotImplementedError("the bulk generator supports the base and io profiles")
         if len(program) > self.memory_bytes:
             raise ValueError("program exceeds guest memory")
         if not 0 <= entry < (1 << 32):
@@ -201,13 +308,17 @@ class BulkImage(Image):
         layer_bits = self.layout.layer_bits
         link_slot = SLOTS - 1
         labels, scheduled = {}, []
-        end = self.code_base
+        end, tick = self.code_base, 0
         for name, (ops, term) in self.blocks.items():
             if term is None:
                 raise ValueError("block without terminator: " + name)
             last = self._level(ops, term)
             labels[name] = end
             scheduled.append((name, end, ops, term, last))
+            for node in ops:
+                node._abs = tick + node._level
+            term._abs = tick + last
+            tick += last
             end += last * layer_bits
         if end > self.code_limit:
             raise ValueError("copy layers overlap guest memory")
@@ -282,7 +393,8 @@ class BulkImage(Image):
                         continue
                     if isinstance(node.dst, int) and node.dst < layer_bits:
                         raise ValueError("a copy writes the processor region")
-                    if isinstance(node.dst, Field) and node.dst.instruction._level - level < 2:
+                    if (isinstance(node.dst, Field)
+                            and node.dst.instruction._abs - node._abs < 2):
                         raise ValueError("a patch is closer than two layers to its instruction")
 
         image = bytearray(image_bytes if image_bytes is not None else

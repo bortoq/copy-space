@@ -99,6 +99,12 @@ test: bins bins-large $(PROOF_BIN) $(BITCOPY_BIN) $(RUNTIME_BIN) $(DECODE_BIN) $
 
 tdd: test
 
+# Bulk-synchronous RV32I for the new emulator (roadmap 8.10): needs the new
+# emulator's development build `space-dev` (positional addressing repo).
+test-rv32i-bulk:
+	python3 tests/test_rv32i_bulk_schedule.py
+	python3 tests/test_rv32i_bulk.py
+
 test-rv32i-c: bins bins-large $(PROOF_BIN) $(IO_PARTIAL_BIN)
 	python3 tests/test_rv32i_c.py
 	python3 tests/test_rv32i_io_c.py

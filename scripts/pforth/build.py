@@ -11,7 +11,14 @@ sys.path.insert(0, str(ROOT / "scripts/rv32i"))
 from build import build as build_rv32i
 
 
-def build(output, compiler=None, optimization="-O2", stream=True, task=None, report_status=False):
+def build(output, compiler=None, optimization="-O2", stream=True, task=None, report_status=False,
+          new_emulator=False, space_bytes=None):
+    if new_emulator:
+        if task is not None:
+            raise ValueError("the new emulator reads its Forth source from stdin; do not pass --task")
+        if stream:
+            raise ValueError("the new emulator image is loaded with --core; pass --core")
+        report_status = False
     if task is not None:
         if not stream:
             raise ValueError("--task requires an IN stream; cannot combine it with --core")
@@ -26,7 +33,9 @@ def build(output, compiler=None, optimization="-O2", stream=True, task=None, rep
     if hashlib.sha256(header.read_bytes()).hexdigest() != prepared["header_sha256"]:
         raise ValueError("built-in dictionary checksum mismatch")
     manifest = build_rv32i(sources(), output, optimization, compiler,
-                           stream=stream, extra_cflags=flags(), report_status=report_status)
+                           stream=stream, extra_cflags=flags(), report_status=report_status,
+                           new_emulator=new_emulator,
+                           space_bytes=space_bytes or (8*1024*1024 if new_emulator else 2097152))
     manifest.update({"pforth_revision": REVISION, "pforth_dictionary": prepared})
     if task is not None:
         offset = output.stat().st_size
@@ -47,10 +56,13 @@ def main():
     parser.add_argument("--core", action="store_true", help="produce a raw initial image instead of an IN stream")
     parser.add_argument("--task", type=Path, help="append Forth text and include a terminal OUT record")
     parser.add_argument("--report-status", action="store_true", help="include a terminal OUT record without appending a task")
+    parser.add_argument("--new-emulator", action="store_true", help="build a bulk image for the new emulator (--core; source on stdin)")
+    parser.add_argument("--space-bytes", type=lambda text: int(text, 0))
     args = parser.parse_args()
     try:
-        manifest = build(args.output, args.compiler, "-"+args.optimization, not args.core,
-                         args.task, args.report_status)
+        manifest = build(args.output, args.compiler, "-"+args.optimization,
+                         not args.core and not args.new_emulator,
+                         args.task, args.report_status, args.new_emulator, args.space_bytes)
         print(f"pForth RV32I: {args.output} ({manifest['guest_memory_bytes']} guest bytes)")
     except (OSError, ValueError) as error:
         parser.exit(1, str(error)+"\n")

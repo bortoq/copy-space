@@ -28,20 +28,31 @@ def main():
     parser.add_argument("--dump-space", type=Path)
     parser.add_argument("--in", dest="input_path", type=Path)
     parser.add_argument("--out", dest="output_path", type=Path)
+    parser.add_argument("--new-emulator", action="store_true",
+                        help="run the new emulator (--core, -s/-p/-t; no --stream/--trace)")
     args = parser.parse_args()
+    if args.new_emulator and args.stream:
+        parser.error("--stream is not available on the new emulator")
     if args.ticks is not None and args.ticks < 0:
         parser.error("ticks must not be negative")
     try:
         layout = Layout(args.space_bytes)
         with tempfile.TemporaryDirectory(prefix="rv32i-run-") as directory, ExitStack() as files:
             dump = args.dump_space or Path(directory) / "space.bin"
-            command = [str(args.space), "--dump-space", str(dump)]
-            if not args.stream:
-                command += ["--core", str(args.image)]
-            if args.ticks is not None:
-                command += ["--ticks", str(args.ticks)]
-            if args.trace:
-                command += ["--trace", str(args.trace)]
+            if args.new_emulator:
+                command = [str(args.space), "-s", str(args.space_bytes*8-4), "-p", "256",
+                           "-t", str(args.ticks if args.ticks is not None else 0),
+                           "--core", str(args.image), "--dump-space", str(dump)]
+                if args.trace:
+                    parser.error("--trace is not available on the new emulator")
+            else:
+                command = [str(args.space), "--dump-space", str(dump)]
+                if not args.stream:
+                    command += ["--core", str(args.image)]
+                if args.ticks is not None:
+                    command += ["--ticks", str(args.ticks)]
+                if args.trace:
+                    command += ["--trace", str(args.trace)]
             descriptors = []
             for path, output in [(args.input_path, False), (args.output_path, True)]:
                 if path is None:
@@ -87,8 +98,13 @@ def main():
             if result.returncode:
                 return 125
             raw = dump.read_bytes()
-            if (len(raw) != layout.space_bytes
-                    or raw[:layout.layer_bits//8] != bytes(layout.layer_bits//8)):
+            layer_bytes = layout.layer_bits//8
+            if args.new_emulator:
+                complete = len(raw) > layer_bytes and raw[:layer_bytes] == bytes(layer_bytes)
+            else:
+                complete = (len(raw) == layout.space_bytes
+                            and raw[:layer_bytes] == bytes(layer_bytes))
+            if not complete:
                 print("RV32I did not complete (possibly tick limit)", file=sys.stderr)
                 return 125
             status = word(raw, STATUS)

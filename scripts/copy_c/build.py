@@ -19,7 +19,7 @@ FORTH = ROOT / "runtime/copy_c/compiler.fth"
 
 
 def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
-          memory_bytes=16777216):
+          memory_bytes=16777216, new_emulator=False):
     output = output.resolve()
     if output == FORTH.resolve():
         raise ValueError("output must not overwrite the Forth compiler source")
@@ -85,9 +85,10 @@ def build(output, compiler=None, prepare_only=False, *, space_bytes=67108864,
     if result.returncode:
         raise ValueError(result.stderr.decode(errors="replace"))
     if not prepare_only:
-        image = build_rv32i(sources(), output, compiler=compiler, stream=True,
-                           extra_cflags=port_flags, space_bytes=space_bytes,
-                           memory_bytes=memory_bytes)
+        image = build_rv32i(sources(), output, compiler=compiler,
+                           stream=not new_emulator, extra_cflags=port_flags,
+                           space_bytes=space_bytes, memory_bytes=memory_bytes,
+                           new_emulator=new_emulator)
         image.update({"compiler_forth_sha256": signature, "compiler_dictionary": manifest})
         output.with_name(output.name+".json").write_text(json.dumps(image, indent=2)+"\n")
     return native
@@ -100,10 +101,13 @@ def main():
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--space-bytes", type=lambda text: int(text, 0), default=67108864)
     parser.add_argument("--memory-bytes", type=lambda text: int(text, 0), default=16777216)
+    parser.add_argument("--new-emulator", action="store_true",
+                        help="generate a bulk image for the new emulator (--core)")
     args = parser.parse_args()
     try:
         native = build(args.output, args.compiler, args.prepare_only,
-                       space_bytes=args.space_bytes, memory_bytes=args.memory_bytes)
+                       space_bytes=args.space_bytes, memory_bytes=args.memory_bytes,
+                       new_emulator=args.new_emulator)
         print(f"copy-c: {native if args.prepare_only else args.output}")
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         parser.exit(1, str(error)+"\n")

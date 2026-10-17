@@ -315,7 +315,8 @@ class BulkImage(Image):
             "registers_bit": REGS, "pc_bit": PC, "status_bit": STATUS,
             "guest_memory_bit": self.layout.memory_bit, "guest_memory_bytes": self.memory_bytes,
             "initial_stack": registers.get(2, 0), "entry": entry,
-            "layer_count": end // layer_bits, "labels": labels,
+            "layer_count": sum(last for _, _, _, _, last in scheduled),
+            "labels": labels,
         }
         return bytes(image), manifest
 

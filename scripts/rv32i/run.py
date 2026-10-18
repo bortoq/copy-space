@@ -21,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path)
     parser.add_argument("--space", type=Path, default=ROOT / "build/bin/space")
-    parser.add_argument("--space-bytes", type=lambda text: int(text, 0), default=SPACE_BYTES)
+    parser.add_argument("--space-bytes", type=lambda text: int(text, 0), default=None)
     parser.add_argument("--stream", action="store_true", help="send the packet and guest input to the standard core through IN")
     parser.add_argument("--ticks", type=int)
     parser.add_argument("--trace", type=Path)
@@ -35,6 +35,9 @@ def main():
         parser.error("--stream is not available on the new emulator")
     if args.ticks is not None and args.ticks < 0:
         parser.error("ticks must not be negative")
+    if args.space_bytes is None:
+        # The bulk image needs at least 8 MiB; the stream image keeps the old default.
+        args.space_bytes = (8 * 1024 * 1024) if args.new_emulator else SPACE_BYTES
     try:
         layout = Layout(args.space_bytes)
         with tempfile.TemporaryDirectory(prefix="rv32i-run-") as directory, ExitStack() as files:

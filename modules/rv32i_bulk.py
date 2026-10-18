@@ -46,6 +46,24 @@ VAL = SCRATCH + 80*32
 IO_RSP = SCRATCH + 96*32
 IO_ST = SCRATCH + 100*32
 
+# Wide-LUT gate functions, keyed by (name, arity): a k-input lookup computes a
+# k-ary boolean function in one read, so gate trees collapse into fewer levels
+# (the FPGA k-LUT trade; roadmap 8.10.4).
+GATE_FUNCTIONS = {
+    "and": lambda *a: all(a),
+    "or": lambda *a: any(a),
+    "xor": lambda *a: bool(sum(1 for x in a if x) & 1),
+    "not": lambda a: not a,
+    "mux": lambda a, b, select: b if select else a,
+    "signed_lt": lambda sign_a, sign_b, unsigned: sign_a if sign_a != sign_b else unsigned,
+    # fused wide-LUT primitives that pull a serial dependency into one lookup
+    "or_and": lambda g, p, gs: g | (p & gs),      # prefix combine: G|(P&G')
+    "xor_or": lambda a, g, p: a ^ (g | p),        # sum bit with carry-select
+    "andn": lambda a, b: a & (1 - b),             # subtract: a & ~b
+    "xnor": lambda a, b: 1 - (a ^ b),             # subtract: a ^ ~b
+}
+TREE_ARITY = 6
+
 
 class BulkImage(Image):
     """Image that emits a bulk-synchronous (new emulator) schedule."""
@@ -56,12 +74,12 @@ class BulkImage(Image):
     def add(self, dst, a, b, subtract=False):
         """Kogge-Stone prefix adder: dst[0..31] = a +/- b, CARRY = carry out."""
         for i in range(32):
-            x = b + i
             if subtract:
-                self.gate("not", TEMP + i, [b + i])
-                x = TEMP + i
-            self.gate("and", PB_G0 + i, [a + i, x])
-            self.gate("xor", PB_P0 + i, [a + i, x])
+                self.gate("andn", PB_G0 + i, [a + i, b + i])
+                self.gate("xnor", PB_P0 + i, [a + i, b + i])
+            else:
+                self.gate("and", PB_G0 + i, [a + i, b + i])
+                self.gate("xor", PB_P0 + i, [a + i, b + i])
         source_g, source_p = PB_G0, PB_P0
         buffers = [(PB_AG, PB_AP), (PB_BG, PB_BP)]
         selected = 0
@@ -72,8 +90,8 @@ class BulkImage(Image):
                     self.emit(1, dest_g + i, source_g + i)
                     self.emit(1, dest_p + i, source_p + i)
                 else:
-                    self.gate("and", PB_T + i, [source_p + i, source_g + i - shift])
-                    self.gate("or", dest_g + i, [source_g + i, PB_T + i])
+                    self.gate("or_and", dest_g + i,
+                              [source_g + i, source_p + i, source_g + i - shift])
                     self.gate("and", dest_p + i, [source_p + i, source_p + i - shift])
             source_g, source_p = dest_g, dest_p
             selected ^= 1
@@ -83,14 +101,25 @@ class BulkImage(Image):
                 carry = self.constant(1) if subtract else zero
                 self.gate("xor", dst + 0, [PB_P0 + 0, carry])
             elif subtract:
-                self.gate("or", PB_CIN + i, [source_g + i - 1, source_p + i - 1])
-                self.gate("xor", dst + i, [PB_P0 + i, PB_CIN + i])
+                self.gate("xor_or", dst + i, [PB_P0 + i, source_g + i - 1, source_p + i - 1])
             else:
                 self.gate("xor", dst + i, [PB_P0 + i, source_g + i - 1])
         if subtract:
             self.gate("or", CARRY, [source_g + 31, source_p + 31])
         else:
             self.emit(1, CARRY, source_g + 31)
+
+    def gate(self, name, dst, inputs):
+        """One lookup per k-ary function; the table is keyed by (name, arity)
+        so reductions/validations can use wide lookups, not only 2-input ones."""
+        key = (name, len(inputs))
+        if key not in self.gates:
+            function = GATE_FUNCTIONS[name]
+            count = len(inputs)
+            self.gates[key] = self.table(
+                [int(function(*[(i >> j) & 1 for j in range(count)]))
+                 for i in range(1 << count)], 0)
+        self.lookup(dst, self.gates[key], inputs, 1)
 
     def _tree(self, name, dst, inputs):
         current = list(inputs)
@@ -100,12 +129,14 @@ class BulkImage(Image):
         level = 0
         while len(current) > 1:
             following = []
-            for j in range(0, len(current) - 1, 2):
-                node = TREE + level * 32 + j // 2
-                self.gate(name, node, [current[j], current[j + 1]])
-                following.append(node)
-            if len(current) % 2:
-                following.append(current[-1])
+            for j in range(0, len(current), TREE_ARITY):
+                chunk = current[j:j + TREE_ARITY]
+                if len(chunk) == 1:
+                    following.append(chunk[0])
+                else:
+                    node = TREE + level * 32 + j // TREE_ARITY
+                    self.gate(name, node, chunk)
+                    following.append(node)
             current = following
             level += 1
         if current[0] != dst:
